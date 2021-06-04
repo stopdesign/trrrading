@@ -14,7 +14,8 @@ from exchange import BaseExchange
 from strategy import Signal
 from util import (
     print_order_info,
-    print_trade_final_info, interval_dt,
+    print_trade_final_info,
+    interval_dt,
 )
 
 
@@ -48,7 +49,6 @@ class ExanteExchange(BaseExchange):
         self.url_orders = f"{base}/trade/{ver}/orders"
 
         print(self.symbol)
-        print()
 
         self.bid = []
         self.ask = []
@@ -58,8 +58,6 @@ class ExanteExchange(BaseExchange):
         self.fee_rate = Decimal("0.02")
 
         self.auth_headers = self.get_headers()
-
-        self.load_account_info()
 
         # info
         self.position_open_cash = self.cash
@@ -153,10 +151,10 @@ class ExanteExchange(BaseExchange):
                         trades = sorted(trades, key=lambda x: x["price"])
                         trade_min = trades[0]
                         trade_max = trades[-1]
-                        self.update_stats()
+                        # self.update_stats()
                         self.on_trade(trade_min)
                         if trade_min["price"] != trade_max["price"]:
-                            self.update_stats()
+                            # self.update_stats()
                             self.on_trade(trade_max)
 
     async def quote_stream(self):
@@ -172,61 +170,70 @@ class ExanteExchange(BaseExchange):
                     if quotes := self.parse_quotes(data):
                         ask = quotes["ask"][0]
                         bid = quotes["bid"][0]
-                        self.ask = [{
-                            "price": Decimal(ask["price"]),
-                            "size": int(Decimal(ask["size"])),
-                        }]
-                        self.bid = [{
-                            "price": Decimal(bid["price"]),
-                            "size": int(Decimal(bid["size"])),
-                        }]
+                        self.ask = [
+                            {
+                                "price": Decimal(ask["price"]),
+                                "size": int(Decimal(ask["size"])),
+                            }
+                        ]
+                        self.bid = [
+                            {
+                                "price": Decimal(bid["price"]),
+                                "size": int(Decimal(bid["size"])),
+                            }
+                        ]
                         self.quotes_updated_at = interval_dt(quotes)
                         self.on_quote(quotes)
-                        self.update_stats()
+                        # self.update_stats()
 
-    def create_order(self, side: str, size: int):
+    def create_order(self, side: str, size: int, symbol: str):
         """
         Открыть позицию/ордер на бирже.
         """
-        cprint(f"TRADE {side}")
+        cprint(f"TRADE: {side} {symbol} {size}", color="cyan")
         data = {
             "accountId": account_id,
-            "symbolId": self.symbol,
+            "symbolId": symbol,
             "side": side,
             "quantity": str(size),
             "orderType": "market",
             "duration": "day",
-            "clientTag": "OLOLO, 250, 111 {''} {\"asd\": 123}",
+            "clientTag": "BOT",
         }
         res = requests.post(self.url_orders, json=data, headers=self.auth_headers)
 
         if res.status_code > 201:
-            print(res.text)
+            cprint(res.text, "red")
             raise Exception(res.status_code)
 
         res_json = res.json()[0]
-        order_id = res_json['orderId']
-        order_status = res_json['orderState']['status']
+        order_id = res_json["orderId"]
+        order_status = res_json["orderState"]["status"]
+        cprint(f"{order_id}, {order_status}", "white")
 
-        print(order_id, order_status)
+        order_status_url = f"{self.url_orders}/{order_id}"
+
         while True:
             sleep(0.5)
-            url = f"{self.url_orders}/{order_id}"
-            res = requests.get(url, headers=self.auth_headers)
+            res = requests.get(order_status_url, headers=self.auth_headers)
             res_json = res.json()
-            order_id = res_json['orderId']
-            order_status = res_json['orderState']['status']
-            print(order_id, order_status)
+            order_id = res_json["orderId"]
+            order_status = res_json["orderState"]["status"]
+            cprint(f"{order_id}, {order_status}", "white")
 
             if order_status == "rejected":
-                order_reason = res_json.get('reason')
-                cprint(f"order_status: {order_status}, reason: {order_reason}", color="red")
-                # print(json.dumps(res_json, indent=2, default=str))
+                order_reason = res_json["orderState"].get("reason")
+                cprint(f"{order_status}, {order_reason}", color="red")
+                return None, None
 
-            if order_status not in ["placing", "working"]:
-                # print(json.dumps(res_json, indent=2, default=str))
-                positions = res_json['orderState']["fills"]
+            if order_status not in ["placing", "working", "pending"]:
+                positions = res_json["orderState"]["fills"]
+                last_update = res_json["orderState"]["lastUpdate"]
                 price, size = self.calc_av_price(positions)
+                cprint(
+                    f"ORDER DONE: {last_update}, price: {price}, size: {size}",
+                    color="cyan",
+                )
                 break
 
         return price, size
@@ -240,41 +247,41 @@ class ExanteExchange(BaseExchange):
             cprint(f"quote age: {quote_age}", color="white")
             return True
 
-    def update_stats(self):
-        # если открыта позиция, посчитать гипотетическую прибыль / убыль
-        if self.position:
-            if self.position == "LONG":
-                price = self.get_price("sell")
-                profit = (price - self.position_open_price) * self.position_size
-            elif self.position == "SHORT":
-                price = self.get_price("buy")
-                profit = (self.position_open_price - price) * self.position_size
-            else:
-                raise ValueError(f"Unknown position type: {self.position}")
-
-            ###############################################
-            # глобальные параметры для всей торговли
-
-            position_open_value = self.position_size * self.position_open_price
-            fee = self.fee_rate * self.position_size
-            potential_cash = self.cash + position_open_value + profit - fee
-
-            if potential_cash > self.max_potential_cash:
-                self.max_potential_cash = potential_cash
-
-            drawdown = self.max_potential_cash - potential_cash
-            drawdown_rel = drawdown / position_open_value * 100
-            self.max_drawdown = max(self.max_drawdown, drawdown_rel)
-
-            ###############################################
-            # локальные параметры для данной сделки
-
-            if potential_cash > self.local_max_potential_cash:
-                self.local_max_potential_cash = potential_cash
-
-            local_drawdown = self.local_max_potential_cash - potential_cash
-            local_drawdown_rel = local_drawdown / position_open_value * 100
-            self.local_max_drawdown = max(self.local_max_drawdown, local_drawdown_rel)
+    # def update_stats(self):
+    #     # если открыта позиция, посчитать гипотетическую прибыль / убыль
+    #     if self.position:
+    #         if self.position == "LONG":
+    #             price = self.get_price("sell")
+    #             profit = (price - self.position_open_price) * self.position_size
+    #         elif self.position == "SHORT":
+    #             price = self.get_price("buy")
+    #             profit = (self.position_open_price - price) * self.position_size
+    #         else:
+    #             raise ValueError(f"Unknown position type: {self.position}")
+    #
+    #         ###############################################
+    #         # глобальные параметры для всей торговли
+    #
+    #         position_open_value = self.position_size * self.position_open_price
+    #         fee = self.fee_rate * self.position_size
+    #         potential_cash = self.cash + position_open_value + profit - fee
+    #
+    #         if potential_cash > self.max_potential_cash:
+    #             self.max_potential_cash = potential_cash
+    #
+    #         drawdown = self.max_potential_cash - potential_cash
+    #         drawdown_rel = drawdown / position_open_value * 100
+    #         self.max_drawdown = max(self.max_drawdown, drawdown_rel)
+    #
+    #         ###############################################
+    #         # локальные параметры для данной сделки
+    #
+    #         if potential_cash > self.local_max_potential_cash:
+    #             self.local_max_potential_cash = potential_cash
+    #
+    #         local_drawdown = self.local_max_potential_cash - potential_cash
+    #         local_drawdown_rel = local_drawdown / position_open_value * 100
+    #         self.local_max_drawdown = max(self.local_max_drawdown, local_drawdown_rel)
 
     def get_price(self, side: str) -> Decimal:
         if side == "sell":
@@ -284,86 +291,6 @@ class ExanteExchange(BaseExchange):
         else:
             raise ValueError(f"Unknown side: {side}")
         return price
-
-    def open_position(self, dt: datetime, signal: Signal, size: int):
-        if not self.check_quote_age(dt):
-            return
-
-        size = 10
-        if signal == Signal.LONG:
-            # size = self.get_max_amount(self.cash, "buy")
-            price, _ = self.create_order("buy", size)
-        elif signal == Signal.SHORT:
-            # size = self.get_max_amount(self.cash, "sell")
-            price, _ = self.create_order("sell", size)
-        else:
-            raise ValueError(f"Unknown signal: {signal}")
-
-        if not price:
-            cprint("error create_order")
-            print()
-            return
-
-        self.position_open_cash = self.cash
-        self.cash -= price * size + self.fee_rate * size
-
-        print_order_info(dt, signal.value, price, size, self.cash)
-
-        self.position = signal.value
-        self.position_size = size
-        self.position_open_price = price
-        self.position_open_dt = dt
-
-    def close_position(self, dt: datetime):
-        if not self.check_quote_age(dt):
-            return
-
-        if self.position == "LONG":
-            price, size = self.create_order("sell", self.position_size)
-            profit = (price - self.position_open_price) * self.position_size
-        elif self.position == "SHORT":
-            price, size = self.create_order("buy", self.position_size)
-            profit = (self.position_open_price - price) * self.position_size
-        else:
-            raise ValueError(f"Unknown position type: {self.position}")
-
-        if not price:
-            cprint("error create_order")
-            print()
-            return
-
-        position_open_value = self.position_size * self.position_open_price
-        profit_rel = profit / position_open_value * 100
-        fee = self.fee_rate * self.position_size
-        self.cash += position_open_value + profit - fee
-
-        print_order_info(dt, "CLOSE", price, 0, self.cash)
-        print()
-
-        # TODO: вынести position(s) в отдельный класс,
-        # TODO: перенести в него все параметры о сделке
-        print_trade_final_info(
-            dt,
-            self.position,
-            self.position_open_dt,
-            profit,
-            profit_rel,
-            self.cash,
-            self.cash_initial,
-            self.max_potential_cash,
-            self.max_drawdown,
-            self.local_max_potential_cash,
-            self.local_max_drawdown,
-        )
-        # print()
-
-        self.position_open_cash = None
-        self.position = None
-        self.position_size = 0
-        self.position_open_price = None
-
-        self.local_max_potential_cash = Decimal("-Infinity")
-        self.local_max_drawdown = Decimal("-Infinity")
 
     def calc_av_price(self, fills):
         """
@@ -383,22 +310,106 @@ class ExanteExchange(BaseExchange):
             total_quantity += quantity
             sum_price += price * quantity
 
-        av_price = sum_price / total_quantity
-
-        return av_price, total_quantity
+        if total_quantity:
+            av_price = sum_price / total_quantity
+            return av_price, total_quantity
+        else:
+            return None, 0
 
     def load_account_info(self):
-        url_account = f"{base}/md/{ver}/summary/{account_id}/EUR"
-
+        url_account = f"{base}/md/{ver}/summary/{account_id}/USD"
         res = requests.get(url_account, headers=self.auth_headers)
-        print(json.dumps(res.json(), indent=2, default=str))
+        return res.json()
 
-        print('\n------\n')
-
+    def load_last_orders(self):
         url_orders = f"{base}/trade/{ver}/orders/active"
-
         res = requests.get(url_orders, headers=self.auth_headers)
-        print(json.dumps(res.json(), indent=2, default=str))
+        return res.json()
 
-        import sys
-        sys.exit(1)
+    def fetch_ohlc_data(self, symbol, data_type, from_dt, interval_size):
+        url_ohlc = f"{base}/md/3.0/ohlc/{symbol}/{interval_size}"
+
+        from_dt = int(from_dt.replace(tzinfo=timezone.utc).timestamp()) * 1000
+
+        all_data = []
+        while True:
+            params = {
+                "type": data_type,
+                "from": from_dt,
+                "size": 5000,
+            }
+            res = requests.get(url_ohlc, params=params, headers=self.auth_headers)
+
+            if res.status_code == 200:
+                all_data += res.json()
+                break
+
+            elif res.status_code == 429:
+                sleep(30)
+
+            else:
+                print(res.status_code)
+                print(res.text)
+                raise Exception("fetch_ohlc_data error")
+
+        # убрать повторы
+        all_data = [json.loads(t) for t in {json.dumps(d) for d in all_data}]
+
+        # сортировать
+        all_data = sorted(all_data, key=lambda x: x["timestamp"])
+
+        return all_data
+
+    def fetch_tick_data(self, symbol, data_type, from_dt):
+        url_tick = f"{base}/md/3.0/ticks/{symbol}"
+
+        from_dt = int(from_dt.replace(tzinfo=timezone.utc).timestamp()) * 1000
+        to_dt = int(datetime.utcnow().timestamp()) * 1000
+
+        all_data = []
+        while True:
+            params = {
+                "type": data_type,
+                "to": to_dt,
+                "size": 5000,
+            }
+            res = requests.get(url_tick, params=params, headers=self.auth_headers)
+
+            if res.status_code == 200:
+                data = res.json()
+                if not data:
+                    # print("EMPTY RESPONSE")
+                    break
+
+                to_dt = data[-1]["timestamp"]
+
+                # print(datetime.now(), len(data), interval_dt(data[0]))
+
+                all_data += data
+
+                if len(data) <= 50:
+                    # print("< 50")
+                    break
+
+                if data[-1]["timestamp"] < from_dt:
+                    # print("ALL DONE")
+                    break
+
+                sleep(60)
+
+            elif res.status_code == 429:
+                # print("429")
+                sleep(30)
+
+            else:
+                print(res.status_code)
+                print(res.text)
+                raise Exception("fetch_tick_data error")
+
+        # убрать повторы
+        all_data = [json.loads(t) for t in {json.dumps(d) for d in all_data}]
+
+        # сортировать
+        all_data = sorted(all_data, key=lambda x: x["timestamp"])
+
+        return all_data

@@ -20,6 +20,9 @@ class ChannelBreakout(BaseStrategy):
         self.len_lo = Decimal("Infinity")
         self.len_hi = Decimal("-Infinity")
 
+    def __str__(self):
+        return f"<ChannelBreakout length={self.length}>"
+
     def add_to_historical(self, data):
         for interval_ohlc in data:
             ts = interval_ohlc["timestamp"]
@@ -82,9 +85,9 @@ class ChannelBreakout(BaseStrategy):
             elif price > len_hi:
                 signal = Signal.LONG
 
-        txt = colored(f" Test price: {price:0.4f} ", attrs=["reverse"])
-        txt += f" len_lo: {len_lo}, len_hi: {len_hi},"
-        txt += f" len: {len(self.historical_short)}, signal: {signal}"
-        print(txt)
+        # txt = colored(f" Test price: {price:0.4f} ", attrs=["reverse"])
+        # txt += f" len_lo: {len_lo}, len_hi: {len_hi},"
+        # txt += f" len: {len(self.historical_short)}, signal: {signal}"
+        # print(txt)
 
         return signal
