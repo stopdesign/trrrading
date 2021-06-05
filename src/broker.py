@@ -1,26 +1,7 @@
-import json
-import sys
 from collections import defaultdict
 from decimal import Decimal
-
 from termcolor import cprint
-
 from exchange import ExanteExchange
-
-
-class Asset:
-    def __init__(self):
-        pass
-
-
-class Position:
-    def __init__(self):
-        pass
-
-
-class Order:
-    def __init__(self):
-        pass
 
 
 def _():

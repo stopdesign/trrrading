@@ -27,6 +27,21 @@ client_id = "40dd4b62-8296-46ff-9b6d-367ad9a35aed"
 app_id = "72d39665-3477-4b48-aba6-b5688a0ab529"
 shared_key = "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"
 
+keys = [
+    # Demo
+    ["40dd4b62-8296-46ff-9b6d-367ad9a35aed", "72d39665-3477-4b48-aba6-b5688a0ab529", "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"],
+    ["8bae08b2-5db3-4c76-a10c-4ef583fe4c6e", "6d4b874c-7ad8-41a9-a519-dbf80e7f47d8", "fqaQ35TT9HXy23skVuNoSg+ulE7RF1zv"],
+    ["bf849eea-2d2b-4eb9-8ee3-33829a5ab389", "343115e2-002f-4b8b-9b49-f7246599c7e2", "jetk63nW4SRrF5dC+fkkBVo5N/eiD3VW"],
+    ["3f29df5b-a046-4f10-9a05-3ad58633b79e", "6841ae47-a7f0-4366-affe-a6df0e5c189f", "4fEOjBkYVqEotIsC/Zw1lQUPHJ/WbEhp"],
+    ["90fb5b9b-d701-4c08-9e1b-aebbe3d5f8f0", "c26618e5-d8ad-4b1e-a602-57fd2ff61e87", "/2gXlIv2sr/wgHVQGJUNMukbeTrHh1ry"],
+]
+
+# Live
+# ["806dc10d-8d46-4c99-ba76-6f29c069d8f5", "28b03f6c-3cff-4b39-b2c4-400bd46f8798", "lE9VmYeG69mhPWqTHHw6JQKeYjSWoxbc"]
+# ["de30faf7-71cb-4f60-9b45-cec7f993ec5b", "557d9928-f9f9-42af-a390-10e5864c97d4", "/IJweFSaW4kxBHpqrgGeg6UcrBNTGczp"]
+# ["3afa315f-649b-47ad-824d-6eb4274111a1", "6d1549f9-2f78-4041-a459-7c34957f58ee", "slhSvumieam12FKwlZKVuucM6wijchKo"]
+# ["5e8a41f1-1628-4280-923d-590bc2a43345", "0cc6d8eb-ed3e-4c8b-9b3c-9b0d154b6984", "CBDQPXxap71ukumOwz1bxlnT25nOPDLx"]
+
 
 class ExanteExchange(BaseExchange):
 
@@ -57,6 +72,7 @@ class ExanteExchange(BaseExchange):
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
 
+        self.cur_data_key = 0
         self.auth_headers = self.get_headers()
 
         # info
@@ -70,6 +86,19 @@ class ExanteExchange(BaseExchange):
 
         #
         self.trades = []
+
+    def next_data_headers(self):
+        global keys
+        keys = keys[1:] + [keys[0]]
+        key = keys[0]
+        payload = {
+            "iss": key[0],
+            "sub": key[1],
+            "aud": ["ohlc", "feed"],
+        }
+        token = jwt.encode(payload, key[2], algorithm="HS256")
+        auth_headers = {"Authorization": f"Bearer {token}"}
+        return auth_headers
 
     def start_listen(self, loop=None):
         loop.create_task(self.trade_stream())
@@ -338,14 +367,16 @@ class ExanteExchange(BaseExchange):
                 "from": from_dt,
                 "size": 5000,
             }
-            res = requests.get(url_ohlc, params=params, headers=self.auth_headers)
+            headers = self.next_data_headers()
+            res = requests.get(url_ohlc, params=params, headers=headers)
+            sleep(1)
 
             if res.status_code == 200:
                 all_data += res.json()
                 break
 
             elif res.status_code == 429:
-                sleep(30)
+                sleep(10)
 
             else:
                 print(res.status_code)
