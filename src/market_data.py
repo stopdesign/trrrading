@@ -1,21 +1,14 @@
-import json
 from datetime import datetime, timedelta
 from decimal import Decimal
-from exchange import ExanteExchange
-
-
-def _():
-    pass
+from exchange import ExanteExchange, BacktestExchange
 
 
 class MarketData:
 
-    def __init__(self, symbols, timeframe, post):
+    def __init__(self, symbols, timeframe):
         self.symbols = symbols
         self.timeframe = timeframe
-        self.exchange = ExanteExchange(
-            on_trade=_, on_quote=_, on_interval=_, symbol=""
-        )
+        self.exchange = BacktestExchange(symbols=",".join(symbols))
         self.historical = {}
 
     def get_historical_data(self, length):
@@ -23,16 +16,12 @@ class MarketData:
         Тут полное блядство происходит
         """
         past_seconds = self.timeframe * length
-        dt = datetime.utcnow() - timedelta(seconds=past_seconds)
+        # dt = datetime.utcnow() - timedelta(seconds=past_seconds)
+        dt = self.exchange.dt_from
         for symbol in self.symbols:
-            data = self.exchange.fetch_ohlc_data(symbol, "trades", dt, self.timeframe)
-            self.historical[symbol] = []
-            for i in data:
-                fake_trades = [
-                    {"timestamp": i["timestamp"] + 1000, "price": i["low"]},
-                    {"timestamp": i["timestamp"] + 2000, "price": i["high"]},
-                ]
-                self.historical[symbol] += fake_trades
+            data = self.exchange.load_tick_data(symbol, dt)
+            data = list(filter(lambda x: "price" in x, data))
+            self.historical[symbol] = data
 
     def get_price(self, instrument, side=None):
         """
@@ -40,10 +29,9 @@ class MarketData:
         """
         trades = self.historical[instrument]
         # print(json.dumps(trades[-5:], indent=2, default=str))
-        if trades:
-            return Decimal(trades[-1]["price"])
-        else:
-            return None
+        if not trades:
+            raise Exception(f"No historical for {instrument}")
+        return Decimal(trades[-1]["price"])
 
     # def get_price(self, side: str) -> Decimal:
     #     if side == "sell":

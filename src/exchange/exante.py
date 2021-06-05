@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from json import JSONDecodeError
@@ -29,18 +30,17 @@ shared_key = "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"
 
 keys = [
     # Demo
-    ["40dd4b62-8296-46ff-9b6d-367ad9a35aed", "72d39665-3477-4b48-aba6-b5688a0ab529", "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"],
-    ["8bae08b2-5db3-4c76-a10c-4ef583fe4c6e", "6d4b874c-7ad8-41a9-a519-dbf80e7f47d8", "fqaQ35TT9HXy23skVuNoSg+ulE7RF1zv"],
-    ["bf849eea-2d2b-4eb9-8ee3-33829a5ab389", "343115e2-002f-4b8b-9b49-f7246599c7e2", "jetk63nW4SRrF5dC+fkkBVo5N/eiD3VW"],
-    ["3f29df5b-a046-4f10-9a05-3ad58633b79e", "6841ae47-a7f0-4366-affe-a6df0e5c189f", "4fEOjBkYVqEotIsC/Zw1lQUPHJ/WbEhp"],
-    ["90fb5b9b-d701-4c08-9e1b-aebbe3d5f8f0", "c26618e5-d8ad-4b1e-a602-57fd2ff61e87", "/2gXlIv2sr/wgHVQGJUNMukbeTrHh1ry"],
+    ["40dd4b62-8296-46ff-9b6d-367ad9a35aed", "72d39665-3477-4b48-aba6-b5688a0ab529",
+     "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"],
+    ["8bae08b2-5db3-4c76-a10c-4ef583fe4c6e", "6d4b874c-7ad8-41a9-a519-dbf80e7f47d8",
+     "fqaQ35TT9HXy23skVuNoSg+ulE7RF1zv"],
+    ["bf849eea-2d2b-4eb9-8ee3-33829a5ab389", "343115e2-002f-4b8b-9b49-f7246599c7e2",
+     "jetk63nW4SRrF5dC+fkkBVo5N/eiD3VW"],
+    ["3f29df5b-a046-4f10-9a05-3ad58633b79e", "6841ae47-a7f0-4366-affe-a6df0e5c189f",
+     "4fEOjBkYVqEotIsC/Zw1lQUPHJ/WbEhp"],
+    ["90fb5b9b-d701-4c08-9e1b-aebbe3d5f8f0", "c26618e5-d8ad-4b1e-a602-57fd2ff61e87",
+     "/2gXlIv2sr/wgHVQGJUNMukbeTrHh1ry"],
 ]
-
-# Live
-# ["806dc10d-8d46-4c99-ba76-6f29c069d8f5", "28b03f6c-3cff-4b39-b2c4-400bd46f8798", "lE9VmYeG69mhPWqTHHw6JQKeYjSWoxbc"]
-# ["de30faf7-71cb-4f60-9b45-cec7f993ec5b", "557d9928-f9f9-42af-a390-10e5864c97d4", "/IJweFSaW4kxBHpqrgGeg6UcrBNTGczp"]
-# ["3afa315f-649b-47ad-824d-6eb4274111a1", "6d1549f9-2f78-4041-a459-7c34957f58ee", "slhSvumieam12FKwlZKVuucM6wijchKo"]
-# ["5e8a41f1-1628-4280-923d-590bc2a43345", "0cc6d8eb-ed3e-4c8b-9b3c-9b0d154b6984", "CBDQPXxap71ukumOwz1bxlnT25nOPDLx"]
 
 
 class ExanteExchange(BaseExchange):
@@ -52,18 +52,14 @@ class ExanteExchange(BaseExchange):
     name: str = "exante"
     env: str = "demo"
 
-    def __init__(
-        self, on_trade: Callable, on_quote: Callable, on_interval: Callable, **params
-    ):
-        super().__init__(on_trade, on_quote, on_interval, **params)
+    def __init__(self, symbols: str):
+        super().__init__(symbols)
 
-        self.symbol = params.get("symbol")
+        self.symbols = symbols
 
-        self.url_trades = f"{base}/md/{ver}/feed/trades/{self.symbol}"
-        self.url_quotes = f"{base}/md/{ver}/feed/{self.symbol}"
+        self.url_trades = f"{base}/md/{ver}/feed/trades/{self.symbols}"
+        self.url_quotes = f"{base}/md/{ver}/feed/{self.symbols}"
         self.url_orders = f"{base}/trade/{ver}/orders"
-
-        print(self.symbol)
 
         self.bid = []
         self.ask = []
@@ -87,43 +83,25 @@ class ExanteExchange(BaseExchange):
         #
         self.trades = []
 
-    def next_data_headers(self):
-        global keys
-        keys = keys[1:] + [keys[0]]
-        key = keys[0]
-        payload = {
-            "iss": key[0],
-            "sub": key[1],
-            "aud": ["ohlc", "feed"],
-        }
-        token = jwt.encode(payload, key[2], algorithm="HS256")
-        auth_headers = {"Authorization": f"Bearer {token}"}
-        return auth_headers
-
     def start_listen(self, loop=None):
         loop.create_task(self.trade_stream())
         loop.create_task(self.quote_stream())
 
     def get_headers(self):
-        dt_from = datetime.now()
-        dt_from = int(dt_from.replace(tzinfo=timezone.utc).timestamp())
-
-        dt_exp = datetime.now() + timedelta(days=30)
-        dt_exp = int(dt_exp.replace(tzinfo=timezone.utc).timestamp())
-
-        permissions = ["ohlc", "feed", "orders", "summary", "accounts"]
-        payload = {
-            "iss": client_id,
-            "sub": app_id,
-            "iat": dt_from,
-            "exp": dt_exp,
-            "aud": permissions,
-        }
+        iat = int(datetime.now().replace(tzinfo=timezone.utc).timestamp())
+        exp = iat + int(timedelta(days=30).total_seconds())
+        aud = ["ohlc", "feed", "orders", "summary", "accounts"]
+        payload = {"iss": client_id, "sub": app_id, "iat": iat, "exp": exp, "aud": aud}
         token = jwt.encode(payload, shared_key, algorithm="HS256")
-        auth_headers = {
-            "Authorization": f"Bearer {token}",
-        }
-        return auth_headers
+        return {"Authorization": f"Bearer {token}"}
+
+    def next_data_headers(self):
+        global keys
+        keys = keys[1:] + [keys[0]]
+        key = keys[0]
+        payload = {"iss": key[0], "sub": key[1], "aud": ["ohlc", "feed"]}
+        token = jwt.encode(payload, key[2], algorithm="HS256")
+        return {"Authorization": f"Bearer {token}"}
 
     def parse_trades(self, data):
         """
@@ -344,6 +322,31 @@ class ExanteExchange(BaseExchange):
             return av_price, total_quantity
         else:
             return None, 0
+
+    def get_cash_value(self):
+        ai = self.load_account_info()
+        return Decimal(ai["netAssetValue"])
+
+    def get_positions(self):
+        """
+        {
+            "SYM.BOL": Decimal("123.00"),
+        }
+        """
+        ai = self.load_account_info()
+        cprint(f"Positions:", attrs=["bold"])
+        pos = defaultdict(Decimal)
+        for position in ai["positions"]:
+            value = Decimal(position["convertedValue"])
+            quantity = Decimal(position['quantity'])
+            pos[position["symbolId"]] = quantity
+            if quantity or value:
+                cprint(
+                    f"{position['symbolId']:<10} "
+                    f"{quantity:>+15.0f} "
+                    f"{value:>+15.2f}"
+                )
+        return pos
 
     def load_account_info(self):
         url_account = f"{base}/md/{ver}/summary/{account_id}/USD"

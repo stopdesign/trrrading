@@ -10,3 +10,14 @@
 
 - name: backtest
   data: "./data/"
+
+
+# Live
+# ["806dc10d-8d46-4c99-ba76-6f29c069d8f5", "28b03f6c-3cff-4b39-b2c4-400bd46f8798",
+# "lE9VmYeG69mhPWqTHHw6JQKeYjSWoxbc"]
+# ["de30faf7-71cb-4f60-9b45-cec7f993ec5b", "557d9928-f9f9-42af-a390-10e5864c97d4",
+# "/IJweFSaW4kxBHpqrgGeg6UcrBNTGczp"]
+# ["3afa315f-649b-47ad-824d-6eb4274111a1", "6d1549f9-2f78-4041-a459-7c34957f58ee",
+# "slhSvumieam12FKwlZKVuucM6wijchKo"]
+# ["5e8a41f1-1628-4280-923d-590bc2a43345", "0cc6d8eb-ed3e-4c8b-9b3c-9b0d154b6984",
+# "CBDQPXxap71ukumOwz1bxlnT25nOPDLx"]

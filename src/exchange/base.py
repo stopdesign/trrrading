@@ -18,12 +18,7 @@ class BaseExchange:
     position_open_price: Optional[Decimal]
     cash: Decimal
 
-    def __init__(
-        self, on_trade: Callable, on_quote: Callable, on_interval: Callable, **params
-    ):
-        self.on_trade = on_trade
-        self.on_quote = on_quote
-        self.on_interval = on_interval
+    def __init__(self, symbols: str):
         # TODO: получить баланс
         # TODO: получить список открытых позиций и висящих ордеров
         self.position = None
@@ -31,7 +26,7 @@ class BaseExchange:
         self.position_open_price = None
         self.cash = Decimal(0)
 
-    def create_order(self, side: str, size: int):
+    def create_order(self, side: str, size: int, symbol: str):
         raise NotImplementedError()
 
     def open_position(self, dt: datetime, signal: Signal, size: int):
@@ -47,4 +42,13 @@ class BaseExchange:
         pass
 
     def print_final_info(self):
+        pass
+
+    def load_last_orders(self):
+        return []
+
+    def get_positions(self):
+        pass
+
+    def get_cash_value(self):
         pass

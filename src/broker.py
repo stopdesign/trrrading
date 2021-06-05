@@ -1,50 +1,25 @@
 from collections import defaultdict
 from decimal import Decimal
 from termcolor import cprint
-from exchange import ExanteExchange
-
-
-def _():
-    pass
+from exchange import ExanteExchange, BacktestExchange
 
 
 class Broker:
     def __init__(self, symbols):
         self.positions = defaultdict(Decimal)
-        self.symbols = symbols
-        symbols_str = ",".join(symbols)
-        self.exchange = ExanteExchange(
-            on_trade=_, on_quote=_, on_interval=_, symbol=symbols_str
-        )
+        self.exchange = BacktestExchange(symbols=",".join(symbols))
         self.cash = None
-        self.update_positions()
-        self.check_orders()
+        self._positions_info()
+        self._check_orders()
 
-    def update_positions(self):
-        ai = self.exchange.load_account_info()
+    def _positions_info(self):
+        # Cache position and cash info
+        self.positions = self.exchange.get_positions()
+        self.cash = self.exchange.get_cash_value()  # // 100  # допустим, торгуем на 1%
 
-        self.cash = Decimal(ai["netAssetValue"]) // 100  # допустим, торгуем на 1%
+        cprint(f"\nCash: {self.cash}\n", attrs=["bold"])
 
-        print()
-        cprint(f"Cash: {self.cash}", attrs=["bold"])
-        print()
-
-        cprint(f"Positions:", attrs=["bold"])
-        pos = defaultdict(Decimal)
-        for position in ai["positions"]:
-            value = Decimal(position["convertedValue"])
-            quantity = Decimal(position['quantity'])
-            pos[position["symbolId"]] = quantity
-            if quantity or value:
-                cprint(
-                    f"{position['symbolId']:<10} "
-                    f"{quantity:>+15.0f} "
-                    f"{value:>+15.2f}"
-                )
-        self.positions = pos
-        print()
-
-    def check_orders(self):
+    def _check_orders(self):
         orders = self.exchange.load_last_orders()
         if orders:
             print()
@@ -56,9 +31,6 @@ class Broker:
             quantity = op["quantity"]
             status = order["orderState"]["status"]
             cprint(f"ORDER: {side} {symbol} {quantity} [{status}]", "yellow")
-
-    # def get_current_value(self, symbol):
-    #     return self.asset_values.get(symbol, Decimal("0"))
 
     def get_current_position(self, symbol):
         return self.positions.get(symbol, Decimal("0"))
@@ -75,4 +47,4 @@ class Broker:
 
         self.exchange.create_order(side, asset_amount_diff, instrument)
 
-        self.update_positions()
+        self._positions_info()

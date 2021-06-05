@@ -15,23 +15,23 @@ class Trader:
         # Как торговать
         # TODO: это всё нужно брать из конфигов
         self.advisors = [
-            Advisor(strategy="ChannelBreakout", length=1,   instrument="BAC.NYSE"),
-            Advisor(strategy="ChannelBreakout", length=10,  instrument="BAC.NYSE"),
-            Advisor(strategy="ChannelBreakout", length=1,   instrument="EEM.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=10,  instrument="EEM.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=1,   instrument="GDX.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=10,  instrument="GDX.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=400, instrument="COPX.ARCA"),
+            # Advisor(strategy="ChannelBreakout", length=1,   instrument="BAC.NYSE"),
+            # Advisor(strategy="ChannelBreakout", length=10,  instrument="BAC.NYSE"),
+            # Advisor(strategy="ChannelBreakout", length=1,   instrument="EEM.ARCA"),
+            # Advisor(strategy="ChannelBreakout", length=10,  instrument="EEM.ARCA"),
+            # Advisor(strategy="ChannelBreakout", length=1,   instrument="GDX.ARCA"),
+            # Advisor(strategy="ChannelBreakout", length=10,  instrument="GDX.ARCA"),
         ]
 
-        symbols_to_track = ["GDX.ARCA", "BAC.NYSE", "EEM.ARCA"]
+        symbols_to_track = ["COPX.ARCA"]
+        # symbols_to_track = ["GDX.ARCA", "BAC.NYSE", "EEM.ARCA"]
         max_length = 200
 
         # TODO: передать брокеру, какие инструменты нужно мониторить
         self.broker = Broker(symbols=symbols_to_track)
 
-        self.market_data = MarketData(
-            symbols=symbols_to_track, timeframe=60, post=["ChannelBreakout"]
-        )
+        self.market_data = MarketData(symbols=symbols_to_track, timeframe=60)
 
         # Подгрузить исторические данные по отслеживаемым инструментам
         print("Get historical data...")
