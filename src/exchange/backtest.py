@@ -1,16 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import pandas_market_calendars as mcal
 from termcolor import cprint
 from exchange import BaseExchange
-from util import (
-    interval_dt,
-    print_order_info,
-    print_trade_final_info,
-    load_from_file,
-    parse_quote,
-    print_summary,
-)
+from util import interval_dt, load_from_file, parse_quote
 
 
 class BacktestExchange(BaseExchange):
@@ -22,19 +15,11 @@ class BacktestExchange(BaseExchange):
 
         self.quotes = {}
 
-        self.dt_from = kwargs.get("dt_from", datetime(2021, 1, 1))
+        self.dt_start = kwargs.get("dt_start", datetime(2021, 1, 5))
+        self.dt_from = self.dt_start - timedelta(days=5)
         self.cash_initial = kwargs.get("cash", Decimal(10_000))
         self.cash = self.cash_initial
         self.fee = Decimal("0.02")
-
-        # # info
-        # self.position_open_cash = self.cash
-        # self.position_open_dt = None
-        # self.max_potential_cash = Decimal("-Infinity")
-        # self.max_drawdown = Decimal("-Infinity")
-        #
-        # self.local_max_potential_cash = Decimal("-Infinity")
-        # self.local_max_drawdown = Decimal("-Infinity")
 
     def load_tick_data(self, symbol, dt_from):
         """
@@ -100,12 +85,18 @@ class BacktestExchange(BaseExchange):
             if not symbol or "timestamp" not in event:
                 continue
 
-            # Интервально-аналитическая хуйня
-            # TODO: вынести в отдельную аналитику, событие "interval"
             dt = interval_dt(event)
-            if prev_dt and dt.hour != prev_dt.hour:
-                pass
-                # self.interval_stats(dt)
+
+            # Используется для наполнения стратегии историческими данными
+            if dt < self.dt_start:
+                if "price" in event:
+                    on_event("trade_before_start", dt, symbol, parse_quote(event))
+                continue
+
+            # Аналитика перед открытием нового интервала
+            if prev_dt and dt.day != prev_dt.day:
+                norm_dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                on_event("before_interval", norm_dt, symbol)
             prev_dt = dt
 
             # События с биржи
@@ -118,12 +109,12 @@ class BacktestExchange(BaseExchange):
                 self.quotes[symbol] = {"ask": ask, "bid": bid, "dt": dt}
                 on_event("quote", dt, symbol, {"ask": ask, "bid": bid})
 
-            # TODO: вынести в отдельную аналитику
-            # self.update_stats()
+            # Любое событие биржи
+            on_event("after_event", dt, symbol)
 
     def start_listen(self, on_event, loop=None):
         """
-        В данном случае можно синхронно всё прогнать — и похуй.
+        В данном случае можно синхронно прогнать все данные.
         """
         self.data_stream(on_event)
         loop.stop()
@@ -132,9 +123,11 @@ class BacktestExchange(BaseExchange):
         """
         Создать ордер на бирже, скорректировать позицию.
         """
-        cprint(f"TRADE: {side} {symbol} {amount}", color="red")
+        cprint(f"\nTRADE: {side} {symbol} {amount}", color="red")
 
         assert amount != 0
+
+        start_amount = amount
 
         if price := self.get_price(symbol, side):
             self.cash -= self.fee * amount
@@ -143,27 +136,38 @@ class BacktestExchange(BaseExchange):
                 amount = -amount
 
             position = self.positions.get(symbol, self.empty_position)
-            # Если открыта позиция и заявка пришла в другую сторону,
-            # то происходит частичное закрытие позиции, а прибыль материализуется.
-            # На остальную сумму происходит открытие позиции.
 
-            if amount.as_tuple().sign != position["amount"].as_tuple().sign:
+            # Если открыта позиция и заявка пришла в другую сторону,
+            # то происходит частичное закрытие, а прибыль материализуется.
+            # На оставшуюся сумму происходит открытие позиции.
+
+            # Если позиция и заявка имеют одно направление,
+            # то позиция увеличивается на нужную сумму.
+
+            # Позиция и дельта не 0 и имеют разный знак
+            if amount * position["amount"] < 0:
                 # Частичное закрытие позиции
                 partial_close_amount = min(abs(amount), abs(position["amount"]))
+
                 # Сократить позицию
                 if position["amount"] >= 0:
                     position["amount"] -= partial_close_amount
-                    self.cash += partial_close_amount * (price - position["price"])
+                    trade_profit = partial_close_amount * (price - position["price"])
                 else:
                     position["amount"] += partial_close_amount
-                    self.cash += partial_close_amount * (position["price"] - price)
+                    trade_profit = partial_close_amount * (position["price"] - price)
+
                 # Сократить требование
                 if amount >= 0:
                     amount -= partial_close_amount
                 else:
                     amount += partial_close_amount
+
                 # Одно или другое должно сократиться полностью
                 assert amount == 0 or position["amount"] == 0
+
+                print(f"PROFIT: {trade_profit}, amnt {partial_close_amount}")
+                self.cash += trade_profit
 
                 # Если amount еще остался — открыть позицию
                 if amount != 0:
@@ -172,16 +176,17 @@ class BacktestExchange(BaseExchange):
                         "price": price,
                     }
             else:
-                # Открытие дополнительной позиции в ту же сторону
-                total_value = (position["amount"] * position["price"] + amount * price)
+                # Увеличение позиции в ту же сторону
+                total_value = position["amount"] * position["price"] + amount * price
                 total_amount = position["amount"] + amount
                 av_price = total_value / total_amount
                 self.positions[symbol] = {
+                    # "dt": position["dt"],
                     "amount": total_amount,
                     "price": av_price,
                 }
 
-            return price, amount
+            return price, start_amount
         else:
             cprint(" SKIP TRADE: Not enough quote data ", "red", attrs=["reverse"])
             return None, None

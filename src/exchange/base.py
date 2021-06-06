@@ -1,4 +1,3 @@
-from collections import defaultdict
 from decimal import Decimal
 from typing import Optional
 
@@ -21,7 +20,7 @@ class BaseExchange:
             if side == "buy":
                 return quotes["ask"][0]["price"]
 
-    def create_order(self, side: str, size: int, symbol: str):
+    def trade(self, side: str, amount: int, symbol: str):
         raise NotImplementedError()
 
     def start_listen(self, on_event, loop=None):
