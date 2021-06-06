@@ -1,23 +1,14 @@
 import json
-from collections import defaultdict
+import aiohttp
+import jwt
+import requests
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from json import JSONDecodeError
 from time import sleep
-from typing import Callable, Optional
-
-import aiohttp
-import jwt
-import requests
 from termcolor import cprint
-
 from exchange import BaseExchange
-from strategy import Signal
-from util import (
-    print_order_info,
-    print_trade_final_info,
-    interval_dt,
-)
+from util import interval_dt, parse_quote
 
 
 base = "https://api-demo.exante.eu"
@@ -30,62 +21,55 @@ shared_key = "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"
 
 keys = [
     # Demo
-    ["40dd4b62-8296-46ff-9b6d-367ad9a35aed", "72d39665-3477-4b48-aba6-b5688a0ab529",
-     "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"],
-    ["8bae08b2-5db3-4c76-a10c-4ef583fe4c6e", "6d4b874c-7ad8-41a9-a519-dbf80e7f47d8",
-     "fqaQ35TT9HXy23skVuNoSg+ulE7RF1zv"],
-    ["bf849eea-2d2b-4eb9-8ee3-33829a5ab389", "343115e2-002f-4b8b-9b49-f7246599c7e2",
-     "jetk63nW4SRrF5dC+fkkBVo5N/eiD3VW"],
-    ["3f29df5b-a046-4f10-9a05-3ad58633b79e", "6841ae47-a7f0-4366-affe-a6df0e5c189f",
-     "4fEOjBkYVqEotIsC/Zw1lQUPHJ/WbEhp"],
-    ["90fb5b9b-d701-4c08-9e1b-aebbe3d5f8f0", "c26618e5-d8ad-4b1e-a602-57fd2ff61e87",
-     "/2gXlIv2sr/wgHVQGJUNMukbeTrHh1ry"],
+    [
+        "40dd4b62-8296-46ff-9b6d-367ad9a35aed",
+        "72d39665-3477-4b48-aba6-b5688a0ab529",
+        "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp",
+    ],
+    [
+        "8bae08b2-5db3-4c76-a10c-4ef583fe4c6e",
+        "6d4b874c-7ad8-41a9-a519-dbf80e7f47d8",
+        "fqaQ35TT9HXy23skVuNoSg+ulE7RF1zv",
+    ],
+    [
+        "bf849eea-2d2b-4eb9-8ee3-33829a5ab389",
+        "343115e2-002f-4b8b-9b49-f7246599c7e2",
+        "jetk63nW4SRrF5dC+fkkBVo5N/eiD3VW",
+    ],
+    [
+        "3f29df5b-a046-4f10-9a05-3ad58633b79e",
+        "6841ae47-a7f0-4366-affe-a6df0e5c189f",
+        "4fEOjBkYVqEotIsC/Zw1lQUPHJ/WbEhp",
+    ],
+    [
+        "90fb5b9b-d701-4c08-9e1b-aebbe3d5f8f0",
+        "c26618e5-d8ad-4b1e-a602-57fd2ff61e87",
+        "/2gXlIv2sr/wgHVQGJUNMukbeTrHh1ry",
+    ],
 ]
 
 
 class ExanteExchange(BaseExchange):
-
-    bid: list
-    ask: list
-    cash: Decimal
-    quotes_updated_at: Optional[datetime]
-    name: str = "exante"
-    env: str = "demo"
-
-    def __init__(self, symbols: str):
+    def __init__(self, symbols: list, **kwargs):
         super().__init__(symbols)
 
         self.symbols = symbols
 
-        self.url_trades = f"{base}/md/{ver}/feed/trades/{self.symbols}"
-        self.url_quotes = f"{base}/md/{ver}/feed/{self.symbols}"
+        symbols_str = ",".join(self.symbols)
+
+        self.url_trades = f"{base}/md/{ver}/feed/trades/{symbols_str}"
+        self.url_quotes = f"{base}/md/{ver}/feed/{symbols_str}"
         self.url_orders = f"{base}/trade/{ver}/orders"
 
-        self.bid = []
-        self.ask = []
-        self.quotes_updated_at = None
-        self.cash_initial = Decimal(10_000)
-        self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
 
-        self.cur_data_key = 0
         self.auth_headers = self.get_headers()
 
-        # info
-        self.position_open_cash = self.cash
-        self.position_open_dt = None
-        self.max_potential_cash = Decimal("-Infinity")
-        self.max_drawdown = Decimal("-Infinity")
+        self.cash = self.get_cash_value()
 
-        self.local_max_potential_cash = Decimal("-Infinity")
-        self.local_max_drawdown = Decimal("-Infinity")
-
-        #
-        self.trades = []
-
-    def start_listen(self, loop=None):
-        loop.create_task(self.trade_stream())
-        loop.create_task(self.quote_stream())
+    def start_listen(self, on_event, loop=None):
+        loop.create_task(self.trade_stream(on_event))
+        loop.create_task(self.quote_stream(on_event))
 
     def get_headers(self):
         iat = int(datetime.now().replace(tzinfo=timezone.utc).timestamp())
@@ -123,8 +107,9 @@ class ExanteExchange(BaseExchange):
 
     def parse_quotes(self, data):
         """
-        Распарсить сделки
+        Распарсить quotes
         """
+        quotes = []
         data = data.decode().strip()
         for line in data.split("\n"):
             if not line.strip():
@@ -137,14 +122,14 @@ class ExanteExchange(BaseExchange):
                 #   'bid': [{'price': '41.89', 'size': '100.0'}],
                 #   'ask': [{'price': '42.47', 'size': '500.0'}],
                 # }
-                # print(interval)
                 if "timestamp" in interval and "bid" in interval and "ask" in interval:
-                    return interval
+                    quotes.append(interval)
             except JSONDecodeError as e:
                 print("JSONDecodeError", line, data)
                 raise e
+        return quotes
 
-    async def trade_stream(self):
+    async def trade_stream(self, on_event):
         """
         Обработка стрима сделок.
         """
@@ -155,16 +140,14 @@ class ExanteExchange(BaseExchange):
             async with session.get(self.url_trades, headers=headers) as resp:
                 async for data in resp.content.iter_any():
                     if trades := self.parse_trades(data):
-                        trades = sorted(trades, key=lambda x: x["price"])
-                        trade_min = trades[0]
-                        trade_max = trades[-1]
-                        # self.update_stats()
-                        self.on_trade(trade_min)
-                        if trade_min["price"] != trade_max["price"]:
-                            # self.update_stats()
-                            self.on_trade(trade_max)
+                        # FIXME: переделать с поддержкой symbol
+                        # trades = sorted(trades, key=lambda x: x["price"])
+                        for trade in trades:
+                            dt = interval_dt(trade)
+                            symbol = trade["symbolId"]
+                            on_event("trade", dt, symbol, parse_quote(trade))
 
-    async def quote_stream(self):
+    async def quote_stream(self, on_event):
         """
         Обработка стрима стакана.
         """
@@ -175,25 +158,15 @@ class ExanteExchange(BaseExchange):
             async with session.get(self.url_quotes, headers=headers) as resp:
                 async for data in resp.content.iter_any():
                     if quotes := self.parse_quotes(data):
-                        ask = quotes["ask"][0]
-                        bid = quotes["bid"][0]
-                        self.ask = [
-                            {
-                                "price": Decimal(ask["price"]),
-                                "size": int(Decimal(ask["size"])),
-                            }
-                        ]
-                        self.bid = [
-                            {
-                                "price": Decimal(bid["price"]),
-                                "size": int(Decimal(bid["size"])),
-                            }
-                        ]
-                        self.quotes_updated_at = interval_dt(quotes)
-                        self.on_quote(quotes)
-                        # self.update_stats()
+                        for quote in quotes:
+                            dt = interval_dt(quote)
+                            symbol = quote["symbolId"]
+                            ask = list(map(parse_quote, quote["ask"]))
+                            bid = list(map(parse_quote, quote["bid"]))
+                            self.quotes[symbol] = {"ask": ask, "bid": bid, "dt": dt}
+                            on_event("quote", dt, symbol, {"ask": ask, "bid": bid})
 
-    def create_order(self, side: str, size: int, symbol: str):
+    def trade(self, side: str, size: int, symbol: str):
         """
         Открыть позицию/ордер на бирже.
         """
@@ -245,60 +218,6 @@ class ExanteExchange(BaseExchange):
 
         return price, size
 
-    def check_quote_age(self, dt):
-        quote_age = (dt - self.quotes_updated_at).total_seconds()
-        if quote_age > 300 or quote_age < 0:
-            cprint(f"quote age: {quote_age}", color="cyan")
-            return False
-        else:
-            cprint(f"quote age: {quote_age}", color="white")
-            return True
-
-    # def update_stats(self):
-    #     # если открыта позиция, посчитать гипотетическую прибыль / убыль
-    #     if self.position:
-    #         if self.position == "LONG":
-    #             price = self.get_price("sell")
-    #             profit = (price - self.position_open_price) * self.position_size
-    #         elif self.position == "SHORT":
-    #             price = self.get_price("buy")
-    #             profit = (self.position_open_price - price) * self.position_size
-    #         else:
-    #             raise ValueError(f"Unknown position type: {self.position}")
-    #
-    #         ###############################################
-    #         # глобальные параметры для всей торговли
-    #
-    #         position_open_value = self.position_size * self.position_open_price
-    #         fee = self.fee_rate * self.position_size
-    #         potential_cash = self.cash + position_open_value + profit - fee
-    #
-    #         if potential_cash > self.max_potential_cash:
-    #             self.max_potential_cash = potential_cash
-    #
-    #         drawdown = self.max_potential_cash - potential_cash
-    #         drawdown_rel = drawdown / position_open_value * 100
-    #         self.max_drawdown = max(self.max_drawdown, drawdown_rel)
-    #
-    #         ###############################################
-    #         # локальные параметры для данной сделки
-    #
-    #         if potential_cash > self.local_max_potential_cash:
-    #             self.local_max_potential_cash = potential_cash
-    #
-    #         local_drawdown = self.local_max_potential_cash - potential_cash
-    #         local_drawdown_rel = local_drawdown / position_open_value * 100
-    #         self.local_max_drawdown = max(self.local_max_drawdown, local_drawdown_rel)
-
-    def get_price(self, side: str) -> Decimal:
-        if side == "sell":
-            price = self.bid[0]["price"]
-        elif side == "buy":
-            price = self.ask[0]["price"]
-        else:
-            raise ValueError(f"Unknown side: {side}")
-        return price
-
     def calc_av_price(self, fills):
         """
         [{
@@ -328,25 +247,14 @@ class ExanteExchange(BaseExchange):
         return Decimal(ai["netAssetValue"])
 
     def get_positions(self):
-        """
-        {
-            "SYM.BOL": Decimal("123.00"),
-        }
-        """
         ai = self.load_account_info()
-        cprint(f"Positions:", attrs=["bold"])
-        pos = defaultdict(Decimal)
+        res = {}
         for position in ai["positions"]:
-            value = Decimal(position["convertedValue"])
-            quantity = Decimal(position['quantity'])
-            pos[position["symbolId"]] = quantity
-            if quantity or value:
-                cprint(
-                    f"{position['symbolId']:<10} "
-                    f"{quantity:>+15.0f} "
-                    f"{value:>+15.2f}"
-                )
-        return pos
+            res[position["symbolId"]] = {
+                "amount": Decimal(position["quantity"]),
+                "price": Decimal(position["averagePrice"]),
+            }
+        return res
 
     def load_account_info(self):
         url_account = f"{base}/md/{ver}/summary/{account_id}/USD"
@@ -447,3 +355,20 @@ class ExanteExchange(BaseExchange):
         all_data = sorted(all_data, key=lambda x: x["timestamp"])
 
         return all_data
+
+    @property
+    def net_value(self):
+        """
+        Суммарное количество бабла депозита: кэш плюс стоимость активов.
+        """
+        total_value = self.cash
+        for symbol, position in self.positions.items():
+            if position["amount"] > 0:
+                price = self.get_price(symbol, "sell")
+                total_value += position["amount"] * (price - position["price"])
+                total_value -= self.fee_rate * position["amount"]
+            if position["amount"] < 0:
+                price = self.get_price(symbol, "buy")
+                total_value += position["amount"] * (position["price"] - price)
+                total_value -= self.fee_rate * position["amount"]
+        return total_value

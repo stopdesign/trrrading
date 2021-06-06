@@ -1,4 +1,3 @@
-from decimal import Decimal
 from strategy import ChannelBreakout, Signal
 
 

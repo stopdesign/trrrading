@@ -7,6 +7,8 @@ class BaseExchange:
     Биржа
     """
 
+    empty_position = {"amount": Decimal("0"), "price": Decimal("0")}
+
     def __init__(self, symbols: list, **kwargs):
         self.symbols = symbols
         self.quotes = {}

@@ -8,8 +8,6 @@ from util import interval_dt, load_from_file, parse_quote
 
 class BacktestExchange(BaseExchange):
 
-    empty_position = {"amount": Decimal("0"), "price": Decimal("0")}
-
     def __init__(self, symbols: list, **kwargs):
         super().__init__(symbols)
 
@@ -19,7 +17,7 @@ class BacktestExchange(BaseExchange):
         self.dt_from = self.dt_start - timedelta(days=5)
         self.cash_initial = kwargs.get("cash", Decimal(10_000))
         self.cash = self.cash_initial
-        self.fee = Decimal("0.02")
+        self.fee_rate = Decimal("0.02")
 
     def load_tick_data(self, symbol, dt_from):
         """
@@ -119,6 +117,16 @@ class BacktestExchange(BaseExchange):
         self.data_stream(on_event)
         loop.stop()
 
+    def stop_listen(self, loop=None):
+        """
+        Позакрывать все позиции.
+        """
+        for symbol, position in self.positions.items():
+            if position["amount"] > 0:
+                self.trade("sell", abs(position["amount"]), symbol)
+            if position["amount"] < 0:
+                self.trade("buy", abs(position["amount"]), symbol)
+
     def trade(self, side: str, amount: Decimal, symbol: str):
         """
         Создать ордер на бирже, скорректировать позицию.
@@ -130,7 +138,7 @@ class BacktestExchange(BaseExchange):
         start_amount = amount
 
         if price := self.get_price(symbol, side):
-            self.cash -= self.fee * amount
+            self.cash -= self.fee_rate * amount
 
             if side == "sell":
                 amount = -amount
@@ -201,11 +209,11 @@ class BacktestExchange(BaseExchange):
             if position["amount"] > 0:
                 price = self.get_price(symbol, "sell")
                 total_value += position["amount"] * (price - position["price"])
-                total_value -= self.fee * position["amount"]
+                total_value -= self.fee_rate * position["amount"]
             if position["amount"] < 0:
                 price = self.get_price(symbol, "buy")
                 total_value += position["amount"] * (position["price"] - price)
-                total_value -= self.fee * position["amount"]
+                total_value -= self.fee_rate * position["amount"]
         return total_value
 
     def get_positions(self):

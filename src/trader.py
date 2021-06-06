@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from termcolor import cprint, colored
 from advisor import Advisor
-from exchange import BacktestExchange
+from exchange import BacktestExchange, ExanteExchange
 from strategy import Signal
 
 
@@ -15,18 +15,15 @@ class Trader:
         # TODO: это всё нужно брать из конфигов
         self.advisors = [
             Advisor(strategy="ChannelBreakout", length=400, instrument="COPX.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=400, instrument="URA.ARCA"),
+            # Advisor(strategy="ChannelBreakout", length=400, instrument="GDX.ARCA"),
         ]
 
-        symbols_to_track = list(set([a.instrument for a in self.advisors]))
+        track = list(set([a.instrument for a in self.advisors]))
 
-        dt_start = datetime(2021, 5, 1)
+        dt = datetime(2021, 5, 1)
 
-        self.exchange = BacktestExchange(
-            symbols=symbols_to_track,
-            dt_start=dt_start,
-            cash=Decimal("10000"),
-        )
+        self.exchange = BacktestExchange(track, dt_start=dt, cash=Decimal("10000"))
+        # self.exchange = ExanteExchange(track)
 
         self.max_net_value = Decimal("-Infinity")
         self.cur_drawdown = 0
@@ -40,8 +37,7 @@ class Trader:
         self.exchange.start_listen(self.on_event, loop)
 
     def stop(self, loop):
-        for instrument in self.exchange.get_positions():
-            self.close_position(instrument)
+        self.exchange.stop_listen()
         print()
         cprint(" Result ", attrs=["reverse"])
         self.portfolio_info()
