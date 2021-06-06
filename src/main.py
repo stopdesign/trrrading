@@ -40,6 +40,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("Process interrupted")
     finally:
+        trader.stop(loop)
         loop.close()
 
     total_time = (datetime.now() - dt).total_seconds()

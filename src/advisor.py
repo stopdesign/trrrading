@@ -28,10 +28,8 @@ class Advisor:
     def __str__(self):
         return f"<Advisor symbol={self.instrument} strategy={self.strategy}>"
 
-    def test_price(self, trade):
-        price = Decimal(trade["price"])
+    def test_price(self, price):
         signal = self.strategy.test(price)
-        self.strategy.update_trades(trade)
         if signal in [Signal.SHORT, Signal.LONG]:
             self.state = signal
         return signal

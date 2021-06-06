@@ -85,9 +85,10 @@ class ChannelBreakout(BaseStrategy):
             elif price > len_hi:
                 signal = Signal.LONG
 
-        # txt = colored(f" Test price: {price:0.4f} ", attrs=["reverse"])
-        # txt += f" len_lo: {len_lo}, len_hi: {len_hi},"
-        # txt += f" len: {len(self.historical_short)}, signal: {signal}"
-        # print(txt)
+        # if signal.value:
+        #     txt = colored(f" Test price: {price:0.4f} ", attrs=["reverse"])
+        #     txt += f" len_lo: {len_lo}, len_hi: {len_hi},"
+        #     txt += f" len: {len(self.historical_short)}, signal: {signal}"
+        #     print(txt)
 
         return signal

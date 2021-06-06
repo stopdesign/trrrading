@@ -1,8 +1,6 @@
-from datetime import datetime
+from collections import defaultdict
 from decimal import Decimal
-from typing import Callable, Optional
-
-from strategy import Signal
+from typing import Optional
 
 
 class BaseExchange:
@@ -10,32 +8,23 @@ class BaseExchange:
     Биржа
     """
 
-    on_trade: Callable
-    on_quote: Callable
-    on_interval: Callable
-    position: Optional[str]
-    position_size: int
-    position_open_price: Optional[Decimal]
-    cash: Decimal
-
-    def __init__(self, symbols: str):
-        # TODO: получить баланс
-        # TODO: получить список открытых позиций и висящих ордеров
-        self.position = None
-        self.position_size = 0
-        self.position_open_price = None
+    def __init__(self, symbols: list, **kwargs):
+        self.symbols = symbols
+        self.quotes = {}
+        self.positions = {}
         self.cash = Decimal(0)
+
+    def get_price(self, symbol: str, side: str) -> Optional[Decimal]:
+        if quotes := self.quotes.get(symbol):
+            if side == "sell":
+                return quotes["bid"][0]["price"]
+            if side == "buy":
+                return quotes["ask"][0]["price"]
 
     def create_order(self, side: str, size: int, symbol: str):
         raise NotImplementedError()
 
-    def open_position(self, dt: datetime, signal: Signal, size: int):
-        raise NotImplementedError()
-
-    def close_position(self, dt: datetime):
-        raise NotImplementedError()
-
-    def start_listen(self, loop=None):
+    def start_listen(self, on_event, loop=None):
         pass
 
     def stop_listen(self, loop=None):

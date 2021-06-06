@@ -17,23 +17,6 @@ def trades_to_ohlc(item: dict) -> dict:
     prices = [Decimal(t["price"]) for t in trades]
     res = {
         "timestamp": timestamp,
-        "open": str(prices[0]),
-        "low": str(min(prices)),
-        "close": str(prices[-1]),
-        "high": str(max(prices)),
-        "trade": True,
-    }
-    return res
-
-
-def trades_to_decimal_ohlc(item: dict) -> dict:
-    """
-    Конвертер формата: list of trades >> OHLC
-    """
-    timestamp, trades = item
-    prices = [Decimal(t["price"]) for t in trades]
-    res = {
-        "timestamp": timestamp,
         "open": prices[0],
         "low": min(prices),
         "close": prices[-1],
@@ -199,5 +182,5 @@ def load_from_file(file, dt_from=datetime(1900, 1, 1)):
 def parse_quote(quote):
     return {
         "price": Decimal(quote["price"]),
-        "size": int(quote["size"]),
+        "size": Decimal(quote["size"]),
     }
