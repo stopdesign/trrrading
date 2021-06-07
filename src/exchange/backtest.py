@@ -199,22 +199,5 @@ class BacktestExchange(BaseExchange):
             cprint(" SKIP TRADE: Not enough quote data ", "red", attrs=["reverse"])
             return None, None
 
-    @property
-    def net_value(self):
-        """
-        Суммарное количество бабла депозита: кэш плюс стоимость активов.
-        """
-        total_value = self.cash
-        for symbol, position in self.positions.items():
-            if position["amount"] > 0:
-                price = self.get_price(symbol, "sell")
-                total_value += position["amount"] * (price - position["price"])
-                total_value -= self.fee_rate * position["amount"]
-            if position["amount"] < 0:
-                price = self.get_price(symbol, "buy")
-                total_value += position["amount"] * (position["price"] - price)
-                total_value -= self.fee_rate * position["amount"]
-        return total_value
-
     def get_positions(self):
         return self.positions

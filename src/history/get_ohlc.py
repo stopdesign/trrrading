@@ -21,9 +21,7 @@ token = (
 )
 
 env = "live"
-ticker = "COPX.ARCA"
-# ticker = "TY.NYSE"
-# ticker = "STMP.NASDAQ"
+ticker = "SPY.ARCA"
 interval_size = "60"
 data_type = "trades"
 
@@ -38,7 +36,7 @@ def main():
 
     all_data = []
 
-    from_dt = datetime(year=2017, month=1, day=1)
+    from_dt = datetime(year=2021, month=6, day=1)
     from_dt = from_dt.replace(tzinfo=timezone.utc).timestamp()
     from_dt = int(from_dt) * 1000
 
@@ -64,7 +62,7 @@ def main():
 
             all_data += data
 
-            with open(f"{env}-{ticker}-{data_type}-{interval_size}.jsonl", "w") as f:
+            with open(f"test-{env}-{ticker}-{data_type}-{interval_size}.jsonl", "w") as f:
                 res = ""
                 for interval in all_data:
                     res += json.dumps(interval, indent=None, default=str) + "\n"

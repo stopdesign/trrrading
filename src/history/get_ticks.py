@@ -8,64 +8,37 @@ import requests
 from time import sleep
 from datetime import datetime, timezone, timedelta
 from util import interval_dt
+import pandas_market_calendars as mcal
+from settings import keys
 
 
-# env = "demo"
-# client_id = "40dd4b62-8296-46ff-9b6d-367ad9a35aed"
-# app_id = "72d39665-3477-4b48-aba6-b5688a0ab529"
-# shared_key = "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"
+env = "demo"
+api_keys = getattr(keys, env)
 
-env = "live"
-client_id = "fefca6db-f62e-4c62-8f5c-e4d588a6090e"
-app_id = "08fefb9d-8a05-4b47-8b5f-075c91d87a3a"
-shared_key = "76xvX0dEm8wSA/d/YzIH4CWptgrb/4KO"
 
+ticker = "SPY.ARCA"
 base = f"https://api-{env}.exante.eu"
-account_id = "UEA7232.001"
-# ticker = "AXON.NYSE"
-ticker = "AXON.NASDAQ"  # STMP
-ver = "3.0"
-interval = 60
-
-dt_from = datetime.now()
-dt_from = int(dt_from.replace(tzinfo=timezone.utc).timestamp())
-
-dt_exp = datetime.now() + timedelta(days=1)
-dt_exp = int(dt_exp.replace(tzinfo=timezone.utc).timestamp())
-
-permissions = ["ohlc", "feed"]
-payload = {
-    "iss": client_id,
-    "sub": app_id,
-    "iat": dt_from,
-    "exp": dt_exp,
-    "aud": permissions,
-}
-token = jwt.encode(payload, shared_key, algorithm="HS256")
-auth_headers = {
-    "Authorization": f"Bearer {token}",
-}
 url_tick = f"{base}/md/3.0/ticks/{ticker}"
 
 
-def main():
-    from_dt = datetime(year=2018, month=1, day=1)
-    for data_type in ["quotes", "trades"]:
-        print()
-        print(data_type)
-        fetch_data(data_type, from_dt)
+def get_next_headers():
+    global api_keys
+    api_keys = api_keys[1:] + [api_keys[0]]
+    key = api_keys[0]
+    payload = {"iss": key[0], "sub": key[1], "aud": ["ohlc", "feed"]}
+    token = jwt.encode(payload, key[2], algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
 
 
-def fetch_data(data_type, from_dt):
-    from_dt = int(from_dt.replace(tzinfo=timezone.utc).timestamp()) * 1000
+def fetch_data(data_type, dt_from):
+
     all_data = []
+    size = 5000
+    dt_from = int(dt_from.replace(tzinfo=timezone.utc).timestamp()) * 1000
+
     while True:
-        params = {
-            "type": data_type,
-            "from": from_dt,
-            "size": 5000,
-        }
-        res = requests.get(url_tick, params=params, headers=auth_headers)
+        params = {"type": data_type, "from": dt_from, "size": size}
+        res = requests.get(url_tick, params=params, headers=get_next_headers())
 
         if res.status_code == 200:
             data = res.json()
@@ -73,9 +46,7 @@ def fetch_data(data_type, from_dt):
                 print("EMPTY RESPONSE")
                 break
 
-            from_dt = data[0]["timestamp"] + 1
-
-            print(datetime.now(), len(data), interval_dt(data[0]))
+            dt_from = data[0]["timestamp"] + 1
 
             all_data += data
 
@@ -88,20 +59,48 @@ def fetch_data(data_type, from_dt):
                     res += json.dumps(interval, indent=None, default=str) + "\n"
                 f.write(res)
 
-            if len(data) <= 50:
+            if len(data) < size:
                 print("ALL DONE")
                 break
 
-            sleep(60)
+            sleep(1)
 
         elif res.status_code == 429:
             print("429")
-            sleep(10)
+            sleep(5)
 
         else:
             print(res.status_code)
             print(res.text)
             break
+
+
+def count_back_trading_minutes(exchange, dt, minutes):
+    """
+    Отсчитывает minutes минут назад от dt
+    с учетом рабочего расписания биржи.
+    """
+    cal = mcal.get_calendar(exchange)
+    schedule = cal.schedule(start_date=dt - timedelta(days=20), end_date=dt)
+    all_minutes = 0
+    for day, t in sorted(schedule.T.to_dict("list").items(), reverse=True):
+        t0, t1 = min(dt, t[0].to_pydatetime()), min(dt, t[1].to_pydatetime())
+        day_minutes = (t1 - t0).total_seconds() // 60
+        if day_minutes and day_minutes + all_minutes >= minutes:
+            return t[1] - timedelta(minutes=minutes - all_minutes)
+        all_minutes += day_minutes
+
+
+def main():
+    # dt_from = datetime(year=2021, month=6, day=4)
+
+    now = datetime.now().astimezone(timezone.utc)
+    dt_from = count_back_trading_minutes("NYSE", now, 500)
+
+    for data_type in ["quotes", "trades"]:
+        print()
+        print(data_type, dt_from)
+        fetch_data(data_type, dt_from)
 
 
 if __name__ == "__main__":

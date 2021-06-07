@@ -1,10 +1,11 @@
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from termcolor import cprint, colored
 from advisor import Advisor
 from exchange import BacktestExchange, ExanteExchange
 from strategy import Signal
+from util import interval_dt, parse_quote
 
 
 class Trader:
@@ -14,21 +15,46 @@ class Trader:
         # Как торговать
         # TODO: это всё нужно брать из конфигов
         self.advisors = [
-            Advisor(strategy="ChannelBreakout", length=400, instrument="COPX.ARCA"),
-            # Advisor(strategy="ChannelBreakout", length=400, instrument="GDX.ARCA"),
+            # Advisor(strategy="ChannelBreakout", length=400, instrument="COPX.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=10, instrument="GDX.ARCA"),
         ]
 
         track = list(set([a.instrument for a in self.advisors]))
 
-        dt = datetime(2021, 5, 1)
+        dt = datetime(2021, 5, 1)  # noqa
 
-        self.exchange = BacktestExchange(track, dt_start=dt, cash=Decimal("10000"))
-        # self.exchange = ExanteExchange(track)
+        # self.exchange = BacktestExchange(track, dt_start=dt, cash=Decimal("10000"))
+        self.exchange = ExanteExchange(track, cash_limit=Decimal("10000"))
+
+        # Получить из биржи исторические данные
+        # по сделкам за период до начала торгов
+        for symbol in track:
+            now = datetime.now().astimezone(timezone.utc)
+            data = self.exchange.fetch_backtest_data(symbol, now, 60)
+            print(f"Backtest data: {symbol}, len: {len(data)}")
+            for advisor in self.advisors:
+                if advisor.instrument != symbol:
+                    continue
+                print(f"Updating advisor {advisor}")
+                for event in data:
+                    if "price" in event:
+                        # Обновить текущий внутренний state стратегии
+                        advisor.test_price(Decimal(event["price"]))
+                        # Добавить новую цену
+                        advisor.strategy.update_trades(event)
+                    if "ask" in event and "bid" in event:
+                        # Добавить в биржу данные о ценах
+                        self.exchange.quotes[symbol] = {
+                            "ask": list(map(parse_quote, event["ask"])),
+                            "bid": list(map(parse_quote, event["bid"])),
+                            "dt": interval_dt(event),
+                        }
 
         self.max_net_value = Decimal("-Infinity")
-        self.cur_drawdown = 0
         self.max_drawdown = Decimal("-Infinity")
+        self.cur_drawdown = 0
 
+        print()
         self.portfolio_info()
         print()
 
@@ -36,7 +62,7 @@ class Trader:
         cprint("Start listening for updates...", "white")
         self.exchange.start_listen(self.on_event, loop)
 
-    def stop(self, loop):
+    def stop(self, loop):  # noqa
         self.exchange.stop_listen()
         print()
         cprint(" Result ", attrs=["reverse"])
@@ -57,6 +83,7 @@ class Trader:
         if event_type == "trade":
             self.on_trade(dt, symbol, payload["price"], payload["size"])
 
+        # Это должно происходить после запуска on_trade
         if event_type in ["trade", "trade_before_start"]:
             # Добавление нового значения цены в стратегию
             for advisor in self.advisors:
@@ -65,12 +92,11 @@ class Trader:
                 advisor.strategy.update_trades(
                     {"timestamp": dt.timestamp() * 1000, "price": payload["price"]}
                 )
-                # Обновить сигнал
+                # Обновить текущий внутренний state стратегии
                 advisor.test_price(payload["price"])
 
         if event_type == "quote":
             pass
-            # self.market_data.on_quote(payload)
 
         if event_type == "before_interval":
             # Тут выводится статистика на начало интервала
@@ -130,7 +156,7 @@ class Trader:
         positions = self.exchange.get_positions()
         return positions.get(symbol, BacktestExchange.empty_position)["amount"]
 
-    def on_trade(self, dt: datetime, instrument, price, volume=None):
+    def on_trade(self, dt: datetime, instrument, price, volume=None):  # noqa
         """
         Тут торговля, если стратегия дала сигнал.
         Здесь же риск-менеджмент уровня аккаунта,

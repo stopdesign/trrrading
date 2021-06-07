@@ -14,6 +14,7 @@ class BaseExchange:
         self.quotes = {}
         self.positions = {}
         self.cash = Decimal(0)
+        self.fee_rate = Decimal(0)
 
     def get_price(self, symbol: str, side: str) -> Optional[Decimal]:
         if quotes := self.quotes.get(symbol):
@@ -42,3 +43,20 @@ class BaseExchange:
 
     def get_cash_value(self):
         pass
+
+    @property
+    def net_value(self):
+        """
+        Суммарное количество бабла депозита: кэш плюс стоимость активов.
+        """
+        total_value = self.cash
+        for symbol, position in self.positions.items():
+            if position["amount"] > 0:
+                price = self.get_price(symbol, "sell")
+                total_value += position["amount"] * (price - position["price"])
+                total_value -= self.fee_rate * position["amount"]
+            if position["amount"] < 0:
+                price = self.get_price(symbol, "buy")
+                total_value += position["amount"] * (position["price"] - price)
+                total_value -= self.fee_rate * position["amount"]
+        return total_value
