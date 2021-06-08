@@ -3,7 +3,7 @@
 <style>
 
     body {
-        font: 10px sans-serif;
+        font: 12px sans-serif;
         background: #eee;
     }
 
@@ -42,15 +42,15 @@
     }
 
     path.candle.up {
-        fill: #7fe1ff;
-        stroke: #7fe1ff;
-        stroke-width: 0;
+        fill: #43d5db;
+        stroke: #43d5db;
+        stroke-width: 1;
     }
 
     path.candle.down {
-        fill: #faa6a8;
-        stroke: #faa6a8;
-        stroke-width: 0;
+        fill: #ff8cde;
+        stroke: #ff8cde;
+        stroke-width: 1;
     }
 
     path.candle.equal {
@@ -58,6 +58,20 @@
         stroke: #999;
         stroke-width: 0;
     }
+
+    path.ohlc {
+        stroke: #000000;
+        stroke-width: 1;
+    }
+
+    path.ohlc.up {
+        stroke: #00AA00;
+    }
+
+    path.ohlc.down {
+        stroke: #FF0000;
+    }
+
 
     rect.pane {
         cursor: move;
@@ -121,7 +135,7 @@
 
     var margin = {top: 20, right: 20, bottom: 30, left: 50},
             width = 2000 - margin.left - margin.right,
-            height = 500 - margin.top - margin.bottom;
+            height = 1000 - margin.top - margin.bottom;
 
     var parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
     var dateFormat = d3.timeFormat('%Y-%m-%d %H:%M:%S');
@@ -129,7 +143,7 @@
 
 
     var dim = {
-        width: 2000, height: 500,
+        width: 2000, height: 1000,
         margin: { top: 20, right: 50, bottom: 30, left: 50 },
         ohlc: { height: 305 },
         indicator: { height: 65, padding: 5 }
@@ -149,7 +163,7 @@
 
     var y = d3.scaleLinear().range([height, 0]);
 
-//    var zoom = d3.zoom().on("zoom", zoomed);
+    // var zoom = d3.zoom().on("zoom", zoomed);
 
     var zoomableInit;
 
@@ -164,6 +178,10 @@
     var heikinashiIndicator = techan.indicator.heikinashi();
 
     var close = techan.plot.close()
+            .xScale(x)
+            .yScale(y);
+
+    var ohlc = techan.plot.ohlc()
             .xScale(x)
             .yScale(y);
 
@@ -232,13 +250,7 @@
             .attr("height", dim.height)
             .append("g")
             .attr("transform", "translate(" + dim.margin.left + "," + dim.margin.top + ")");
-//            .call(zoom);
-
-
-    function zoomed() {
-      svg.select(".x.axis").call(xAxis);
-      svg.select(".y.axis").call(yAxis);
-    }
+            // .call(zoom);
 
 
 
@@ -273,20 +285,12 @@
             .style("text-anchor", "end")
             .text("Price ($)");
 
-//    svg.append("rect")
-//            .attr("class", "pane")
-//            .attr("width", width)
-//            .attr("height", height);
-////            .call(zoom);
 
-
-
-    var techanIntradayTimeInit;
 
     d3.csv("data.csv", function(error, data) {
 
-//        var accessor = candlestick.accessor();
-        var accessor = close.accessor();
+       var accessor = candlestick.accessor();
+        // var accessor = close.accessor();
 
         data = data.map(function(d) {
             return {
@@ -301,7 +305,6 @@
 
 //        var macdData = techan.indicator.macd()(data);
 //        macdScale.domain(techan.scale.plot.macd(macdData).domain());
-
 //        svg.select("g.macd .indicator-plot").datum(macdData).call(macd);
 
         svg.append("g")
@@ -313,7 +316,11 @@
         svg.append("g")
                 .attr("class", "close");
 
-        svg.append("g").attr("class", "tradearrow");
+        svg.append("g")
+                .attr("class", "ohlc");
+
+        svg.append("g")
+                .attr("class", "tradearrow");
 
         svg.append("g")
                 .attr("class", "x axis")
@@ -345,26 +352,43 @@
 
     });
 
-//    function zoomed() {
-//        var transform = d3.event.transform;
-//        techanTime.zoomable().domain(transform.rescaleX(techanTimeInit).domain());
-//        xAxis.scale(transform.rescaleX(x));
-////        draw();
-//    }
 
     function draw(data, trades) {
+        // var accessor = techan.accessor.ohlc();
+        // var accessor = candlestick.accessor();
+        var accessor = ohlc.accessor();
+
         var heikinashiData = heikinashiIndicator(data);
+
         x.domain(data.map(heikinashi.accessor().d));
-        y.domain(techan.scale.plot.ohlc(heikinashiData, heikinashi.accessor()).domain());
+        // y.domain(techan.scale.plot.ohlc(heikinashiData, heikinashi.accessor()).domain());
+        y.domain(techan.scale.plot.ohlc(data, accessor).domain());
 
-        svg.selectAll("g.heikinashi")
-                .datum(heikinashiData)
-                .call(heikinashi)
-                .call(d3.zoom().on("zoom", function () {
-                    svg.attr("transform", d3.event.transform)
-                }));
 
-        svg.selectAll("g.tradearrow").datum(trades).call(tradearrow);
+        // x.domain( Array.from(Array(100).keys()));
+        // y.domain([100, 200]);
+
+        // yPercent.domain(techan.scale.plot.percent(y, accessor(data)).domain());
+        // console.log(techan.scale.plot.ohlc(data, accessor).domain());
+
+        // svg.selectAll("g.heikinashi")
+        //         .datum(heikinashiData)
+        //         .call(heikinashi)
+        //         .call(d3.zoom().on("zoom", function () {
+        //             svg.attr("transform", d3.event.transform)
+        //         }));
+
+        // svg.select('g.candlestick')
+        //     .datum(data)
+        //     .call(candlestick);
+
+        svg.select('g.ohlc')
+            .datum(data)
+            .call(ohlc);
+
+        svg.select("g.tradearrow")
+          .datum(trades)
+          .call(tradearrow);
 
 //        svg.append("path")
 //            .datum(data) // 10. Binds data to the line
@@ -375,8 +399,6 @@
 //            .datum(data) // 10. Binds data to the line
 //            .attr("class", "line2") // Assign a class for styling
 //            .attr("d", valueline2); // 11. Calls the line generator
-
-
 
 
         svg.selectAll("g.x.axis").call(xAxis);

@@ -58,17 +58,6 @@ class ChannelBreakout(BaseStrategy):
 
         self.historical += data
 
-    def anal(self, data):
-        """
-        Анализ исторических данных.
-        Находит локальные минимум и максимум на интервале.
-        """
-        # FIXME: не сработает на intraday
-        if len(data) < self.min_length:
-            return None, None
-
-        return self.len_lo, self.len_hi
-
     # TODO: test_price VS test_time
     def test(self, price: Decimal) -> Signal:
         """
@@ -76,13 +65,14 @@ class ChannelBreakout(BaseStrategy):
         """
         signal = Signal.PASS
 
-        len_lo, len_hi = self.anal(self.historical_short)
+        if len(self.historical_short) < self.min_length:
+            return signal
 
         # Это стратегия
-        if len_lo and len_hi:
-            if price < len_lo:
+        if self.len_lo and self.len_hi:
+            if price < self.len_lo:
                 signal = Signal.SHORT
-            elif price > len_hi:
+            elif price > self.len_hi:
                 signal = Signal.LONG
 
         # if signal.value:

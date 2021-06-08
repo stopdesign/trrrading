@@ -8,6 +8,38 @@ from strategy import Signal
 from util import interval_dt, parse_quote
 
 
+def trades_to_ohlc(item: dict) -> dict:
+    """
+    Конвертер формата: list of trades >> OHLC
+    """
+    timestamp, trades = item
+    res = {
+        # "dt": datetime.fromtimestamp(timestamp // 1000),
+        "timestamp": timestamp,
+        "open": trades[0],
+        "low": min(trades),
+        "close": trades[-1],
+        "high": max(trades),
+    }
+    return res
+
+
+def reformat_ohlc(data, interval_size):
+
+    from collections import defaultdict
+    trades_by_interval = defaultdict(list)
+
+    for interval in data:
+        ts = interval["timestamp"]
+        ts_q = ts // (1000 * interval_size) * interval_size
+        trades = [
+            interval["open"], interval["low"], interval["high"], interval["close"]
+        ]
+        trades_by_interval[ts_q * 1000] += trades
+
+    return list(map(trades_to_ohlc, trades_by_interval.items()))
+
+
 class Trader:
     def __init__(self):
         cprint("Init trader", "white")
@@ -28,11 +60,12 @@ class Trader:
         dt = datetime(2021, 1, 1)  # noqa
 
         # self.exchange = BacktestExchange(track, dt_start=dt, cash=Decimal("10000"))
-        self.exchange = ExanteExchange(track, cash_limit=Decimal("10000"))
+        self.exchange = ExanteExchange(track)
 
         # Получить из биржи исторические данные
         # по сделкам за период до начала торгов
         for symbol in track:
+            print()
             now = datetime.now().astimezone(timezone.utc)
             data = self.exchange.fetch_backtest_data(symbol, now, 60)
             print(f"Backtest data: {symbol}, len: {len(data)}")
@@ -81,10 +114,14 @@ class Trader:
         with open("trades.csv", "w") as t:
             t.write(self.log_trades)
 
-        for interval in self.advisors[0].strategy.historical:
-            dt = interval_dt(interval)
-            log = "{open},{high},{low},{close}\n".format(**interval)
-            self.log_intervals += f"{dt:%Y-%m-%d %H:%M:%S},{log}"
+        for advisor in self.advisors:
+            data = advisor.strategy.historical
+            data = reformat_ohlc(data, 3600)
+
+            for interval in data:
+                dt = interval_dt(interval)
+                log = "{open},{high},{low},{close}\n".format(**interval)
+                self.log_intervals += f"{dt:%Y-%m-%d %H:%M:%S},{log}"
 
         with open("data.csv", "w") as d:
             d.write(self.log_intervals)
@@ -114,20 +151,15 @@ class Trader:
             pass
 
         if event_type == "before_interval":
-            """
-            Date,Open,High,Low,Close
-            2017-05-01 00:00:00,1263.625000,1263.625000,1263.625000,1263.625000
-            """
             pass
-            # self.log_intervals += f"{dt:%Y-%m-%d %H:%M:%S},Open,High,Low,Close"
-        #     # Тут выводится статистика на начало интервала
-        #     cprint(
-        #         f"{dt:%Y-%m-%d %H:%M}: EVENT {event_type} "
-        #         f"net: {self.exchange.net_value:0.0f}  "
-        #         f"dd: {self.cur_drawdown:0.1f}%  "
-        #         f"max dd: {self.max_drawdown:0.1f}%  ",
-        #         "white",
-        #     )
+            # Тут выводится статистика на начало интервала
+            # cprint(
+            #     f"{dt:%Y-%m-%d %H:%M}: EVENT {event_type} "
+            #     f"net: {self.exchange.net_value:0.0f}  "
+            #     f"dd: {self.cur_drawdown:0.1f}%  "
+            #     f"max dd: {self.max_drawdown:0.1f}%  ",
+            #     "white",
+            # )
 
         if event_type == "after_event":
             # Обновление статистики
