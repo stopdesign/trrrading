@@ -174,7 +174,7 @@ class BacktestExchange(BaseExchange):
                 # Одно или другое должно сократиться полностью
                 assert amount == 0 or position["amount"] == 0
 
-                print(f"PROFIT: {trade_profit}, amnt {partial_close_amount}")
+                print(f"PROFIT: {trade_profit:+0.2f}, amnt {partial_close_amount}")
                 self.cash += trade_profit
 
                 # Если amount еще остался — открыть позицию

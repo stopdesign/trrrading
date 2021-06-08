@@ -6,17 +6,15 @@ import json
 import jwt
 import requests
 from time import sleep
-from datetime import datetime, timezone, timedelta
-from util import interval_dt
-import pandas_market_calendars as mcal
+from datetime import datetime, timezone
 from settings import keys
+from util import interval_dt
 
-
-env = "demo"
+env = "live"
 api_keys = getattr(keys, env)
 
 
-ticker = "SPY.ARCA"
+ticker = "MA.NYSE"
 base = f"https://api-{env}.exante.eu"
 url_tick = f"{base}/md/3.0/ticks/{ticker}"
 
@@ -48,6 +46,8 @@ def fetch_data(data_type, dt_from):
 
             dt_from = data[0]["timestamp"] + 1
 
+            print(datetime.now().time(), len(data), interval_dt(data[0]))
+
             all_data += data
 
             all_data = [json.loads(t) for t in {json.dumps(d) for d in all_data}]
@@ -75,27 +75,8 @@ def fetch_data(data_type, dt_from):
             break
 
 
-def count_back_trading_minutes(exchange, dt, minutes):
-    """
-    Отсчитывает minutes минут назад от dt
-    с учетом рабочего расписания биржи.
-    """
-    cal = mcal.get_calendar(exchange)
-    schedule = cal.schedule(start_date=dt - timedelta(days=20), end_date=dt)
-    all_minutes = 0
-    for day, t in sorted(schedule.T.to_dict("list").items(), reverse=True):
-        t0, t1 = min(dt, t[0].to_pydatetime()), min(dt, t[1].to_pydatetime())
-        day_minutes = (t1 - t0).total_seconds() // 60
-        if day_minutes and day_minutes + all_minutes >= minutes:
-            return t[1] - timedelta(minutes=minutes - all_minutes)
-        all_minutes += day_minutes
-
-
 def main():
-    # dt_from = datetime(year=2021, month=6, day=4)
-
-    now = datetime.now().astimezone(timezone.utc)
-    dt_from = count_back_trading_minutes("NYSE", now, 500)
+    dt_from = datetime(year=2018, month=6, day=4)
 
     for data_type in ["quotes", "trades"]:
         print()

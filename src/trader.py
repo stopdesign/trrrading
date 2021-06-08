@@ -12,16 +12,20 @@ class Trader:
     def __init__(self):
         cprint("Init trader", "white")
 
+        self.log_intervals = "Date,Open,High,Low,Close\n"
+        self.log_trades = "Date,Direction,Price\n"
+
         # Как торговать
-        # TODO: это всё нужно брать из конфигов
         self.advisors = [
-            # Advisor(strategy="ChannelBreakout", length=400, instrument="COPX.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=10, instrument="GDX.ARCA"),
+            Advisor(strategy="ChBr", length=180, instrument="COPX.ARCA"),  # 70 / 17.1
+            Advisor(strategy="ChBr", length=480, instrument="COPX.ARCA"),  # 86 / 16.7
+            Advisor(strategy="ChBr", length=300, instrument="URA.ARCA"),   # 26 / 20.0
+            Advisor(strategy="ChBr", length=430, instrument="URA.ARCA"),   # 61 / 17.8
         ]
 
         track = list(set([a.instrument for a in self.advisors]))
 
-        dt = datetime(2021, 5, 1)  # noqa
+        dt = datetime(2021, 1, 1)  # noqa
 
         # self.exchange = BacktestExchange(track, dt_start=dt, cash=Decimal("10000"))
         self.exchange = ExanteExchange(track, cash_limit=Decimal("10000"))
@@ -74,6 +78,17 @@ class Trader:
             f"max dd: {self.max_drawdown:0.1f}%  ",
         )
 
+        with open("trades.csv", "w") as t:
+            t.write(self.log_trades)
+
+        for interval in self.advisors[0].strategy.historical:
+            dt = interval_dt(interval)
+            log = "{open},{high},{low},{close}\n".format(**interval)
+            self.log_intervals += f"{dt:%Y-%m-%d %H:%M:%S},{log}"
+
+        with open("data.csv", "w") as d:
+            d.write(self.log_intervals)
+
     def on_event(self, event_type, dt, symbol, payload=None):
         """
         В стриме биржи возникло новое событие.
@@ -99,14 +114,20 @@ class Trader:
             pass
 
         if event_type == "before_interval":
-            # Тут выводится статистика на начало интервала
-            cprint(
-                f"{dt:%Y-%m-%d %H:%M}: EVENT {event_type} "
-                f"net: {self.exchange.net_value:0.0f}  "
-                f"dd: {self.cur_drawdown:0.1f}%  "
-                f"max dd: {self.max_drawdown:0.1f}%  ",
-                "white",
-            )
+            """
+            Date,Open,High,Low,Close
+            2017-05-01 00:00:00,1263.625000,1263.625000,1263.625000,1263.625000
+            """
+            pass
+            # self.log_intervals += f"{dt:%Y-%m-%d %H:%M:%S},Open,High,Low,Close"
+        #     # Тут выводится статистика на начало интервала
+        #     cprint(
+        #         f"{dt:%Y-%m-%d %H:%M}: EVENT {event_type} "
+        #         f"net: {self.exchange.net_value:0.0f}  "
+        #         f"dd: {self.cur_drawdown:0.1f}%  "
+        #         f"max dd: {self.max_drawdown:0.1f}%  ",
+        #         "white",
+        #     )
 
         if event_type == "after_event":
             # Обновление статистики
@@ -208,6 +229,7 @@ class Trader:
         # Посчитать, сколько в штуках нужно купить/продать.
         # Проверить, что предлагаемое изменение больше минимального
         if price and side and asset_amount_diff > 0:
+            self.log_trades += f"{dt:%Y-%m-%d %H:%M:%S},{side},{price:0.2f}\n"
             self.update_position(side, asset_amount_diff, instrument)
 
         self.portfolio_info()
