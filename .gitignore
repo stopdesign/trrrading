@@ -7,6 +7,11 @@
 *.sqlite3
 reload
 
+# tmp data
+/front/*.csv
+/src/*.csv
+/src/history/*.jsonl
+
 # File system caches
 .DS_Store
 ._*
