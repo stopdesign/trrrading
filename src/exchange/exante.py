@@ -153,10 +153,33 @@ class ExanteExchange(BaseExchange):
                         for quote in quotes:
                             dt = interval_dt(quote)
                             symbol = quote["symbolId"]
-                            ask = list(map(parse_quote, quote["ask"]))
-                            bid = list(map(parse_quote, quote["bid"]))
-                            self.quotes[symbol] = {"ask": ask, "bid": bid, "dt": dt}
-                            on_event("quote", dt, symbol, {"ask": ask, "bid": bid})
+                            on_event("quote", dt, symbol, quote)
+
+    def process_historical_data(self, on_event):
+        """
+        Используется для наполнения историческими данными.
+        Запускается синхронно.
+        """
+        now = datetime.now().astimezone(timezone.utc)
+        data = []
+        for symbol in self.symbols:
+            data += self.fetch_backtest_data(symbol, now, 60)
+        data = sorted(data, key=lambda x: x["timestamp"])
+
+        for event in data:
+            symbol = event.get("symbolId")
+
+            if not symbol or "timestamp" not in event:
+                continue
+
+            dt = interval_dt(event)
+
+            if "price" in event:
+                on_event("historical_trade", dt, symbol, parse_quote(event))
+            if "ask" in event:
+                ask = list(map(parse_quote, event["ask"]))
+                bid = list(map(parse_quote, event["bid"]))
+                on_event("historical_quote", dt, symbol, {"ask": ask, "bid": bid})
 
     def trade(self, side: str, size: int, symbol: str):
         """
@@ -203,9 +226,10 @@ class ExanteExchange(BaseExchange):
                 last_update = res_json["orderState"]["lastUpdate"]
                 price, size = self.calc_av_price(positions)
                 cprint(
-                    f"ORDER DONE: {last_update}, price: {price}, size: {size}",
+                    f"TRADE DONE: {last_update}, price: {price:0.4f}, size: {size}",
                     color="cyan",
                 )
+                sleep(1)
                 break
 
         return price, size

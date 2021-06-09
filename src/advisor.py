@@ -1,34 +1,70 @@
+import pandas_market_calendars as mcal
+from datetime import timedelta, datetime, timezone
 from strategy import ChannelBreakout, Signal
+from util import interval_dt
 
 
 class Advisor:
     """
-    Штука, которая знает текущее состояние (из сигнала по историческим данным)
-    и может менять его на основе торговых сигналов от стратегий.
+    Знает последнее рекомендованное направление и может
+    менять его на основе торговых сигналов от стратегий.
 
-    Состояния (без пирамидинга):
-    — long
-    — none
-    — short
+    Инициализируются на основе исторических данных.
 
-    Сигналы:
-    — buy
-    — none
-    — sell
-
-    Состояния инициализируются на основе исторических данных.
+    Знает, можно ли торговать в extra_hours,
+    и нужно ли передавать такие данные в стратегию.
     """
 
     def __init__(self, strategy, length, instrument, extra_hours=False):
+        self.strategy = ChannelBreakout(length=length, min_length=1)
         self.instrument = instrument
         self.state = None
-        self.strategy = ChannelBreakout(length=length, min_length=1)
+        self.strategy_name = strategy
+        self.extra_hours = extra_hours
+
+        self.use_extra_hours_data = bool(extra_hours)
+        self.trade_in_extra_hours = bool(extra_hours)
+
+        start = datetime.utcnow() - timedelta(days=365*5)
+        end = datetime.utcnow() + timedelta(days=365)
+        self.schedule = self.init_schedule(start, end)
 
     def __str__(self):
         return f"<Advisor symbol={self.instrument} strategy={self.strategy}>"
 
+    @property
+    def exchange_symbol(self):
+        exchange_symbol = self.instrument.split(".")[1]
+        return exchange_symbol.replace("ARCA", "NYSE")
+
+    def init_schedule(self, start, end):
+        """
+        Добыть расписание биржи, закешировать по дням.
+        """
+        by_days = {}
+        cal = mcal.get_calendar(self.exchange_symbol).schedule(start, end)
+        for day, t in sorted(cal.T.to_dict("list").items()):
+            by_days[day.date()] = [t[0].to_pydatetime(), t[1].to_pydatetime()]
+        return by_days
+
+    def is_main_session(self, dt):
+        dt = dt.astimezone(timezone.utc)
+        t0, t1 = self.schedule.get(dt.date(), (None, None))
+        return t0 and t1 and t0 < dt < t1
+
+    def update_strategy(self, trade):
+        dt = interval_dt(trade)
+        if not (self.is_main_session(dt) or self.use_extra_hours_data):
+            return
+        # Обновить текущий внутренний state стратегии
+        self.test_price(interval_dt(trade), trade["price"])
+        # Обновить набор исторических данных
+        self.strategy.update_trades(trade)
+
     def test_price(self, dt, price):
-        signal = self.strategy.test(dt, price)
+        if not (self.is_main_session(dt) or self.trade_in_extra_hours):
+            return Signal.PASS
+        signal = self.strategy.test_price(dt, price)
         if signal in [Signal.SHORT, Signal.LONG]:
             self.state = signal
         return signal

@@ -18,6 +18,13 @@ class BacktestExchange(BaseExchange):
         self.cash_initial = kwargs.get("cash", Decimal(10_000))
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
+        self.all_data = self.load_data()
+
+    def load_data(self):
+        data = []
+        for symbol in self.symbols:
+            data += self.load_tick_data(symbol, self.dt_from)
+        return sorted(data, key=lambda x: x["timestamp"])
 
     def load_tick_data(self, symbol, dt_from):
         """
@@ -66,18 +73,12 @@ class BacktestExchange(BaseExchange):
 
         return data
 
-    def data_stream(self, on_event):
+    def process_historical_data(self, on_event):
         """
-        Изображаю события, приходящие с биржи.
+        Прогнать события по историческим данным.
+        Предзаполняются цены и сигналы, торговля не происходит.
         """
-        data = []
-        for symbol in self.symbols:
-            data += self.load_tick_data(symbol, self.dt_from)
-
-        data = sorted(data, key=lambda x: x["timestamp"])
-
-        prev_dt = None
-        for event in data:
+        for event in self.all_data:
             symbol = event.get("symbolId")
 
             if not symbol or "timestamp" not in event:
@@ -85,10 +86,30 @@ class BacktestExchange(BaseExchange):
 
             dt = interval_dt(event)
 
-            # Используется для наполнения стратегии историческими данными
+            # Используется для наполнения историческими данными
             if dt < self.dt_start:
                 if "price" in event:
-                    on_event("trade_before_start", dt, symbol, parse_quote(event))
+                    on_event("historical_trade", dt, symbol, parse_quote(event))
+                if "ask" in event:
+                    ask = list(map(parse_quote, event["ask"]))
+                    bid = list(map(parse_quote, event["bid"]))
+                    on_event("historical_quote", dt, symbol, {"ask": ask, "bid": bid})
+
+    def data_stream(self, on_event):
+        """
+        Изображаю события, приходящие с биржи.
+        """
+        prev_dt = None
+        for event in self.all_data:
+            symbol = event.get("symbolId")
+
+            if not symbol or "timestamp" not in event:
+                continue
+
+            dt = interval_dt(event)
+
+            # Используется для наполнения историческими данными
+            if dt < self.dt_start:
                 continue
 
             # Аналитика перед открытием нового интервала
@@ -104,7 +125,6 @@ class BacktestExchange(BaseExchange):
             if "ask" in event and "bid" in event:
                 ask = list(map(parse_quote, event["ask"]))
                 bid = list(map(parse_quote, event["bid"]))
-                self.quotes[symbol] = {"ask": ask, "bid": bid, "dt": dt}
                 on_event("quote", dt, symbol, {"ask": ask, "bid": bid})
 
             # Любое событие биржи

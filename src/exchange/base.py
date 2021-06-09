@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
-
 from termcolor import cprint
+from util import parse_quote
 
 
 class BaseExchange:
@@ -25,6 +26,19 @@ class BaseExchange:
                 return quotes["bid"][0]["price"]
             if side == "buy":
                 return quotes["ask"][0]["price"]
+
+    def add_quote(self, dt, symbol, event):
+        current_quote = self.quotes.get(symbol)
+        if current_quote and current_quote["dt"] > dt:
+            return
+        self.quotes[symbol] = {
+            "ask": list(map(parse_quote, event["ask"])),
+            "bid": list(map(parse_quote, event["bid"])),
+            "dt": dt,
+        }
+
+    def fetch_backtest_data(self, symbol, start_at, minutes):
+        pass
 
     def trade(self, side: str, amount: int, symbol: str):
         raise NotImplementedError()

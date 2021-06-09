@@ -60,7 +60,7 @@ class ChannelBreakout(BaseStrategy):
         self.historical += data
 
     # TODO: test_price VS test_time
-    def test(self, dt: datetime, price: Decimal) -> Signal:
+    def test_price(self, dt: datetime, price: Decimal) -> Signal:
         """
         Проверить сигнал стратегии после регистрации сделки.
         """
@@ -76,12 +76,12 @@ class ChannelBreakout(BaseStrategy):
             elif price > self.len_hi:
                 signal = Signal.LONG
 
-        if signal.value:
-            txt = f"{dt:%Y-%m-%d %H:%M:%S} "
-            txt += colored(f" Price: {price:0.4f} ", attrs=["reverse"])
-            txt += f" [{self.len_lo:0.4f}, {self.len_hi:0.4f}] • "
-            txt += f"Len: {len(self.historical_short)} • "
-            txt += colored(f"{signal.value}", signal.color)
-            print(txt)
+        # if signal.value:
+        #     txt = f"{dt:%Y-%m-%d %H:%M:%S} "
+        #     txt += colored(f" Price: {price:0.4f} ", attrs=["reverse"])
+        #     txt += f" [{self.len_lo:0.4f}, {self.len_hi:0.4f}] • "
+        #     txt += f"Len: {len(self.historical_short)} • "
+        #     txt += colored(f"{signal.value}", signal.color)
+        #     print(txt)
 
         return signal
