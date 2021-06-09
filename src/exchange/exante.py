@@ -1,3 +1,4 @@
+import asyncio
 import json
 import aiohttp
 import jwt
@@ -25,7 +26,7 @@ shared_key = "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"
 
 
 class ExanteExchange(BaseExchange):
-    def __init__(self, symbols: list, **kwargs):
+    def __init__(self, symbols: list, **kwargs):  # noqa
         super().__init__(symbols)
 
         self.symbols = symbols
@@ -43,6 +44,7 @@ class ExanteExchange(BaseExchange):
         self.cash = self.get_cash_value()
 
     def start_listen(self, on_event, loop=None):
+        loop.create_task(self.metronom(on_event))
         loop.create_task(self.trade_stream(on_event))
         loop.create_task(self.quote_stream(on_event))
 
@@ -103,6 +105,21 @@ class ExanteExchange(BaseExchange):
                 print("JSONDecodeError", line, data)
                 raise e
         return quotes
+
+    async def metronom(self, on_event):
+        """
+        В начале каждого интервала запускает обновление historical.
+        """
+        prev_dt = datetime(2000, 1, 1)
+        while True:
+            dt = datetime.utcnow()
+            if dt.minute != prev_dt.minute:
+                norm_dt = dt.replace(second=0, microsecond=0)
+                # раз в минуту обновлять позиции
+                self.get_positions()
+                on_event("before_interval", norm_dt)
+            await asyncio.sleep(0.5)
+            prev_dt = dt
 
     async def trade_stream(self, on_event):
         """
@@ -225,10 +242,14 @@ class ExanteExchange(BaseExchange):
         ai = self.load_account_info()
         res = {}
         for position in ai["positions"]:
-            res[position["symbolId"]] = {
-                "amount": Decimal(position["quantity"]),
-                "price": Decimal(position["averagePrice"]),
-            }
+            amount = Decimal(position["quantity"])
+            if amount:
+                price = Decimal(position["averagePrice"])
+            else:
+                price = self.empty_position["price"]
+            res[position["symbolId"]] = {"amount": amount, "price": price}
+        # Кеширование позиций
+        self.positions = res
         return res
 
     def load_account_info(self):

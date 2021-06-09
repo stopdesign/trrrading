@@ -1,7 +1,7 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
-
+from collections import defaultdict
 from termcolor import colored, cprint
 
 
@@ -9,7 +9,7 @@ def interval_dt(interval):
     return datetime.fromtimestamp(interval["timestamp"] // 1000)
 
 
-def trades_to_ohlc(item: dict) -> dict:
+def trades_to_ohlc(item) -> dict:
     """
     Конвертер формата: list of trades >> OHLC
     """
@@ -23,6 +23,27 @@ def trades_to_ohlc(item: dict) -> dict:
         "high": max(prices),
     }
     return res
+
+
+def reformat_ohlc(data, interval_size):
+    """
+    Сгруппировать OHLC в более крупные интервалы.
+    """
+
+    trades_by_interval = defaultdict(list)
+
+    for interval in data:
+        ts = interval["timestamp"]
+        ts_q = ts // (1000 * interval_size) * interval_size
+        trades = [
+            {"price": interval["open"]},
+            {"price": interval["high"]},
+            {"price": interval["low"]},
+            {"price": interval["close"]},
+        ]
+        trades_by_interval[ts_q * 1000] += trades
+
+    return list(map(trades_to_ohlc, trades_by_interval.items()))
 
 
 def normalize_ohlc(data, interval_size=60):

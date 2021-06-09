@@ -1,43 +1,17 @@
+import sys
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from termcolor import cprint, colored
 from advisor import Advisor
 from exchange import BacktestExchange, ExanteExchange
 from strategy import Signal
-from util import interval_dt, parse_quote
+from util import interval_dt, parse_quote, reformat_ohlc
+import pandas_market_calendars as mcal
 
 
-def trades_to_ohlc(item: dict) -> dict:
-    """
-    Конвертер формата: list of trades >> OHLC
-    """
-    timestamp, trades = item
-    res = {
-        # "dt": datetime.fromtimestamp(timestamp // 1000),
-        "timestamp": timestamp,
-        "open": trades[0],
-        "low": min(trades),
-        "close": trades[-1],
-        "high": max(trades),
-    }
-    return res
-
-
-def reformat_ohlc(data, interval_size):
-
-    from collections import defaultdict
-    trades_by_interval = defaultdict(list)
-
-    for interval in data:
-        ts = interval["timestamp"]
-        ts_q = ts // (1000 * interval_size) * interval_size
-        trades = [
-            interval["open"], interval["low"], interval["high"], interval["close"]
-        ]
-        trades_by_interval[ts_q * 1000] += trades
-
-    return list(map(trades_to_ohlc, trades_by_interval.items()))
+CURSOR_UP_ONE = '\x1b[1A'
+ERASE_LINE = '\x1b[2K'
 
 
 class Trader:
@@ -49,15 +23,29 @@ class Trader:
 
         # Как торговать
         self.advisors = [
-            Advisor(strategy="ChBr", length=180, instrument="COPX.ARCA"),  # 70 / 17.1
-            Advisor(strategy="ChBr", length=480, instrument="COPX.ARCA"),  # 86 / 16.7
-            Advisor(strategy="ChBr", length=300, instrument="URA.ARCA"),   # 26 / 20.0
-            Advisor(strategy="ChBr", length=430, instrument="URA.ARCA"),   # 61 / 17.8
+            Advisor(strategy="ChBr", length=2, instrument="COPX.ARCA"),  # 70 / 17.1
+            # Advisor(strategy="ChBr", length=480, instrument="COPX.ARCA"),  # 86 / 16.7
+            # Advisor(strategy="ChBr", length=300, instrument="URA.ARCA"),   # 26 / 20.0
+            # Advisor(strategy="ChBr", length=430, instrument="URA.ARCA"),   # 61 / 17.8
         ]
 
         track = list(set([a.instrument for a in self.advisors]))
 
         dt = datetime(2021, 1, 1)  # noqa
+
+        self.schedule = {}
+        for symbol in track:
+            exchange = symbol.split(".")[1]
+            exchange = exchange.replace("ARCA", "NYSE")
+            cal = mcal.get_calendar(exchange)
+            start_date = dt - timedelta(days=20)
+            end_date = datetime.utcnow() + timedelta(days=300)
+            schedule = cal.schedule(start_date=start_date, end_date=end_date)
+            schedule_by_day = {}
+            for day, t in sorted(schedule.T.to_dict("list").items()):
+                t0, t1 = t[0].to_pydatetime(), t[1].to_pydatetime()
+                schedule_by_day[day.date()] = [t0, t1]
+            self.schedule[symbol] = schedule_by_day
 
         # self.exchange = BacktestExchange(track, dt_start=dt, cash=Decimal("10000"))
         self.exchange = ExanteExchange(track)
@@ -68,15 +56,16 @@ class Trader:
             print()
             now = datetime.now().astimezone(timezone.utc)
             data = self.exchange.fetch_backtest_data(symbol, now, 60)
-            print(f"Backtest data: {symbol}, len: {len(data)}")
             for advisor in self.advisors:
                 if advisor.instrument != symbol:
                     continue
-                print(f"Updating advisor {advisor}")
+                print()
+                cprint(f"Updating {advisor}", "white")
                 for event in data:
+                    event_dt = interval_dt(event)
                     if "price" in event:
                         # Обновить текущий внутренний state стратегии
-                        advisor.test_price(Decimal(event["price"]))
+                        advisor.test_price(event_dt, Decimal(event["price"]))
                         # Добавить новую цену
                         advisor.strategy.update_trades(event)
                     if "ask" in event and "bid" in event:
@@ -126,11 +115,11 @@ class Trader:
         with open("data.csv", "w") as d:
             d.write(self.log_intervals)
 
-    def on_event(self, event_type, dt, symbol, payload=None):
+    def on_event(self, event_type, dt, symbol=None, payload=None):
         """
         В стриме биржи возникло новое событие.
         """
-        # cprint(f"{dt:%Y-%m-%d %H:%M:%S}: EVENT {event_type}", "white")
+        # cprint(f"{dt:%Y-%m-%d %H:%M:%S}: EVENT {event_type} {symbol}", "white")
 
         if event_type == "trade":
             self.on_trade(dt, symbol, payload["price"], payload["size"])
@@ -145,21 +134,29 @@ class Trader:
                     {"timestamp": dt.timestamp() * 1000, "price": payload["price"]}
                 )
                 # Обновить текущий внутренний state стратегии
-                advisor.test_price(payload["price"])
+                advisor.test_price(dt, payload["price"])
 
         if event_type == "quote":
             pass
 
         if event_type == "before_interval":
-            pass
             # Тут выводится статистика на начало интервала
-            # cprint(
-            #     f"{dt:%Y-%m-%d %H:%M}: EVENT {event_type} "
-            #     f"net: {self.exchange.net_value:0.0f}  "
-            #     f"dd: {self.cur_drawdown:0.1f}%  "
-            #     f"max dd: {self.max_drawdown:0.1f}%  ",
-            #     "white",
-            # )
+            sys.stdout.write(CURSOR_UP_ONE)
+            sys.stdout.write(ERASE_LINE)
+            cprint(
+                f"{dt:%Y-%m-%d %H:%M:%S}: "
+                f"net: {self.exchange.net_value:0.0f}  "
+                f"dd: {self.cur_drawdown:0.1f}%  "
+                f"max dd: {self.max_drawdown:0.1f}%  ",
+                "white",
+            )
+
+            track = list(set([a.instrument for a in self.advisors]))
+            for symbol in track:
+                t0, t1 = self.schedule[symbol][dt.date()]
+                is_open = t0 and t1 and t0 < dt.astimezone(timezone.utc) < t1
+                status_str = "OPEN" if is_open else "CLOSED"
+                print(f"{dt:%Y-%m-%d %H:%M:%S}: {symbol}, {status_str}")
 
         if event_type == "after_event":
             # Обновление статистики
@@ -183,6 +180,10 @@ class Trader:
                 price = self.exchange.get_price(instrument, "sell")
                 amount = math.floor(buying_power / price)
                 res -= amount
+
+        # Если нельзя шортить
+        res = max(Decimal(0), res)
+
         return res
 
     def portfolio_info(self):
@@ -215,11 +216,13 @@ class Trader:
         Здесь же риск-менеджмент уровня аккаунта,
         контроль использования маржи.
         """
-        # print()
-        # cprint(f"ON_TRADE {dt} {symbol} {price}", "cyan")
+        print()
+        cprint(f"ON_TRADE {dt} {instrument} {price}", "cyan")
+
+        self.portfolio_info()
 
         # Протестировать новую цену
-        total_buy, total_sell = self.test_new_price(instrument, price)
+        total_buy, total_sell = self.test_new_price(instrument, dt, price)
 
         # Это всё должно быть после тестирования новой цены
         current_position = self.get_current_position(instrument)
@@ -229,6 +232,7 @@ class Trader:
 
         # Всё равно ничего сделать нельзя
         if not (diff and (total_buy or total_sell)):
+            cprint(f"SKIP: diff: {diff}, total_buy: {total_buy}, total_sell: {total_sell}")
             return
 
         # Посчитать, куда нужно торговать,
@@ -267,7 +271,7 @@ class Trader:
         self.portfolio_info()
         print()
 
-    def test_new_price(self, instrument, price):
+    def test_new_price(self, instrument, dt, price):
         # Сумма, которой может управлять один советник
         buying_power = self.exchange.net_value / len(self.advisors)
 
@@ -279,7 +283,7 @@ class Trader:
 
             old_state = advisor.state
 
-            if signal := advisor.test_price(price):
+            if signal := advisor.test_price(dt, price):
                 if signal == Signal.LONG:
                     cur_price = self.exchange.get_price(instrument, "buy")
                     amount = math.floor(buying_power / cur_price)

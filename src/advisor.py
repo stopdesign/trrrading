@@ -19,7 +19,7 @@ class Advisor:
     Состояния инициализируются на основе исторических данных.
     """
 
-    def __init__(self, strategy, length, instrument):
+    def __init__(self, strategy, length, instrument, extra_hours=False):
         self.instrument = instrument
         self.state = None
         self.strategy = ChannelBreakout(length=length, min_length=1)
@@ -27,8 +27,8 @@ class Advisor:
     def __str__(self):
         return f"<Advisor symbol={self.instrument} strategy={self.strategy}>"
 
-    def test_price(self, price):
-        signal = self.strategy.test(price)
+    def test_price(self, dt, price):
+        signal = self.strategy.test(dt, price)
         if signal in [Signal.SHORT, Signal.LONG]:
             self.state = signal
         return signal

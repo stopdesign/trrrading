@@ -1,5 +1,5 @@
 from collections import defaultdict
-from util import trades_to_ohlc, normalize_ohlc
+from util import trades_to_ohlc
 
 
 class BaseStrategy:
@@ -27,10 +27,10 @@ class BaseStrategy:
             ts = last_known_interval["timestamp"]
             # print("last_known_interval TS:", ts)
             trades_by_interval[ts] = [
-                {"timestamp": ts, "price": last_known_interval["open"], "size": "1"},
-                {"timestamp": ts, "price": last_known_interval["high"], "size": "1"},
-                {"timestamp": ts, "price": last_known_interval["low"], "size": "1"},
-                {"timestamp": ts, "price": last_known_interval["close"], "size": "1"},
+                {"price": last_known_interval["open"], "size": "1"},
+                {"price": last_known_interval["high"], "size": "1"},
+                {"price": last_known_interval["low"], "size": "1"},
+                {"price": last_known_interval["close"], "size": "1"},
             ]
 
         ts_q = trade["timestamp"] // (1000 * self.interval_size)
@@ -38,6 +38,4 @@ class BaseStrategy:
 
         ohlc_by_interval = list(map(trades_to_ohlc, trades_by_interval.items()))
 
-        # self.historical += normalize_ohlc(ohlc_by_interval)
-        # self.add_to_historical(normalize_ohlc(ohlc_by_interval))
         self.add_to_historical(ohlc_by_interval)
