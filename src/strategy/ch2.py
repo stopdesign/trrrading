@@ -1,12 +1,17 @@
+import math
+import sys
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
+from statistics import mean
+
 from strategy import BaseStrategy, Signal
-from termcolor import colored
+from termcolor import colored, cprint
+
 from util import trades_to_ohlc
 
 
-class ChannelBreakout(BaseStrategy):
+class ChannelBreakout2(BaseStrategy):
     intraday_only = False
     arr_lo = []
     arr_hi = []
@@ -34,6 +39,21 @@ class ChannelBreakout(BaseStrategy):
         Интервалы создаются, даже если в этот период не было сделок.
         """
         trades_by_interval = defaultdict(list)
+
+        if self.historical_short:
+            # print(self.historical_short[-10:])
+            av_10 = mean([
+                p["close"] for p in self.historical_short[-30:]
+            ])
+            # print(abs(av_10 - trade["price"]))
+            if abs(av_10 - trade["price"]) > 0.1:
+                self.historical_short = self.historical_short[-400:]
+            if abs(av_10 - trade["price"]) > 0.2:
+                self.historical_short = self.historical_short[-300:]
+            if abs(av_10 - trade["price"]) > 0.8:
+                self.historical_short = self.historical_short[-200:]
+            # if abs(av_10 - trade["price"]) > 0.5:
+            #     self.historical_short = self.historical_short[-100:]
 
         # Смикшировать последний интервал и новую сделку
         if self.historical:
@@ -65,27 +85,33 @@ class ChannelBreakout(BaseStrategy):
                 self.historical_short.append(interval_ohlc)
                 self.historical_last_ts = ts
 
-        # Пересчитывать len_lo и len_hi оптимальным образом
-        if len(self.historical_short) > self.length:
-            removed_historical = self.historical_short.pop(0)
-            if removed_historical["low"] == self.len_lo:
-                self.len_lo = Decimal("Infinity")
-            if removed_historical["high"] == self.len_hi:
-                self.len_hi = Decimal("-Infinity")
+        # # Пересчитывать len_lo и len_hi оптимальным образом
+        # if len(self.historical_short) > self.length:
+        #     removed_historical = self.historical_short.pop(0)
+        #     if removed_historical["low"] == self.len_lo:
+        #         self.len_lo = Decimal("Infinity")
+        #     if removed_historical["high"] == self.len_hi:
+        #         self.len_hi = Decimal("-Infinity")
+        #
+        # if self.len_lo == Decimal("Infinity"):
+        #     for interval in self.historical_short:
+        #         if interval["low"] < self.len_lo:
+        #             self.len_lo = interval["low"]
+        # else:
+        #     self.len_lo = min(self.len_lo, self.historical_short[-1]["low"])
+        #
+        # if self.len_hi == Decimal("-Infinity"):
+        #     for interval in self.historical_short:
+        #         if interval["high"] > self.len_hi:
+        #             self.len_hi = interval["high"]
+        # else:
+        #     self.len_hi = max(self.len_hi, self.historical_short[-1]["high"])
 
-        if self.len_lo == Decimal("Infinity"):
-            for interval in self.historical_short:
-                if interval["low"] < self.len_lo:
-                    self.len_lo = interval["low"]
-        else:
-            self.len_lo = min(self.len_lo, self.historical_short[-1]["low"])
+        self.historical_short = self.historical_short[-self.length:]
 
-        if self.len_hi == Decimal("-Infinity"):
-            for interval in self.historical_short:
-                if interval["high"] > self.len_hi:
-                    self.len_hi = interval["high"]
-        else:
-            self.len_hi = max(self.len_hi, self.historical_short[-1]["high"])
+        # тупой способ посчитать min/max
+        self.len_lo = min(i["low"] for i in self.historical_short)
+        self.len_hi = max(i["high"] for i in self.historical_short)
 
         self.historical += data
 

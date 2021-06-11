@@ -14,7 +14,7 @@ env = "live"
 api_keys = getattr(keys, env)
 
 
-ticker = "V.NYSE"
+ticker = "DIA.ARCA"
 interval_size = "60"
 data_type = "trades"
 
@@ -39,7 +39,7 @@ def main():
     all_data = []
     size = 5000
 
-    from_dt = datetime(year=2018, month=1, day=1)
+    from_dt = datetime(year=2015, month=1, day=1)
     from_dt = from_dt.replace(tzinfo=timezone.utc).timestamp()
     from_dt = int(from_dt) * 1000
 

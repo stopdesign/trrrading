@@ -81,6 +81,6 @@ class BaseExchange:
                 if price is None:
                     cprint(f"WARNING: {symbol} price is {price}", "yellow")
                     continue
-                total_value += position["amount"] * (position["price"] - price)
+                total_value += position["amount"] * (price - position["price"])
                 total_value -= self.fee_rate * position["amount"]
         return total_value

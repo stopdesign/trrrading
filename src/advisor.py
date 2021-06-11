@@ -1,6 +1,6 @@
 import pandas_market_calendars as mcal
 from datetime import timedelta, datetime, timezone
-from strategy import ChannelBreakout, Signal
+from strategy import Signal, all_strategies
 from util import interval_dt
 
 
@@ -16,13 +16,14 @@ class Advisor:
     """
 
     def __init__(self, strategy, length, instrument, extra_hours=False):
-        self.strategy = ChannelBreakout(length=length, min_length=1)
+        strategy_class = all_strategies[strategy]
+        self.strategy = strategy_class(length=length, min_length=min(30, length))
         self.instrument = instrument
         self.state = None
         self.strategy_name = strategy
         self.extra_hours = extra_hours
 
-        self.use_extra_hours_data = bool(extra_hours)
+        self.use_extra_hours_data = True  # bool(extra_hours)
         self.trade_in_extra_hours = bool(extra_hours)
 
         start = datetime.utcnow() - timedelta(days=365*5)

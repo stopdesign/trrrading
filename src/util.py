@@ -34,7 +34,7 @@ def reformat_ohlc(data, interval_size):
 
     for interval in data:
         ts = interval["timestamp"]
-        ts_q = ts // (1000 * interval_size) * interval_size
+        ts_q = (1 + ts // (1000 * interval_size)) * interval_size
         trades = [
             {"price": interval["open"]},
             {"price": interval["high"]},
@@ -188,7 +188,7 @@ def print_order_info(dt, signal, price, position_size, cash):
     cprint(res, color)
 
 
-def load_from_file(file, dt_from=datetime(1900, 1, 1)):
+def load_from_file(file, dt_from=datetime(1900, 1, 1), symbol=None):
     data = []
     with open(file, "r") as f:
         min_ts = str(int(dt_from.timestamp()))
@@ -196,6 +196,8 @@ def load_from_file(file, dt_from=datetime(1900, 1, 1)):
             if line[14:27] < min_ts:
                 continue
             interval = json.loads(line)
+            if symbol:
+                interval["symbolId"] = symbol
             data.append(interval)
     return data
 
@@ -203,5 +205,5 @@ def load_from_file(file, dt_from=datetime(1900, 1, 1)):
 def parse_quote(quote):
     return {
         "price": Decimal(quote["price"]),
-        "size": Decimal(quote["size"]),
+        "size": Decimal(quote.get("size", 1)),
     }
