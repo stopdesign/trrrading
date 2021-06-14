@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from termcolor import cprint
@@ -19,6 +18,8 @@ class BaseExchange:
         self.positions = {}
         self.cash = Decimal(0)
         self.fee_rate = Decimal(0)
+        self.last_event = {}
+        self.finished = False
 
     def get_price(self, symbol: str, side: str) -> Optional[Decimal]:
         if quotes := self.quotes.get(symbol):
@@ -47,7 +48,7 @@ class BaseExchange:
         pass
 
     def stop_listen(self, loop=None):
-        pass
+        self.finished = True
 
     def print_final_info(self):
         pass

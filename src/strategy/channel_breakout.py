@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
 from strategy import BaseStrategy, Signal
-from termcolor import colored
+from termcolor import colored, cprint
 from util import trades_to_ohlc
 
 
@@ -17,7 +17,7 @@ class ChannelBreakout(BaseStrategy):
         self.historical_last_ts = None
 
         self.length = params.get("length", 250)
-        self.min_length = params.get("min_length", 30)
+        self.min_length = params.get("min_length", 100)
 
         # локальные минимумы/максимумы последнего интервала
         self.len_lo = Decimal("Infinity")
@@ -96,7 +96,9 @@ class ChannelBreakout(BaseStrategy):
         """
         signal = Signal.PASS
 
-        if len(self.historical_short) < self.min_length:
+        data_len = len(self.historical_short)
+        if data_len < self.min_length:
+            # cprint(f"PASS: lack of data, {data_len} < {self.min_length}", "yellow")
             return signal
 
         # Это стратегия

@@ -37,18 +37,21 @@ class ExanteExchange(BaseExchange):
         self.url_quotes = f"{base}/md/{ver}/feed/{symbols_str}"
         self.url_orders = f"{base}/trade/{ver}/orders"
 
-        self.fee_rate = Decimal("0.02")
+        # self.url_trades = "http://0.0.0.0:8080/trades/"
 
-        self.auth_headers = self.get_headers()
+        self.fee_rate = Decimal("0.02")
 
         self.cash = self.get_cash_value()
 
     def start_listen(self, on_event, loop=None):
+        task = asyncio.to_thread(self.healthcheck_loop)
+        asyncio.gather(task, return_exceptions=True)
         loop.create_task(self.metronom(on_event))
         loop.create_task(self.trade_stream(on_event))
         loop.create_task(self.quote_stream(on_event))
 
-    def get_headers(self):
+    @property
+    def auth_headers(self):
         iat = int(datetime.now().replace(tzinfo=timezone.utc).timestamp())
         exp = iat + int(timedelta(days=30).total_seconds())
         aud = ["ohlc", "feed", "orders", "summary", "accounts"]
@@ -56,7 +59,8 @@ class ExanteExchange(BaseExchange):
         token = jwt.encode(payload, shared_key, algorithm="HS256")
         return {"Authorization": f"Bearer {token}"}
 
-    def next_data_headers(self):
+    @property
+    def data_headers(self):
         global api_keys
         api_keys = api_keys[1:] + [api_keys[0]]
         key = api_keys[0]
@@ -106,54 +110,116 @@ class ExanteExchange(BaseExchange):
                 raise e
         return quotes
 
+    def healthcheck_loop(self):
+        interval = timedelta(seconds=5)
+        prev_dt = datetime.utcnow()
+        while not self.finished:
+            if datetime.utcnow() - prev_dt > interval:
+                self.do_healthcheck()
+                prev_dt = datetime.utcnow()
+            sleep(0.5)  # sleep маленький, чтобы цикл не зависал
+
+    def do_healthcheck(self):
+        """
+        Проверить, как давно происходили разные события.
+        """
+        self.check_event_delay("healthcheck", 10)
+        self.check_event_delay("trade_heartbeat", 60)
+        self.check_event_delay("quote_heartbeat", 60)
+        self.check_event_delay("trade", 3600)
+        self.check_event_delay("quote", 3600)
+        self.last_event["healthcheck"] = datetime.utcnow()
+
+    def check_event_delay(self, event_name, max_delay):
+        """
+        Проверить, не отстало ли событие от расписания.
+        Отправить алерт, если что.
+        """
+        last_event_at = self.last_event.get(event_name)
+        if not last_event_at:
+            return
+        timeout = timedelta(seconds=max_delay)
+        actual_delay = datetime.utcnow() - last_event_at
+        if actual_delay > timeout:
+            cprint(
+                f"Event {event_name} is late: "
+                f"{actual_delay.total_seconds():0.0f} "
+                f"> {max_delay}",
+                "red",
+            )
+
     async def metronom(self, on_event):
         """
         В начале каждого интервала запускает обновление historical.
         """
         prev_dt = datetime(2000, 1, 1)
-        while True:
+        while not self.finished:
             dt = datetime.utcnow()
             if dt.minute != prev_dt.minute:
                 norm_dt = dt.replace(second=0, microsecond=0)
                 # раз в минуту обновлять позиции
                 self.get_positions()
                 on_event("before_interval", norm_dt)
-            await asyncio.sleep(0.5)
+            self.last_event["metronom"] = datetime.utcnow()
+            await asyncio.sleep(1)
             prev_dt = dt
 
     async def trade_stream(self, on_event):
         """
         Обработка стрима сделок.
         """
-        stream_headers = {"Accept": "application/x-json-stream"}
-        headers = dict(self.auth_headers, **stream_headers)
-        timeout = aiohttp.ClientTimeout(total=None, sock_read=300)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(self.url_trades, headers=headers) as resp:
-                async for data in resp.content.iter_any():
-                    if trades := self.parse_trades(data):
-                        # FIXME: переделать с поддержкой symbol
-                        # trades = sorted(trades, key=lambda x: x["price"])
-                        for trade in trades:
-                            dt = interval_dt(trade)
-                            symbol = trade["symbolId"]
-                            on_event("trade", dt, symbol, parse_quote(trade))
+        while not self.finished:
+            cprint("Start listening trade stream", "white")
+            stream_headers = {"Accept": "application/x-json-stream"}
+            headers = dict(self.auth_headers, **stream_headers)
+            timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(self.url_trades, headers=headers) as resp:
+                    async for data in resp.content.iter_any():
+                        await self.process_trade_data(data, on_event)
+            await asyncio.sleep(1)
+
+    async def process_trade_data(self, data, on_event):
+        """
+        Обработка события trade_stream.
+        """
+        if b"heartbeat" in data:
+            self.last_event["trade_heartbeat"] = datetime.utcnow()
+        if trades := self.parse_trades(data):
+            # TODO: сделать группировку trades с поддержкой symbol
+            for trade in trades:
+                dt = interval_dt(trade)
+                symbol = trade["symbolId"]
+                if on_event("trade", dt, symbol, parse_quote(trade)):
+                    self.last_event["trade"] = datetime.utcnow()
 
     async def quote_stream(self, on_event):
         """
         Обработка стрима стакана.
         """
-        stream_headers = {"Accept": "application/x-json-stream"}
-        headers = dict(self.auth_headers, **stream_headers)
-        timeout = aiohttp.ClientTimeout(total=None, sock_read=300)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(self.url_quotes, headers=headers) as resp:
-                async for data in resp.content.iter_any():
-                    if quotes := self.parse_quotes(data):
-                        for quote in quotes:
-                            dt = interval_dt(quote)
-                            symbol = quote["symbolId"]
-                            on_event("quote", dt, symbol, quote)
+        while not self.finished:
+            cprint("Start listening quote stream", "white")
+            stream_headers = {"Accept": "application/x-json-stream"}
+            headers = dict(self.auth_headers, **stream_headers)
+            timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(self.url_quotes, headers=headers) as resp:
+                    async for data in resp.content.iter_any():
+                        await self.process_quote_data(data, on_event)
+            await asyncio.sleep(1)
+
+    async def process_quote_data(self, data, on_event):
+        """
+        Обработка события quote_stream.
+        """
+        if b"heartbeat" in data:
+            self.last_event["quote_heartbeat"] = datetime.utcnow()
+        if quotes := self.parse_quotes(data):
+            for quote in quotes:
+                dt = interval_dt(quote)
+                symbol = quote["symbolId"]
+                if on_event("quote", dt, symbol, quote):
+                    self.last_event["quote"] = datetime.utcnow()
 
     def process_historical_data(self, on_event):
         """
@@ -163,7 +229,7 @@ class ExanteExchange(BaseExchange):
         now = datetime.now().astimezone(timezone.utc)
         data = []
         for symbol in self.symbols:
-            data += self.fetch_backtest_data(symbol, now, 60)
+            data += self.fetch_backtest_data(symbol, now, 60 * 10)
         data = sorted(data, key=lambda x: x["timestamp"])
 
         for event in data:
@@ -176,6 +242,7 @@ class ExanteExchange(BaseExchange):
 
             if "price" in event:
                 on_event("historical_trade", dt, symbol, parse_quote(event))
+
             if "ask" in event:
                 ask = list(map(parse_quote, event["ask"]))
                 bid = list(map(parse_quote, event["bid"]))
@@ -277,11 +344,13 @@ class ExanteExchange(BaseExchange):
         return res
 
     def load_account_info(self):
+        # cprint("load_account_info", "yellow")
         url_account = f"{base}/md/{ver}/summary/{account_id}/USD"
         res = requests.get(url_account, headers=self.auth_headers)
         return res.json()
 
     def load_last_orders(self):
+        cprint("load_last_orders", "yellow")
         url_orders = f"{base}/trade/{ver}/orders/active"
         res = requests.get(url_orders, headers=self.auth_headers)
         return res.json()
@@ -307,9 +376,8 @@ class ExanteExchange(BaseExchange):
         timestamp = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
         url_tick = f"{base}/md/3.0/ticks/{symbol}"
         while True:
-            headers = self.next_data_headers()
             params = {"type": data_type, "from": timestamp, "size": size}
-            res = requests.get(url_tick, params=params, headers=headers)
+            res = requests.get(url_tick, params=params, headers=self.data_headers)
             if res.status_code == 200 and res.text:
                 data = res.json()
                 at_dt = interval_dt(data[0])

@@ -25,25 +25,35 @@ class Trader:
 
         # Как торговать
         self.advisors = [
-            # Advisor(strategy="ChannelBreakout2", length=800, instrument="COPX.ARCA", extra_hours=False),
-            Advisor(strategy="ChannelBreakout", length=180, instrument="COPX.ARCA"),  # 70 / 17.1
-            Advisor(strategy="ChannelBreakout", length=480, instrument="COPX.ARCA"),  # 86 / 16.7
-            Advisor(strategy="ChannelBreakout", length=300, instrument="URA.ARCA"),   # 26 / 20.0
-            Advisor(strategy="ChannelBreakout", length=430, instrument="URA.ARCA"),   # 61 / 17.8
+            # Advisor(strategy="ChannelBreakout2", length=800, instrument="COPX.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=180, instrument="COPX.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=480, instrument="COPX.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=300, instrument="URA.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=430, instrument="URA.ARCA"),
         ]
 
         symbols_to_track = list(set([a.instrument for a in self.advisors]))
 
-        self.exchange = BacktestExchange(
-            symbols_to_track,
-            dt_start=datetime(2021, 1, 1),
-            cash=Decimal("10000"),
-        )
-        # self.exchange = ExanteExchange(symbols_to_track)
+        # self.exchange = BacktestExchange(
+        #     symbols_to_track,
+        #     dt_start=datetime(2021, 1, 1),
+        #     cash=Decimal("10000"),
+        # )
+        self.exchange = ExanteExchange(symbols_to_track)
 
         # Прогнать события по историческим данным.
         # Предзаполняются цены и сигналы, торговля не происходит.
         self.exchange.process_historical_data(self.on_event)
+
+        # Нужно получить достаточно данных, чтобы стратегия смогла
+        # восстановить последний торговый сигнал.
+        invalid_advisor = False
+        for advisor in self.get_advisors():
+            if advisor.state not in [Signal.LONG, Signal.SHORT]:
+                invalid_advisor = True
+                cprint(f" NO STATE: {advisor} ", color="red", attrs=["reverse"])
+        if invalid_advisor:
+            sys.exit(1)
 
         self.max_net_value = Decimal("-Infinity")
         self.max_drawdown = Decimal("-Infinity")
@@ -132,6 +142,8 @@ class Trader:
                 drawdown = self.max_net_value - self.exchange.net_value
                 self.cur_drawdown = drawdown / self.max_net_value * 100
                 self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
+
+        return True
 
     def get_advisors(self, instrument=None):
         """
