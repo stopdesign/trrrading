@@ -2,7 +2,9 @@
 Получение исторических данных из API Exante.
 """
 
+import os
 import json
+import re
 import jwt
 import requests
 from time import sleep
@@ -14,11 +16,8 @@ env = "live"
 api_keys = getattr(keys, env)
 
 
-ticker = "DIA.ARCA"
 interval_size = "60"
 data_type = "trades"
-
-url = f"https://api-{env}.exante.eu/md/3.0/ohlc/{ticker}/{interval_size}"
 
 
 def interval_dt(interval):
@@ -29,12 +28,14 @@ def get_next_headers():
     global api_keys
     api_keys = api_keys[1:] + [api_keys[0]]
     key = api_keys[0]
-    payload = {"iss": key[0], "sub": key[1], "aud": ["ohlc", "feed"]}
+    payload = {"iss": key[0], "sub": key[1], "aud": ["ohlc", "feed", "symbols"]}
     token = jwt.encode(payload, key[2], algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
 
 
-def main():
+def main(ticker="DIA.ARCA"):
+
+    url = f"https://api-{env}.exante.eu/md/3.0/ohlc/{ticker}/{interval_size}"
 
     all_data = []
     size = 5000
@@ -70,11 +71,11 @@ def main():
                 print("ALL DONE")
                 break
 
-            sleep(1)
+            sleep(5)
 
         elif res.status_code == 429:
             print("429")
-            sleep(5)
+            sleep(10)
 
         else:
             print(res.status_code)
@@ -83,4 +84,25 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    url = "https://api-live.exante.eu/md/3.0/exchanges/ARCA"
+    res = requests.get(url, headers=get_next_headers())
+    # print(json.dumps(res.json(), indent=2, default=str))
+
+    print("All:", len(res.json()))
+
+    done = []
+    for file_name in os.listdir("."):
+        if mtc := re.search(r"^live-([A-Z.]+)-trades-60\.jsonl$", file_name):
+            done.append(mtc[1])
+
+    symbols = []
+    for el in res.json():
+        if el["symbolId"] not in done:
+            symbols.append(el["symbolId"])
+
+    print(f"Done: {len(done)}, todo: {len(symbols)}")
+
+    for symbol in symbols:
+        print()
+        print(symbol)
+        main(symbol)
