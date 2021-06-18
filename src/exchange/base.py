@@ -38,7 +38,7 @@ class BaseExchange:
             "dt": dt,
         }
 
-    def fetch_backtest_data(self, symbol, start_at, minutes):
+    def get_past_data(self, symbol, start_at, minutes):
         pass
 
     def trade(self, side: str, amount: int, symbol: str):

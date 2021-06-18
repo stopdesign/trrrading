@@ -3,7 +3,8 @@ from decimal import Decimal
 import pandas_market_calendars as mcal
 from termcolor import cprint, colored
 from exchange import BaseExchange
-from util import interval_dt, load_from_file, parse_quote
+from history.ohlc_to_ticks import ohlc_to_trades
+from util import interval_dt, load_from_file, parse_quote, normalize_ohlc
 
 
 class BacktestExchange(BaseExchange):
@@ -13,9 +14,9 @@ class BacktestExchange(BaseExchange):
 
         self.quotes = {}
 
-        self.dt_start = kwargs.get("dt_start", datetime(2021, 1, 5))
-        self.dt_from = self.dt_start - timedelta(days=5)
-        self.cash_initial = kwargs.get("cash", Decimal(10_000))
+        self.dt_start = kwargs.pop("dt_start")
+        self.dt_from = self.dt_start - timedelta(days=20)  # для 700 интервалов
+        self.cash_initial = kwargs.pop("cash")
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
         self.all_data = self.load_data()
@@ -33,9 +34,9 @@ class BacktestExchange(BaseExchange):
         quotes_file = f"../data/live-{symbol}-quotes-ticks.jsonl"
         trades_file = f"../data/live-{symbol}-trades-ticks.jsonl"
         # quotes_file = ""
-        # trades_file = f"../data/live-{symbol}-trades-fake.jsonl"
-
-        cprint(f" Load ticks: {dt_from}, {symbol} ", attrs=["reverse"])
+        # trades_file = f"./history/live-{symbol}-trades-60.jsonl"
+        # trades = ohlc_to_trades(trades)
+        # cprint(f" Load ticks: {dt_from}, {symbol} ", attrs=["reverse"])
 
         try:
             quotes = load_from_file(quotes_file, dt_from)
@@ -45,6 +46,9 @@ class BacktestExchange(BaseExchange):
             quotes = []
 
         trades = load_from_file(trades_file, dt_from, symbol)
+
+        # Добавляются фейковые интервалы, повторяющие имеющуюся цену
+        # trades = normalize_ohlc(trades, 60)
 
         # Если нет настоящих quotes, то каждый trade используется как quote
         if not quotes:
@@ -124,8 +128,8 @@ class BacktestExchange(BaseExchange):
                 continue
 
             # Аналитика перед открытием нового интервала
-            if prev_dt and dt.hour != prev_dt.hour:
-                norm_dt = dt.replace(minute=0, second=0, microsecond=0)
+            if prev_dt and dt.day != prev_dt.day:
+                norm_dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
                 on_event("before_interval", norm_dt, symbol)
             prev_dt = dt
 
@@ -146,7 +150,8 @@ class BacktestExchange(BaseExchange):
         В данном случае можно синхронно прогнать все данные.
         """
         self.data_stream(on_event)
-        loop.stop()
+        if loop:
+            loop.stop()
 
     def stop_listen(self, loop=None):
         """
@@ -166,7 +171,7 @@ class BacktestExchange(BaseExchange):
             color = "red"
         else:
             color = "green"
-        cprint(f"TRADE: {side} {symbol} {amount}", color)
+        # cprint(f"TRADE: {side} {symbol} {amount}", color)
 
         assert amount != 0
 
@@ -210,17 +215,19 @@ class BacktestExchange(BaseExchange):
                 assert amount == 0 or position["amount"] == 0
 
                 txt = f"Close {partial_close_amount} {symbol} "
+
                 color = "white"
                 if trade_profit > 0:
                     color = "green"
                 if trade_profit < 0:
                     color = "red"
                 rel_profit = (trade_profit / self.cash) * 100
+                self.cash += trade_profit
+
                 txt += colored(f" {trade_profit:+0.2f} ", color, attrs=["reverse"])
                 txt += colored(f"{rel_profit:+0.2f}% ", color, attrs=["reverse"])
-                self.cash += trade_profit
                 txt += colored(f" Σ {self.cash:0.0f} ", "white", attrs=["reverse"])
-                print(txt)
+                # print(txt)
 
                 # Если amount еще остался — открыть позицию
                 if amount != 0:

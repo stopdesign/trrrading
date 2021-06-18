@@ -1,12 +1,13 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from collections import defaultdict
 from termcolor import colored, cprint
 
 
 def interval_dt(interval):
-    return datetime.fromtimestamp(interval["timestamp"] // 1000)
+    dt = datetime.fromtimestamp(interval["timestamp"] // 1000)
+    return dt.astimezone(timezone.utc)
 
 
 def trades_to_ohlc(item) -> dict:

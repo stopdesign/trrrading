@@ -14,7 +14,7 @@ env = "live"
 api_keys = getattr(keys, env)
 
 
-ticker = "MA.NYSE"
+ticker = "URA.ARCA"
 base = f"https://api-{env}.exante.eu"
 url_tick = f"{base}/md/3.0/ticks/{ticker}"
 
@@ -76,7 +76,7 @@ def fetch_data(data_type, dt_from):
 
 
 def main():
-    dt_from = datetime(year=2018, month=6, day=4)
+    dt_from = datetime(year=2021, month=5, day=21)
 
     for data_type in ["quotes", "trades"]:
         print()

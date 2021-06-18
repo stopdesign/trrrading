@@ -8,21 +8,19 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from json import JSONDecodeError
 from time import sleep
+from aiohttp import ServerTimeoutError, ClientConnectorError
 from termcolor import cprint
 from exchange import BaseExchange
 from util import interval_dt, parse_quote
-from settings import keys
-
-
-api_keys = keys.demo
-base = "https://api-demo.exante.eu"
-account_id = "UEA7232.001"
-ver = "3.0"
-
-# Ключи для торговли
-client_id = "40dd4b62-8296-46ff-9b6d-367ad9a35aed"
-app_id = "72d39665-3477-4b48-aba6-b5688a0ab529"
-shared_key = "4BJ/niyJm3Mf84JzeN5LtVHIESc+azGp"
+from settings import (
+    DATA_API_KEYS,
+    BASE_URL_DATA,
+    BASE_URL_TRADE,
+    ACCOUNT_ID,
+    CLIENT_ID,
+    APP_ID,
+    SHARED_KEY,
+)
 
 
 class ExanteExchange(BaseExchange):
@@ -30,12 +28,18 @@ class ExanteExchange(BaseExchange):
         super().__init__(symbols)
 
         self.symbols = symbols
-
         symbols_str = ",".join(self.symbols)
 
-        self.url_trades = f"{base}/md/{ver}/feed/trades/{symbols_str}"
-        self.url_quotes = f"{base}/md/{ver}/feed/{symbols_str}"
-        self.url_orders = f"{base}/trade/{ver}/orders"
+        self.data_api_keys = DATA_API_KEYS
+
+        # data urls
+        self.url_trades = f"{BASE_URL_DATA}/md/3.0/feed/trades/{symbols_str}"
+        self.url_quotes = f"{BASE_URL_DATA}/md/3.0/feed/{symbols_str}"
+        self.url_ticks = f"{BASE_URL_DATA}/md/3.0/ticks"
+
+        # trade urls
+        self.url_orders = f"{BASE_URL_TRADE}/trade/3.0/orders"
+        self.url_account = f"{BASE_URL_TRADE}/md/3.0/summary/{ACCOUNT_ID}/USD"
 
         # self.url_trades = "http://0.0.0.0:8080/trades/"
 
@@ -55,18 +59,28 @@ class ExanteExchange(BaseExchange):
         iat = int(datetime.now().replace(tzinfo=timezone.utc).timestamp())
         exp = iat + int(timedelta(days=30).total_seconds())
         aud = ["ohlc", "feed", "orders", "summary", "accounts"]
-        payload = {"iss": client_id, "sub": app_id, "iat": iat, "exp": exp, "aud": aud}
-        token = jwt.encode(payload, shared_key, algorithm="HS256")
+        payload = {"iss": CLIENT_ID, "sub": APP_ID, "iat": iat, "exp": exp, "aud": aud}
+        token = jwt.encode(payload, SHARED_KEY, algorithm="HS256")
         return {"Authorization": f"Bearer {token}"}
 
     @property
+    def stream_headers(self):
+        stream_headers = {"Accept": "application/x-json-stream"}
+        return dict(self.data_headers, **stream_headers)
+
+    @property
     def data_headers(self):
-        global api_keys
-        api_keys = api_keys[1:] + [api_keys[0]]
-        key = api_keys[0]
-        payload = {"iss": key[0], "sub": key[1], "aud": ["ohlc", "feed"]}
+        # Ротация ключей
+        self.data_api_keys = self.data_api_keys[1:] + [self.data_api_keys[0]]
+        key = self.data_api_keys[0]
+        aud = ["ohlc", "feed", "summary", "accounts"]
+        payload = {"iss": key[0], "sub": key[1], "aud": aud}
         token = jwt.encode(payload, key[2], algorithm="HS256")
         return {"Authorization": f"Bearer {token}"}
+
+    @property
+    def timeout(self):
+        return aiohttp.ClientTimeout(total=None, sock_read=30)
 
     def parse_trades(self, data):
         """
@@ -103,7 +117,7 @@ class ExanteExchange(BaseExchange):
                 #   'bid': [{'price': '41.89', 'size': '100.0'}],
                 #   'ask': [{'price': '42.47', 'size': '500.0'}],
                 # }
-                if "timestamp" in interval and "bid" in interval and "ask" in interval:
+                if "timestamp" in interval and "ask" in interval:
                     quotes.append(interval)
             except JSONDecodeError as e:
                 print("JSONDecodeError", line, data)
@@ -139,10 +153,11 @@ class ExanteExchange(BaseExchange):
         if not last_event_at:
             return
         timeout = timedelta(seconds=max_delay)
-        actual_delay = datetime.utcnow() - last_event_at
+        now = datetime.utcnow()
+        actual_delay = now - last_event_at
         if actual_delay > timeout:
             cprint(
-                f"Event {event_name} is late: "
+                f"{now}: Event {event_name} is late: {last_event_at}, "
                 f"{actual_delay.total_seconds():0.0f} "
                 f"> {max_delay}",
                 "red",
@@ -164,27 +179,42 @@ class ExanteExchange(BaseExchange):
             await asyncio.sleep(1)
             prev_dt = dt
 
-    async def trade_stream(self, on_event):
+    async def data_stream(self, url, processor, on_event):
         """
-        Обработка стрима сделок.
+        Подписка на стрим биржи.
         """
+        min_delay = 0.5
+        max_delay = 30
+        delay = min_delay
         while not self.finished:
-            cprint("Start listening trade stream", "white")
-            stream_headers = {"Accept": "application/x-json-stream"}
-            headers = dict(self.auth_headers, **stream_headers)
-            timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(self.url_trades, headers=headers) as resp:
-                    async for data in resp.content.iter_any():
-                        await self.process_trade_data(data, on_event)
-            await asyncio.sleep(1)
+            cprint(f"Start listening {url}", "blue")
+            async with aiohttp.ClientSession(timeout=self.timeout) as cs:
+                try:
+                    headers = self.stream_headers
+                    async with cs.get(url, headers=headers) as resp:
+                        async for data in resp.content.iter_any():
+                            await processor(data, on_event)
+                            delay = min_delay  # reset the delay
+                except ServerTimeoutError as e:
+                    cprint(e, "yellow")
+                except ClientConnectorError as e:
+                    cprint(e, "red")
+                except Exception as e:
+                    cprint(e, "red")
+            await asyncio.sleep(delay)
+            delay = min(max_delay, delay * 2)  # exponential delay
 
-    async def process_trade_data(self, data, on_event):
+    async def quote_stream(self, on_event):
+        return await self.data_stream(self.url_quotes, self.on_quote, on_event)
+
+    async def trade_stream(self, on_event):
+        return await self.data_stream(self.url_trades, self.on_trade, on_event)
+
+    async def on_trade(self, data, on_event):
         """
         Обработка события trade_stream.
         """
-        if b"heartbeat" in data:
-            self.last_event["trade_heartbeat"] = datetime.utcnow()
+        self.last_event["trade_heartbeat"] = datetime.utcnow()
         if trades := self.parse_trades(data):
             # TODO: сделать группировку trades с поддержкой symbol
             for trade in trades:
@@ -193,27 +223,11 @@ class ExanteExchange(BaseExchange):
                 if on_event("trade", dt, symbol, parse_quote(trade)):
                     self.last_event["trade"] = datetime.utcnow()
 
-    async def quote_stream(self, on_event):
-        """
-        Обработка стрима стакана.
-        """
-        while not self.finished:
-            cprint("Start listening quote stream", "white")
-            stream_headers = {"Accept": "application/x-json-stream"}
-            headers = dict(self.auth_headers, **stream_headers)
-            timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(self.url_quotes, headers=headers) as resp:
-                    async for data in resp.content.iter_any():
-                        await self.process_quote_data(data, on_event)
-            await asyncio.sleep(1)
-
-    async def process_quote_data(self, data, on_event):
+    async def on_quote(self, data, on_event):
         """
         Обработка события quote_stream.
         """
-        if b"heartbeat" in data:
-            self.last_event["quote_heartbeat"] = datetime.utcnow()
+        self.last_event["quote_heartbeat"] = datetime.utcnow()
         if quotes := self.parse_quotes(data):
             for quote in quotes:
                 dt = interval_dt(quote)
@@ -229,7 +243,7 @@ class ExanteExchange(BaseExchange):
         now = datetime.now().astimezone(timezone.utc)
         data = []
         for symbol in self.symbols:
-            data += self.fetch_backtest_data(symbol, now, 60 * 10)
+            data += self.get_past_data(symbol, now, 60 * 20)  # подсчитать, сколько надо
         data = sorted(data, key=lambda x: x["timestamp"])
 
         for event in data:
@@ -254,7 +268,7 @@ class ExanteExchange(BaseExchange):
         """
         cprint(f"TRADE: {side} {symbol} {size}", color="cyan")
         data = {
-            "accountId": account_id,
+            "accountId": ACCOUNT_ID,
             "symbolId": symbol,
             "side": side,
             "quantity": str(size),
@@ -262,6 +276,7 @@ class ExanteExchange(BaseExchange):
             "duration": "day",
             "clientTag": "BOT",
         }
+
         res = requests.post(self.url_orders, json=data, headers=self.auth_headers)
 
         if res.status_code > 201:
@@ -327,7 +342,7 @@ class ExanteExchange(BaseExchange):
 
     def get_cash_value(self):
         ai = self.load_account_info()
-        return (Decimal(ai["netAssetValue"]) / 100).quantize(Decimal("0.01"))
+        return Decimal(ai["netAssetValue"])
 
     def get_positions(self):
         ai = self.load_account_info()
@@ -345,14 +360,13 @@ class ExanteExchange(BaseExchange):
 
     def load_account_info(self):
         # cprint("load_account_info", "yellow")
-        url_account = f"{base}/md/{ver}/summary/{account_id}/USD"
-        res = requests.get(url_account, headers=self.auth_headers)
+        res = requests.get(self.url_account, headers=self.auth_headers)
         return res.json()
 
     def load_last_orders(self):
         cprint("load_last_orders", "yellow")
-        url_orders = f"{base}/trade/{ver}/orders/active"
-        res = requests.get(url_orders, headers=self.auth_headers)
+        url = f"{self.url_orders}/active"
+        res = requests.get(url, headers=self.auth_headers)
         return res.json()
 
     def count_back_trading_minutes(self, exchange, dt, minutes):
@@ -374,14 +388,15 @@ class ExanteExchange(BaseExchange):
         all_data = []
         size = 5000
         timestamp = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
-        url_tick = f"{base}/md/3.0/ticks/{symbol}"
+        url = f"{self.url_ticks}/{symbol}"
         while True:
             params = {"type": data_type, "from": timestamp, "size": size}
-            res = requests.get(url_tick, params=params, headers=self.data_headers)
-            if res.status_code == 200 and res.text:
+            res = requests.get(url, params=params, headers=self.data_headers)
+            if res.status_code == 200 and len(res.text) > 10:
                 data = res.json()
-                at_dt = interval_dt(data[0])
-                print(f"Fetch {data_type} {symbol}, len: {len(data)}, dt: {at_dt}")
+                dt1 = interval_dt(data[-1])
+                dt2 = interval_dt(data[0])
+                cprint(f"Fetch {data_type} {symbol}, [{dt1}, {dt2}], {len(data)}")
                 all_data += data
                 if len(data) < size:
                     break
@@ -396,10 +411,15 @@ class ExanteExchange(BaseExchange):
         all_data = [json.loads(t) for t in {json.dumps(d) for d in all_data}]
         return all_data
 
-    def fetch_backtest_data(self, symbol, start_at, minutes):
+    def get_past_data(self, symbol, before_dt, minutes):
+        """
+        Получить исторические данные.
+        """
         exchange = symbol.split(".")[1]
         exchange = exchange.replace("ARCA", "NYSE")
-        dt_from = self.count_back_trading_minutes(exchange, start_at, minutes)
+        dt_from = self.count_back_trading_minutes(exchange, before_dt, minutes)
+
+        cprint(f"Get past {symbol}, [{dt_from}, {before_dt}]")
 
         # TODO: приделать сюда parse_trades и parse_quotes
         quotes = self.fetch_data(symbol, dt_from, "quotes")

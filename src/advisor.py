@@ -15,18 +15,26 @@ class Advisor:
     и нужно ли передавать такие данные в стратегию.
     """
 
-    def __init__(self, strategy, length, instrument, extra_hours=False):
+    def __init__(
+        self,
+        strategy,
+        length,
+        instrument,
+        extra_hours=False,
+        extra_hours_data=True,
+        interval=None,
+    ):
         strategy_class = all_strategies[strategy]
-        self.strategy = strategy_class(length=length, min_length=min(30, length))
+        self.strategy = strategy_class(interval=interval, length=length)
         self.instrument = instrument
         self.state = None
         self.strategy_name = strategy
         self.extra_hours = extra_hours
 
-        self.use_extra_hours_data = True  # bool(extra_hours)
+        self.use_extra_hours_data = bool(extra_hours_data)
         self.trade_in_extra_hours = bool(extra_hours)
 
-        start = datetime.utcnow() - timedelta(days=365*5)
+        start = datetime.utcnow() - timedelta(days=365 * 5)
         end = datetime.utcnow() + timedelta(days=365)
         self.schedule = self.init_schedule(start, end)
 

@@ -4,6 +4,11 @@ from datetime import datetime
 from termcolor import cprint
 from trader import Trader
 
+import sys, os
+sys.path.append(os.path.abspath("."))
+
+import settings
+
 
 async def stop(signal, loop):
     """
@@ -41,6 +46,7 @@ def main() -> None:
         print("Process interrupted")
     finally:
         trader.stop(loop)
+        trader.final_info()
         loop.close()
 
     total_time = (datetime.now() - dt).total_seconds()
