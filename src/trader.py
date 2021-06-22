@@ -5,6 +5,7 @@ from decimal import Decimal
 from termcolor import cprint, colored
 from advisor import Advisor
 from exchange import BacktestExchange, ExanteExchange
+from notifications.alert import send_telegram
 from strategy import Signal
 from util import interval_dt, reformat_ohlc
 from settings import CAN_SHORT
@@ -38,12 +39,12 @@ class Trader:
 
         symbols_to_track = list(set([a.instrument for a in self.advisors]))
 
-        # self.exchange = BacktestExchange(
-        #     symbols_to_track,
-        #     dt_start=datetime(2021, 1, 1).astimezone(timezone.utc),
-        #     cash=Decimal("10000"),
-        # )
-        self.exchange = ExanteExchange(symbols_to_track)
+        self.exchange = BacktestExchange(
+            symbols_to_track,
+            dt_start=datetime(2021, 1, 1).astimezone(timezone.utc),
+            cash=Decimal("10000"),
+        )
+        # self.exchange = ExanteExchange(symbols_to_track)
 
         # Прогнать события по историческим данным.
         # Предзаполняются цены и сигналы, торговля не происходит.
@@ -148,13 +149,13 @@ class Trader:
             # if self.advisors[0].is_main_session(dt):
             sys.stdout.write(CURSOR_UP_ONE)
             sys.stdout.write(ERASE_LINE)
-            cprint(
+            txt = (
                 f"{dt:%Y-%m-%d %H:%M:%S}: "
                 f"net: {self.exchange.net_value:0.0f}  "
                 f"dd: {self.cur_drawdown:0.1f}%  "
-                f"max dd: {self.max_drawdown:0.1f}%  ",
-                "white",
+                f"max dd: {self.max_drawdown:0.1f}%  "
             )
+            cprint(txt, "white")
             log = f"{self.exchange.net_value:0.1f},{self.cur_drawdown:0.1f}\n"
             self.log_stats += f"{dt:%Y-%m-%d %H:%M:%S},{log}"
 
@@ -276,14 +277,17 @@ class Trader:
         if side == "sell":
             color = "red"
         # Логи: какая операция должна произойти
-        print(
-            f"\n{dt:%Y-%m-%d %H:%M:%S} {symbol_str} "
+        txt = (
+            f"{dt:%Y-%m-%d %H:%M:%S} {symbol_str} "
             f"current: {current_position:+0.0f}  "
             f"adviced: {advised_position:+0.0f}  "
             f"can buy: {total_buy:0.0f}  "
-            f"can sell: {total_sell:0.0f}  //  " +
-            colored(f"{side} {asset_amount_diff}", color, attrs=["bold"])
+            f"can sell: {total_sell:0.0f}  //  "
+            f"{side} {asset_amount_diff}"
         )
+        print()
+        cprint(txt)
+        # send_telegram(txt)
 
         # Посчитать, сколько в штуках нужно купить/продать.
         # Проверить, что предлагаемое изменение больше минимального

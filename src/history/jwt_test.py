@@ -23,8 +23,8 @@ dt_from = int(dt_from.replace(tzinfo=timezone.utc).timestamp())
 dt_exp = datetime.now() + timedelta(days=30)
 dt_exp = int(dt_exp.replace(tzinfo=timezone.utc).timestamp())
 
-# perms = ["ohlc", "feed", "orders", "summary", "accounts"]
-perms = ["ohlc"]
+perms = ["ohlc", "feed", "orders", "summary", "accounts", "symbols"]
+# perms = ["ohlc"]
 payload = {
     "iss": client_id,
     "sub": app_id,
@@ -38,11 +38,12 @@ print(token)
 
 account_id = "UEA7232.001"
 ver = "3.0"
-cur = "EUR"
+cur = "USD"
 
 url_account = f"{base}/md/{ver}/summary/{account_id}/{cur}"
 url_orders = f"{base}/trade/{ver}/orders"
 url_ohlc = f"{base}/md/{ver}/ohlc/SPY.ARCA/60?size=2"
+url_symbols = f"{base}/md/{ver}/symbols"
 
 headers = {"Authorization": f"Bearer {token}"}
 

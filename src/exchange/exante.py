@@ -243,7 +243,7 @@ class ExanteExchange(BaseExchange):
         now = datetime.now().astimezone(timezone.utc)
         data = []
         for symbol in self.symbols:
-            data += self.get_past_data(symbol, now, 60 * 20)  # подсчитать, сколько надо
+            data += self.get_past_data(symbol, now, 60 * 25)  # подсчитать, сколько надо
         data = sorted(data, key=lambda x: x["timestamp"])
 
         for event in data:
