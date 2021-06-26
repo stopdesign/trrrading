@@ -41,7 +41,7 @@ class Trader:
 
         self.exchange = BacktestExchange(
             symbols_to_track,
-            dt_start=datetime(2021, 1, 1).astimezone(timezone.utc),
+            dt_start=datetime(2021, 5, 1).astimezone(timezone.utc),
             cash=Decimal("10000"),
         )
         # self.exchange = ExanteExchange(symbols_to_track)

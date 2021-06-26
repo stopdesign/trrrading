@@ -8,7 +8,6 @@ from decimal import Decimal
 from strategy import BaseStrategy, Signal
 from termcolor import colored, cprint
 from util import trades_to_ohlc, reformat_ohlc, interval_dt
-import plotext as plt
 
 
 class ParabolicSAR(BaseStrategy):
