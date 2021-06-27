@@ -1,5 +1,5 @@
 const margin = {top: 20, right: 50, bottom: 30, left: 50},
-  width = 1500 - margin.left - margin.right,
+  width = 2000 - margin.left - margin.right,
   height = 750 - margin.top - margin.bottom;
 
 const parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
@@ -7,7 +7,7 @@ const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M:%S');
 const valueFormat = d3.format('+.2f');
 
 const dim = {
-  width: 1500, height: 1000,
+  width: 2000, height: 1000,
   margin: {top: 20, right: 50, bottom: 30, left: 50},
   ohlc: {height: 750},
   indicator: {height: 100, padding: 0}
@@ -46,10 +46,16 @@ const xAxis1 = d3.axisBottom(x);
 const yAxis = d3.axisLeft(y);
 
 const yValueScale = d3.scaleLinear()
-  .range([indicatorTop(0) + dim.indicator.height, indicatorTop(0)]);
+  .range([
+    indicatorTop(0) + dim.indicator.height,
+    indicatorTop(0)
+  ]);
 
 const yDrawdownScale = d3.scaleLinear()
-  .range([indicatorTop(0) + dim.indicator.height, indicatorTop(0) + dim.indicator.height * 2]);
+  .range([
+    indicatorTop(0) + dim.indicator.height,
+    indicatorTop(0) + dim.indicator.height * 2
+  ]);
 
 const yValueAxis = d3.axisRight(yValueScale)
   .ticks(5)
@@ -128,16 +134,21 @@ svg.append("g")
 
 svg.append("g")
   .attr("class", "y-axis")
-  .attr("transform", "translate(" + (dim.width - dim.margin.left - dim.margin.right) + ",0)");
+  .attr("transform", "translate(" +
+    (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 svg.append("g")
   .attr("class", "y-axis-dd")
-  .attr("transform", "translate(" + (dim.width - dim.margin.left - dim.margin.right) + ",0)");
+  .attr("transform", "translate(" +
+    (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 
 svg.append("g")
   .attr("class", "ohlc");
 
 svg.append("g")
   .attr("class", "tradearrow");
+
+svg.append("g")
+  .attr("class", "indicator");
 
 svg.append("g")
   .attr("class", "y axis")
@@ -153,6 +164,7 @@ async function run() {
   let data = await d3.csv('data.csv');
   let trades = await d3.csv('trades.csv');
   let stats = await d3.csv('stats.csv');
+  let indicator = await d3.csv('indicator.csv');
 
   data = data.map((d) => ({
     date: parseDate(d.Date),
@@ -172,13 +184,16 @@ async function run() {
   stats = stats.map((d) => ({
     date: parseDate(d.Date),
     value: d.Value,
-    drawdown: d.Drawdown
+    drawdown: d.Drawdown,
+    RelEquity: d.RelEquity,
   }));
 
-  draw(data, trades, stats);
+  indicator = indicator.map((d) => { d.date = parseDate(d.Date); return d });
+
+  draw(data, trades, stats, indicator);
 }
 
-function draw(data, trades, stats) {
+function draw(data, trades, stats, indicator) {
   let accessor = ohlc.accessor();
 
   data.sort((a, b) => (
@@ -203,6 +218,7 @@ function draw(data, trades, stats) {
   ]); //.nice();
 
   yDrawdownScale.domain([0, d3.max(stats, (d) => +d.drawdown)]);
+  // yDrawdownScale.domain([0, d3.max(stats, (d) => +d.RelEquity)]);
 
   macd_svg.append("path")
     .datum(stats)
@@ -213,6 +229,36 @@ function draw(data, trades, stats) {
     .datum(stats)
     .attr("class", "drawdown")
     .attr("d", valueline2);
+
+  // Rel Equity
+  // macd_svg.append("path")
+  //   .datum(stats)
+  //   .attr("class", "drawdown")
+  //   // .attr("d", valueline2);
+  //   .attr("d", d3.area()
+  //     .x(d => x(d.date))
+  //     .y0(yDrawdownScale(0))
+  //     .y1(d => yDrawdownScale(+d.RelEquity)));
+
+
+  // Индикаторы на графике цены
+  svg.append("path")
+    .datum(indicator)
+    .attr("class", "indicator line")
+    .attr("clip-path", "url(#clip)")
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.sig_up)));
+  svg.append("path")
+    .datum(indicator)
+    .attr("class", "indicator line")
+    .attr("clip-path", "url(#clip)")
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.sig_dn)));
+
+  // svg.append("path")
+  //   .datum(indicator)
+  //   .attr("class", "indicator_ma line")
+  //   .attr("clip-path", "url(#clip)")
+  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.ma)));
+
 
   // add the Y gridlines
   svg.append("g")
@@ -245,7 +291,9 @@ function out() {
 }
 
 function refreshText(d) {
-  valueText.text("Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price));
+  valueText.text(
+    "Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price)
+  );
 }
 
 run();

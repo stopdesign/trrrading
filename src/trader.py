@@ -21,19 +21,27 @@ class Trader:
 
         self.log_intervals = "Date,Open,High,Low,Close\n"
         self.log_trades = "Date,Direction,Price\n"
-        self.log_stats = "Date,Value,Drawdown\n"
+        self.log_stats = "Date,Value,Drawdown,Equity,RelEquity\n"
 
         self.can_short = CAN_SHORT
 
         # Как торговать
         self.advisors = [
-            Advisor(strategy="ParabolicSAR", length=100, interval=1800, instrument="COPX.ARCA", extra_hours_data=False),
-            Advisor(strategy="ParabolicSAR", length=100, interval=3600, instrument="COPX.ARCA", extra_hours_data=False),
-            Advisor(strategy="ChannelBreakout", length=200, instrument="COPX.ARCA"),
+            # До 2021 показывает пиздец
+            # Advisor(strategy="Volty", length=500, instrument="COPX.ARCA", extra_hours_data=False),  # p:177% dd:10%
+            # Advisor(strategy="Volty", length=500, instrument="COPX.ARCA", extra_hours_data=False),  # p:177% dd:10%
+
+            # До 2021 показывает пиздец
+            # Advisor(strategy="ParabolicSAR", length=100, interval=3600, instrument="COPX.ARCA", extra_hours_data=False),  # p:211% dd:8.8%
+            # Advisor(strategy="ParabolicSAR", length=100, interval=3600, instrument="COPX.ARCA", extra_hours_data=False),  # p:211% dd:8.8%
+            # Advisor(strategy="ParabolicSAR", length=100, interval=7200, instrument="COPX.ARCA", extra_hours_data=False),  # p:180% dd:12%
+
+            Advisor(strategy="ChannelBreakout", length=350, instrument="COPX.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=450, instrument="COPX.ARCA"),
             Advisor(strategy="ChannelBreakout", length=550, instrument="COPX.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=700, instrument="COPX.ARCA"),
-            Advisor(strategy="ChannelBreakout", length=300, instrument="URA.ARCA"),
+
             Advisor(strategy="ChannelBreakout", length=450, instrument="URA.ARCA"),
+            Advisor(strategy="ChannelBreakout", length=520, instrument="URA.ARCA"),
             Advisor(strategy="ChannelBreakout", length=600, instrument="URA.ARCA"),
         ]
 
@@ -41,7 +49,7 @@ class Trader:
 
         self.exchange = BacktestExchange(
             symbols_to_track,
-            dt_start=datetime(2021, 5, 1).astimezone(timezone.utc),
+            dt_start=datetime(2021, 4, 1).astimezone(timezone.utc),
             cash=Decimal("10000"),
         )
         # self.exchange = ExanteExchange(symbols_to_track)
@@ -119,6 +127,21 @@ class Trader:
                 log = "{open},{high},{low},{close}\n".format(**interval)
                 self.log_intervals += f"{dt:%Y-%m-%d %H:%M:%S},{log}"
 
+        log_indicators = "Date,"
+        for advisor in self.get_advisors():
+            if hasattr(advisor.strategy, "indicator_data"):
+                log_indicators += ",".join(advisor.strategy.indicator_data[0].keys()) + "\n"
+                for row in advisor.strategy.indicator_data:
+                    ts = row["timestamp"]
+                    val = ""
+                    for v in row.values():
+                        val += f",{v}"
+                    log_indicators += f"{ts:%Y-%m-%d %H:%M:%S}{val}\n"
+                break
+
+        with open("indicator.csv", "w") as d:
+            d.write(log_indicators)
+
         with open("data.csv", "w") as d:
             d.write(self.log_intervals)
 
@@ -147,16 +170,23 @@ class Trader:
         if event_type == "before_interval":
             # Логи: статистика на начало интервала
             # if self.advisors[0].is_main_session(dt):
+
+            net = self.exchange.net_value
+            eq = self.exchange.equity_value
+            rel_eq = self.exchange.equity_value / net * 100
+
             sys.stdout.write(CURSOR_UP_ONE)
             sys.stdout.write(ERASE_LINE)
             txt = (
                 f"{dt:%Y-%m-%d %H:%M:%S}: "
-                f"net: {self.exchange.net_value:0.0f}  "
+                f"net: {net:0.0f}  "
+                f"rel_eq: {rel_eq:0.0f}  "
                 f"dd: {self.cur_drawdown:0.1f}%  "
                 f"max dd: {self.max_drawdown:0.1f}%  "
             )
             cprint(txt, "white")
-            log = f"{self.exchange.net_value:0.1f},{self.cur_drawdown:0.1f}\n"
+
+            log = f"{net:0.1f},{self.cur_drawdown:0.1f},{eq:0.1f},{rel_eq:0.1f}\n"
             self.log_stats += f"{dt:%Y-%m-%d %H:%M:%S},{log}"
 
         # After any exchange event
@@ -192,7 +222,8 @@ class Trader:
         если бы сработали все исторические сигналы.
         """
         res = Decimal("0")
-        buying_power = self.exchange.net_value / len(self.advisors)
+        cash_to_use = min(self.exchange.cash_initial, self.exchange.net_value)
+        buying_power = cash_to_use / len(self.advisors)
         for advisor in self.get_advisors(instrument):
             if advisor.state == Signal.LONG:
                 price = self.exchange.get_price(instrument, "buy")

@@ -20,6 +20,10 @@ path.line {
     stroke: #999;
     stroke-width: 1;
 }
+path.indicator_ma {
+    stroke: #439;
+    stroke-width: 1.5;
+}
 
 svg {
     background: #fff;
