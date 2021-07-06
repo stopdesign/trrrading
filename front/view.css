@@ -1,6 +1,19 @@
 body {
-    font: 15px sans-serif;
-    background: #eee;
+    font: 15px Menlo, monospace, sans-serif;
+    background: #fff;
+}
+
+#buttons {
+    font: 12px "PT Sans", sans-serif;
+    margin-left: 50px;
+    -webkit-user-select: none;
+}
+#buttons span {
+    color: #0e5a8a;
+    cursor: pointer;
+    border-bottom: dashed 1px;
+    padding: 2px 0 1px 0;
+    display: inline-block;
 }
 
 text {
@@ -17,12 +30,27 @@ path.candle.body {
 
 path.line {
     fill: none;
-    stroke: #999;
+    stroke: #ccc;
     stroke-width: 1;
 }
-path.indicator_ma {
-    stroke: #439;
-    stroke-width: 1.5;
+line.line,
+path.ind {
+    fill: none;
+    stroke: #000;
+    stroke-width: 1;
+}
+path.indicator-bottom {
+    stroke: #080;
+}
+path.indicator-top {
+    stroke: #d80050;
+}
+path.indicator-mid {
+    stroke: #5080d8;
+}
+path.indicator-stop {
+    stroke-width: 5;
+    stroke: rgba(0, 0, 0, 0.1);
 }
 
 svg {
@@ -30,15 +58,15 @@ svg {
 }
 
 path.candle.up {
-    fill: #43d5db;
-    stroke: #43d5db;
-    stroke-width: 1;
+    fill: #8bb;
+    stroke: #8bb;
+    stroke-width: 0;
 }
 
 path.candle.down {
-    fill: #ff8cde;
-    stroke: #ff8cde;
-    stroke-width: 1;
+    fill: #eaa;
+    stroke: #eaa;
+    stroke-width: 0;
 }
 
 path.candle.equal {
@@ -49,15 +77,14 @@ path.candle.equal {
 
 path.ohlc {
     stroke: #000000;
-    stroke-width: 1;
 }
 
 path.ohlc.up {
-    stroke: #00AA00;
+    stroke: #8bb;
 }
 
 path.ohlc.down {
-    stroke: #FF0000;
+    stroke: #eaa;
 }
 
 
@@ -68,17 +95,21 @@ rect.pane {
 }
 
 path.tradearrow {
+    fill: #444;
     stroke: #fff;
+    stroke-width: 1.5;
+    cursor: none;
 }
-
 path.tradearrow.buy {
-    fill: #009600;
-    stroke-width: 0.5;
+    fill: #008800;
+    stroke-width: 1;
 }
-
 path.tradearrow.sell {
     fill: #d00;
-    stroke-width: 0.5;
+    stroke-width: 1;
+}
+path.highlight {
+    fill: #ff00ff !important;
 }
 
 path.signal {
@@ -89,8 +120,10 @@ path.signal {
 
 path.drawdown {
     stroke: none;
-    fill: #e99a9a;
-    stroke-width: 1;
+    /*fill: #e99a9a;*/
+    fill: #d50;
+    opacity: 0.4;
+    stroke-width: 0;
 }
 
 path.zero {
@@ -108,7 +141,8 @@ path.difference {
     fill: #d00;
 }
 
-.grid .domain {
+.grid .domain,
+.ind_grid .domain {
     stroke: #000;
     stroke-opacity: 0.5;
     stroke-width: 0.5;
@@ -119,3 +153,40 @@ path.difference {
     stroke-opacity: 0.5;
     stroke-width: 0.5;
 }
+.ind_grid .tick line {
+    stroke: #ccc;
+}
+
+
+.crosshair {
+    cursor: crosshair;
+}
+
+.crosshair path.wire {
+    stroke: #999;
+    stroke-dasharray: 1, 1;
+}
+
+.crosshair .axisannotation path {
+    fill: #b8d6b6;
+}
+.crosshair .axisannotation text {
+    font: 11px Menlo, monospace, sans-serif;
+    fill: #000;
+}
+
+
+.atrtrailingstop path {
+    fill: none;
+    stroke-width: 4;
+    stroke: #000000;
+}
+
+.atrtrailingstop path.down {
+    stroke: #f6d1d1;
+}
+
+.atrtrailingstop path.up {
+    stroke: #cdeac8;
+}
+

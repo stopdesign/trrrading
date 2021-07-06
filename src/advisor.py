@@ -18,8 +18,8 @@ class Advisor:
     def __init__(
         self,
         strategy,
-        length,
         instrument,
+        length=10,
         extra_hours=False,
         extra_hours_data=True,
         interval=None,
@@ -51,9 +51,16 @@ class Advisor:
         Добыть расписание биржи, закешировать по дням.
         """
         by_days = {}
-        cal = mcal.get_calendar(self.exchange_symbol).schedule(start, end)
-        for day, t in sorted(cal.T.to_dict("list").items()):
-            by_days[day.date()] = [t[0].to_pydatetime(), t[1].to_pydatetime()]
+        if self.exchange_symbol == "E":
+            cal = mcal.get_calendar("NYSE").schedule(start, end)
+            for day, t in sorted(cal.T.to_dict("list").items()):
+                t0 = t[0].to_pydatetime().replace(hour=0, minute=0)
+                t1 = t[0].to_pydatetime().replace(hour=23, minute=59, second=59)
+                by_days[day.date()] = [t0, t1]
+        else:
+            cal = mcal.get_calendar(self.exchange_symbol).schedule(start, end)
+            for day, t in sorted(cal.T.to_dict("list").items()):
+                by_days[day.date()] = [t[0].to_pydatetime(), t[1].to_pydatetime()]
         return by_days
 
     def is_main_session(self, dt):
@@ -74,6 +81,6 @@ class Advisor:
         if not (self.is_main_session(dt) or self.trade_in_extra_hours):
             return Signal.PASS
         signal = self.strategy.test_price(dt, price)
-        if signal in [Signal.SHORT, Signal.LONG]:
+        if signal in [Signal.SHORT, Signal.LONG, Signal.CLOSE]:
             self.state = signal
         return signal

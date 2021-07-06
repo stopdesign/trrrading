@@ -3,7 +3,7 @@ from decimal import Decimal
 import pandas_market_calendars as mcal
 from termcolor import cprint, colored
 from exchange import BaseExchange
-from history.ohlc_to_ticks import ohlc_to_trades
+from history.ohlc_to_ticks import ohlc_to_trades, ohlc_to_quotes
 from util import interval_dt, load_from_file, parse_quote, normalize_ohlc
 
 
@@ -15,8 +15,8 @@ class BacktestExchange(BaseExchange):
         self.quotes = {}
 
         self.dt_start = kwargs.pop("dt_start")
-        self.dt_from = self.dt_start - timedelta(days=20)  # для 700 интервалов
-        self.cash_initial = kwargs.pop("cash")
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=30))
+        self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
         self.all_data = self.load_data()
@@ -39,13 +39,16 @@ class BacktestExchange(BaseExchange):
         # cprint(f" Load ticks: {dt_from}, {symbol} ", attrs=["reverse"])
 
         try:
-            quotes = load_from_file(quotes_file, dt_from)
+            quotes = load_from_file(quotes_file, dt_from, symbol)
         except FileNotFoundError:
             cprint("No quotes data", "red")
             print()
             quotes = []
 
         trades = load_from_file(trades_file, dt_from, symbol)
+
+        # trades = ohlc_to_trades(trades)
+        # quotes = ohlc_to_quotes(quotes)
 
         # Добавляются фейковые интервалы, повторяющие имеющуюся цену
         # trades = normalize_ohlc(trades, 60)
@@ -102,7 +105,7 @@ class BacktestExchange(BaseExchange):
             dt = interval_dt(event)
 
             # Используется для наполнения историческими данными
-            if dt < self.dt_start:
+            if self.dt_from < dt < self.dt_start:
                 if "ask" in event:
                     ask = list(map(parse_quote, event["ask"]))
                     bid = list(map(parse_quote, event["bid"]))

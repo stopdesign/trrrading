@@ -1,15 +1,16 @@
-const margin = {top: 20, right: 50, bottom: 30, left: 50},
-  width = 2000 - margin.left - margin.right,
-  height = 750 - margin.top - margin.bottom;
+const margin = {top: 0, right: 50, bottom: 0, left: 50};
+const width = 2020 - margin.left - margin.right;
+const height = 720 - margin.top - margin.bottom;
 
 const parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
-const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M:%S');
-const valueFormat = d3.format('+.2f');
+const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M');
+const valueFormat = d3.format('+.4f');
+const valueFormat2 = d3.format('+.2f');
 
 const dim = {
-  width: 2000, height: 1000,
-  margin: {top: 20, right: 50, bottom: 30, left: 50},
-  ohlc: {height: 750},
+  width: width + margin.left + margin.right, height: 1000,
+  margin: {top: 10, right: 50, bottom: 30, left: 50},
+  ohlc: {height: height + 50},
   indicator: {height: 100, padding: 0}
 };
 dim.plot = {
@@ -23,11 +24,17 @@ const indicatorTop = d3.scaleLinear()
   .range([dim.indicator.top, dim.indicator.bottom]);
 
 const x = techan.scale.financetime().range([0, width]);
+// const y = d3.scaleLog().range([height, 0]);
 const y = d3.scaleLinear().range([height, 0]);
+const y_profit = d3.scaleLinear().range([height, 0]);
 
 const candlestick = techan.plot.candlestick()
   .xScale(x)
   .yScale(y);
+
+// const atrtrailingstop = techan.plot.atrtrailingstop()
+//   .xScale(x)
+//   .yScale(y);
 
 const ohlc = techan.plot.ohlc()
   .xScale(x)
@@ -40,32 +47,67 @@ const tradearrow = techan.plot.tradearrow()
   .on("mouseenter", enter)
   .on("mouseout", out);
 
-const xAxis = d3.axisBottom(x);
+const xAxis = d3.axisBottom(x).ticks(20).tickFormat("");
 const xAxis1 = d3.axisBottom(x);
 
 const yAxis = d3.axisLeft(y);
+const yAxisProfit = d3.axisRight(y_profit);  // .tickFormat(d3.format(",.3s"));
+
+const y2 = d3.scaleLinear().range([dim.indicator.bottom + dim.indicator.height, 0]);
+
+const tickAnnotation = techan.plot.axisannotation()
+  .axis(yAxis)
+  .orient('left')
+  .format(d3.format(',.3f'));
+
+const profitAnnotation = techan.plot.axisannotation()
+  .axis(yAxisProfit)
+  .translate([width, 0])
+  .orient('right')
+  .width(42)
+  .format(d3.format(',.1f'));
+
+const timeAnnotation = techan.plot.axisannotation()
+  .axis(xAxis)
+  .orient('bottom')
+  .format(dateFormat)
+  .width(120)
+  .height(15)
+  .translate([0, height])
+
+const crosshair = techan.plot.crosshair()
+  .xScale(x)
+  .yScale(y2)
+  .xAnnotation(timeAnnotation)
+  .yAnnotation([tickAnnotation, profitAnnotation])
+
 
 const yValueScale = d3.scaleLinear()
   .range([
+    indicatorTop(0) + dim.indicator.height * 2,
     indicatorTop(0) + dim.indicator.height,
-    indicatorTop(0)
   ]);
 
 const yDrawdownScale = d3.scaleLinear()
   .range([
     indicatorTop(0) + dim.indicator.height,
-    indicatorTop(0) + dim.indicator.height * 2
+    indicatorTop(0) + dim.indicator.height * 2,
+  ]);
+
+// Индикатор Range Strength
+const yIndScale = d3.scaleLinear()
+  .range([
+    indicatorTop(0) + dim.indicator.height - 20,
+    indicatorTop(0) - 20,
   ]);
 
 const yValueAxis = d3.axisRight(yValueScale)
   .ticks(5)
   .tickFormat((v, i) => v);
 
-const yDrawdownAxis = d3.axisRight(yDrawdownScale)
+const yIndAxis = d3.axisRight(yIndScale)
   .ticks(5)
-  .tickFormat((v, i) => {
-    if (v > 0) return v + "%"
-  });
+  .tickFormat((v, i) => v);
 
 // define the line
 const valueline1 = d3.area()
@@ -96,10 +138,9 @@ const svg = d3.select("body").append("svg")
 // .call(zoom);
 
 const valueText = svg.append('text')
-  .style("text-anchor", "end")
+  .style("text-anchor", "start")
   .attr("class", "coords")
-  .attr("x", width - 5)
-  .attr("y", 15);
+  .attr("transform", "translate(" + (width - 250) + "," + 15 + ")");
 
 svg.append("clipPath")
   .attr("id", "clip")
@@ -113,6 +154,9 @@ svg.append("g")
   .attr("class", "candlestick")
   .attr("clip-path", "url(#clip)");
 
+// svg.append("g")
+//   .attr("class", "atrtrailingstop");
+
 const macd_svg = svg.append("g").attr("class", "macd");
 
 svg.append("g")
@@ -121,44 +165,47 @@ svg.append("g")
 
 svg.append("g")
   .attr("class", "x-axis-2")
-  .attr("transform", "translate(0," + dim.indicator.bottom + ")");
+  .attr("transform", "translate(0," +
+    (indicatorTop(0) + dim.indicator.height * 2) + ")");
 
 svg.append("g")
   .attr("class", "y axis")
-  .append("text")
-  .attr("transform", "rotate(-90)")
-  .attr("y", 6)
-  .attr("dy", ".71em")
-  .style("text-anchor", "end")
-  .text("Price ($)");
 
 svg.append("g")
   .attr("class", "y-axis")
   .attr("transform", "translate(" +
     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 svg.append("g")
-  .attr("class", "y-axis-dd")
+  .attr("class", "y-axis-right")
+  .attr("transform", "translate(" +
+    (dim.width - dim.margin.left - dim.margin.right) + ",0)");
+// svg.append("g")
+//   .attr("class", "y-axis-dd")
+//   .attr("transform", "translate(" +
+//     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
+svg.append("g")
+  .attr("class", "y-axis-ind")
   .attr("transform", "translate(" +
     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 
 svg.append("g")
-  .attr("class", "ohlc");
+  .attr("class", "ohlc")
+  .attr("clip-path", "url(#clip)");
 
 svg.append("g")
-  .attr("class", "tradearrow");
+  .attr("class", "profit")
+  .attr("clip-path", "url(#clip)");
+
+const focus = svg.append("g")
+  .attr("class", "focus");
+
+focus.append('g')
+  .attr("class", "crosshair")
+  .call(crosshair);
 
 svg.append("g")
-  .attr("class", "indicator");
-
-svg.append("g")
-  .attr("class", "y axis")
-  .append("text")
-  .attr("transform", "rotate(-90)")
-  .attr("y", 6)
-  .attr("dy", ".71em")
-  .style("text-anchor", "end")
-  .text("Price ($)");
-
+  .attr("class", "tradearrow")
+  .attr("clip-path", "url(#clip)");
 
 async function run() {
   let data = await d3.csv('data.csv');
@@ -178,14 +225,14 @@ async function run() {
   trades = trades.map((d) => ({
     date: parseDate(d.Date),
     type: d.Direction,
-    price: d.Price
+    price: d.Price,
+    profit: d.Profit,
   }));
 
   stats = stats.map((d) => ({
     date: parseDate(d.Date),
     value: d.Value,
-    drawdown: d.Drawdown,
-    RelEquity: d.RelEquity,
+    drawdown: d.Drawdown
   }));
 
   indicator = indicator.map((d) => { d.date = parseDate(d.Date); return d });
@@ -200,25 +247,97 @@ function draw(data, trades, stats, indicator) {
     d3.ascending(accessor.d(a), accessor.d(b))
   ));
 
-  // techanIntradayTimeInit = x.domain(data.map(accessor.d)).zoomable().copy();
+  console.log(data.length);
+  // const bgn = 300;
+  // data = data.slice(bgn, bgn + 1000);
+
   x.domain(data.map(accessor.d));
-  y.domain(techan.scale.plot.ohlc(data, accessor).domain());
+  let dom = techan.scale.plot.ohlc(data, accessor).domain();
+  y.domain([dom[0] - (dom[1] - dom[0]) / 5, dom[1]]).nice();
+
+  const max_pl = d3.max(trades, (d) => Math.abs(+d.profit));
+  y_profit.domain([0, Math.max(160, max_pl)]).nice();
 
   svg.select('g.candlestick')
     .datum(data)
-    .call(ohlc);
+    .call(candlestick);  // ohlc
 
+  // ATR TRAILING STOP
+  // const atrtrailingstopData = techan.indicator.atrtrailingstop()(data);
+  // svg.selectAll("g.atrtrailingstop").datum(atrtrailingstopData).call(atrtrailingstop);
+
+  // СТРЕЛКИ
   svg.select("g.tradearrow")
     .datum(trades)
     .call(tradearrow);
+
+  // ФОН ГРИБОЧКОВ
+  svg.select('g.profit')
+    .selectAll("background")
+    .data(trades)
+    .enter()
+    .append("rect")
+      .attr("x", (d, i) => {
+        let prev_d = trades[i > 0 ? i - 1 : 0];
+        return x(prev_d.date) - 2;
+      })
+      .attr("width", (d, i) => {
+        let prev_d = trades[i > 0 ? i - 1 : 0];
+        return x(d.date) - x(prev_d.date) + 4;
+      })
+      .attr("height", d => y_profit(0) )
+      .attr("y", 0 )
+      .style("fill", d => {
+        if (d.profit < -30) {
+          return "rgba(220,0,50,0.05)"
+        } else if (d.profit < -5) {
+          return "rgba(200,150,0,0.05)"
+        } else if (d.profit > 5) {
+          return "none"
+          // return "rgba(0,150,0,0.08)"
+        } else {
+          return "none"
+        }
+      })
+
+  // ЛИНИИ ГРИБОЧКОВ
+  svg.select('g.profit')
+    .selectAll("line")
+    .data(trades)
+    .enter()
+    .append("line")
+      .attr("x1", d => x(d.date))
+      .attr("x2", d => x(d.date))
+      .attr("y1", d => y_profit(Math.abs(d.profit)))
+      .attr("y2", y_profit(0))
+      .attr("stroke-width", 0.8)
+      .attr("stroke", d => d.profit < 0 ? "#d00" : "#080")
+
+  // ШАПКИ ГРИБОЧКОВ
+  svg.select('g.profit')
+    .selectAll("dot")
+    .data(trades)
+    .enter()
+    .append("circle")
+      .attr("cx", d => x(d.date))
+      .attr("cy", d => y_profit(Math.abs(d.profit)))
+      .attr("r", d => Math.abs(d.profit) === max_pl ? 5 : 2.5)
+      .attr("fill", d => {
+        if (Math.abs(d.profit) > 2) {
+          return d.profit < 0 ? "#d00" : "#080";
+        } else {
+          return "#999";
+        }
+      })
+      .attr("stroke-width", 0.5)
+      .attr("stroke", "white")
 
   yValueScale.domain([
     d3.min(stats, (d) => +d.value),
     d3.max(stats, (d) => +d.value),
   ]); //.nice();
 
-  yDrawdownScale.domain([0, d3.max(stats, (d) => +d.drawdown)]);
-  // yDrawdownScale.domain([0, d3.max(stats, (d) => +d.RelEquity)]);
+  yDrawdownScale.domain([0, d3.max(stats, (d) => +d.drawdown*3)]);
 
   macd_svg.append("path")
     .datum(stats)
@@ -230,59 +349,125 @@ function draw(data, trades, stats, indicator) {
     .attr("class", "drawdown")
     .attr("d", valueline2);
 
-  // Rel Equity
-  // macd_svg.append("path")
-  //   .datum(stats)
-  //   .attr("class", "drawdown")
-  //   // .attr("d", valueline2);
-  //   .attr("d", d3.area()
-  //     .x(d => x(d.date))
-  //     .y0(yDrawdownScale(0))
-  //     .y1(d => yDrawdownScale(+d.RelEquity)));
-
 
   // Индикаторы на графике цены
-  svg.append("path")
+  svg.select('g.candlestick').append("path")
     .datum(indicator)
-    .attr("class", "indicator line")
+    .attr("class", "indicator-top line")
     .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.sig_up)));
-  svg.append("path")
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.top)));
+  svg.select('g.candlestick').append("path")
     .datum(indicator)
-    .attr("class", "indicator line")
+    .attr("class", "indicator-mid line")
     .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.sig_dn)));
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.mid)));
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-bottom line")
+    .attr("clip-path", "url(#clip)")
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.bottom)));
 
-  // svg.append("path")
+  // Линии стоп-сигнала
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-stop line")
+    .attr("clip-path", "url(#clip)")
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.min_win)));
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-stop line")
+    .attr("clip-path", "url(#clip)")
+    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.max_win)));
+
+
+  // Индикатор, разрешающий торговлю
+  // масштаб
+  // atr, sar, kama
+  const ind_field = "ind";
+  let min = d3.min(indicator, d => +d[ind_field]);
+  let max = d3.max(indicator, d => +d[ind_field]);
+  let range = Math.max(Math.abs(min), Math.abs(max));
+  // yIndScale.domain([
+  //   d3.min(indicator, d => +d[ind_field]),
+  //   d3.max(indicator, d => +d[ind_field]),
+  // ]);
+  yIndScale.domain([-range, range]).nice();
+  // ЛИНИЯ ИНДИКАТОРА
+  // macd_svg.append("path")
   //   .datum(indicator)
-  //   .attr("class", "indicator_ma line")
-  //   .attr("clip-path", "url(#clip)")
-  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.ma)));
+  //   .attr("class", "ind line")
+  //   .attr("d", d3.line()
+  //     .x(d => x(d.date))
+  //     .y(d => yIndScale(d[ind_field]))
+  //   );
 
+  // БАРЫ ИНДИКАТОРА
+  const x_band = d3.scaleBand()
+    .range([0, width])
+    .padding(0.5);
+  x_band.domain(data.map(accessor.d));
+  const zero_y = yIndScale(0);
+  // macd_svg.selectAll(".bar")
+  //   .data(indicator)
+  //   .enter().append("rect")
+  //     .attr("x", function(d) { return x_band(d.date); })
+  //     .attr("width", x_band.bandwidth() * 3)
+  //     .attr("y", d => {
+  //       if (d[ind_field] > 0) {
+  //         return yIndScale(d[ind_field]);
+  //       } else {
+  //         return zero_y;
+  //       }
+  //     })
+  //     .attr("height", d => Math.abs(zero_y - yIndScale(d[ind_field])))
+  //     .attr("fill", d => (d[ind_field] > 0 ? "#00aa00" : "red"))
+  // линия 0
+  macd_svg.append("g")
+    .attr("class", "ind_grid")
+    .call(d3.axisLeft(yIndScale).ticks(1).tickSize(-width).tickFormat(""))
 
-  // add the Y gridlines
-  svg.append("g")
-    .attr("class", "grid")
-    .call(
-      d3.axisLeft(yDrawdownScale).ticks(5).tickSize(-width).tickFormat("")
-    )
-  // add the Y gridlines
-  svg.append("g")
+  // Indicator on main chart
+  // svg.select('g.candlestick').selectAll("dot")
+  //   .data(indicator)
+  //   .enter()
+  //   .append("circle")
+  //   .attr("cx", d => x(d.date))
+  //   .attr("cy", d => y(d.kama))
+  //   .attr("r", 1)
+  //   .attr("fill", "#000")
+
+  // // Drawdown gridlines
+  // svg.append("g")
+  //   .attr("class", "grid")
+  //   .call(
+  //     d3.axisLeft(yDrawdownScale).ticks(5).tickSize(-width).tickFormat("")
+  //   )
+
+  // Net Value gridlines
+  macd_svg.append("g")
     .attr("class", "grid")
     .call(
       d3.axisLeft(yValueScale).ticks(5).tickSize(-width).tickFormat("")
     )
 
+  macd_svg.append("line")
+    .attr("class", "line")
+    .attr({
+      x1: x(indicator[0].date), y1: yIndScale(0),
+      x2: x(indicator[100].date), y2: yIndScale(0)
+    });
+
   svg.selectAll("g.x.axis").call(xAxis);
   svg.selectAll("g.x-axis-2").call(xAxis1);
 
   svg.selectAll("g.y.axis").call(yAxis);
+  svg.selectAll("g.y-axis-right").call(yAxisProfit);
   svg.selectAll("g.y-axis").call(yValueAxis);
-  svg.selectAll("g.y-axis-dd").call(yDrawdownAxis);
+  svg.selectAll("g.y-axis-ind").call(yIndAxis);
 }
 
 function enter(d) {
-  valueText.style("display", "inline");
+  valueText.style("display", "block");
   refreshText(d);
 }
 
@@ -291,10 +476,29 @@ function out() {
 }
 
 function refreshText(d) {
-  valueText.text(
-    "Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price)
+  valueText.html(
+    "<tspan x='0' dy='1.5em'>" + dateFormat(d.date) + "</tspan>" +
+    "<tspan x='0' dy='1.5em'>" +
+    d.type + " " + valueFormat(d.price) + " " + valueFormat2(d.profit) +
+    "</tspan>"
   );
+  // valueText.attr("transform", "translate(" + x(d.date) + ")");
+}
+
+function toggleTrades(el) {
+  let tradearrow_layer = svg.select("g.tradearrow");
+  let current_state = tradearrow_layer.style("display") !== "none";
+  if (current_state) {
+    tradearrow_layer.style("display", "none")
+  } else {
+    tradearrow_layer.style("display", "block")
+  }
 }
 
 run();
 
+var span = document.createElement('span');
+span.setAttribute('class', 'button');
+span.setAttribute('onclick', 'toggleTrades()');
+span.innerHTML = 'Show/Hide Trades';
+document.getElementById("buttons").append(span);

@@ -79,6 +79,20 @@ def ohlc_to_trades(intervals):
     return trades
 
 
+def ohlc_to_quotes(intervals):
+    quotes = []
+    for interval in intervals:
+        trades = interval_to_trades(interval)
+        for trade in trades:
+            quotes.append({
+                "timestamp": trade["timestamp"],
+                "ask": [{"price": trade["price"], "size": 1}],
+                "bid": [{"price": trade["price"], "size": 1}],
+                "symbolId": trade["symbolId"],
+            })
+    return quotes
+
+
 def main():
 
     for line in fileinput.input():
