@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 import talib
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from strategy import BaseStrategy, Signal
-from util import trades_to_ohlc
+from util import trades_to_ohlc, interval_dt
 
 
 class SuperTrend(BaseStrategy):
@@ -57,8 +57,11 @@ class SuperTrend(BaseStrategy):
                 {"price": last_known_interval["close"], "size": "1"},
             ]
 
-        ts_q = math.ceil(trade["timestamp"] / (1000 * self.interval_size))
+        dt = interval_dt(trade) + timedelta(minutes=30)
+        ts_q = math.ceil(dt.timestamp()) // self.interval_size
+        # ts_q = round(trade["timestamp"] / (1000 * self.interval_size))
         # ts_q = trade["timestamp"] // (1000 * self.interval_size)
+
         ts_r = int(ts_q * 1000 * self.interval_size)
         trades_by_interval[ts_r].append(trade)
 
@@ -86,7 +89,7 @@ class SuperTrend(BaseStrategy):
     def update_indicator(self):
         # print("update_indicator", len(self.historical))
 
-        md = pd.DataFrame(self.historical[-100:])
+        md = pd.DataFrame(self.historical[-300:])
         md["timestamp"] = pd.to_datetime(md["timestamp"] / 1000, unit="s")
         md.set_index("timestamp", inplace=True)
 
@@ -164,7 +167,7 @@ class SuperTrend(BaseStrategy):
         if len(self.historical) < 1:
             return signal
 
-        h_ts = int(dt.timestamp()) // (60 * 60)
+        h_ts = int((dt + timedelta(minutes=30)).timestamp()) // (60 * 60)
         if not self.update_id or h_ts > self.update_id:
             # print("update_indicator", dt, h_ts)
             self.update_indicator()
@@ -187,6 +190,12 @@ class SuperTrend(BaseStrategy):
 
         elif row["sig_dn"]:
             signal = Signal.SHORT
+
+        # if price > row["dn"]:
+        #     signal = Signal.LONG
+        #
+        # elif price < row["up"]:
+        #     signal = Signal.SHORT
 
         # if signal.value:
         #     txt = f"{dt:%Y-%m-%d %H:%M:%S} "
