@@ -15,6 +15,7 @@ class ChannelBreakout(BaseStrategy):
         super().__init__()
         self.historical_short = []
         self.historical_last_ts = None
+        self.indicator_data = [{"ind": 0, "mid": 0, "timestamp": datetime.now()}]
 
         self.length = params.pop("length")
 
