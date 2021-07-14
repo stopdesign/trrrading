@@ -1,9 +1,10 @@
 import json
+import math
 
 import numpy
 import talib
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from strategy import BaseStrategy, Signal
 from termcolor import colored, cprint
@@ -22,7 +23,7 @@ class ParabolicSAR(BaseStrategy):
         self.indicator_data = [{"ind": 0, "mid": 0, "timestamp": datetime.now()}]
 
         self.interval_size = params.pop("interval")
-        self.length = params.pop("length")
+        self.length = params.pop("length", 100)
         self.min_length = 10
 
         self.sar = [0]
@@ -53,8 +54,10 @@ class ParabolicSAR(BaseStrategy):
                 {"price": last_known_interval["close"], "size": "1"},
             ]
 
-        ts_q = trade["timestamp"] // (1000 * self.interval_size)
-        trades_by_interval[ts_q * 1000 * self.interval_size].append(trade)
+        dt = interval_dt(trade) + timedelta(minutes=30)
+        ts_q = math.ceil(dt.timestamp()) // self.interval_size
+        ts_r = int(ts_q * 1000 * self.interval_size)
+        trades_by_interval[ts_r].append(trade)
 
         ohlc_by_interval = list(map(trades_to_ohlc, trades_by_interval.items()))
 

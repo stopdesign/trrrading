@@ -2,7 +2,7 @@ import json
 import math
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 import numpy as np
@@ -12,7 +12,7 @@ import talib
 from strategy import BaseStrategy, Signal
 from termcolor import colored, cprint
 
-from util import trades_to_ohlc
+from util import trades_to_ohlc, interval_dt
 
 
 class Volty(BaseStrategy):
@@ -66,8 +66,9 @@ class Volty(BaseStrategy):
                 {"price": last_known_interval["close"], "size": "1"},
             ]
 
-        ts_q = math.ceil(trade["timestamp"] / (1000 * self.interval_size))
-        # ts_q = trade["timestamp"] // (1000 * self.interval_size)
+        # Лучше работает без смещения времени
+        dt = interval_dt(trade) + timedelta(minutes=0)
+        ts_q = math.ceil(dt.timestamp()) // self.interval_size
         ts_r = int(ts_q * 1000 * self.interval_size)
         trades_by_interval[ts_r].append(trade)
 
@@ -130,7 +131,7 @@ class Volty(BaseStrategy):
         if len(self.historical) < 1:
             return signal
 
-        h_ts = int(dt.timestamp()) // (60 * 60)
+        h_ts = int((dt + timedelta(minutes=0)).timestamp()) // (60 * 60)
         if not self.update_id or h_ts > self.update_id:
             # print("update_indicator", dt, h_ts)
             self.update_indicator()

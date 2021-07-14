@@ -4,7 +4,7 @@ const height = 720 - margin.top - margin.bottom;
 
 const parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
 const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M');
-const valueFormat = d3.format('+.4f');
+const valueFormat = d3.format('+.2f');
 const valueFormat2 = d3.format('+.2f');
 
 const dim = {
@@ -47,8 +47,8 @@ const tradearrow = techan.plot.tradearrow()
   .on("mouseenter", enter)
   .on("mouseout", out);
 
-const xAxis = d3.axisBottom(x).ticks(20).tickFormat("");
-const xAxis1 = d3.axisBottom(x);
+const xAxis = d3.axisBottom(x).ticks();  //.ticks(20).tickFormat("");
+const xAxis1 = d3.axisBottom(x).tickFormat("");
 
 const yAxis = d3.axisLeft(y);
 const yAxisProfit = d3.axisRight(y_profit);  // .tickFormat(d3.format(",.3s"));
@@ -58,7 +58,7 @@ const y2 = d3.scaleLinear().range([dim.indicator.bottom + dim.indicator.height, 
 const tickAnnotation = techan.plot.axisannotation()
   .axis(yAxis)
   .orient('left')
-  .format(d3.format(',.3f'));
+  .format(d3.format(',.2f'));
 
 const profitAnnotation = techan.plot.axisannotation()
   .axis(yAxisProfit)
@@ -82,7 +82,18 @@ const crosshair = techan.plot.crosshair()
   .yAnnotation([tickAnnotation, profitAnnotation])
 
 
-const yValueScale = d3.scaleLinear()
+const yLoadScale = d3.scaleLinear()
+  .range([
+    indicatorTop(0) + dim.indicator.height - 20,
+    indicatorTop(0) - 20,
+  ]);
+
+const yLoadAxis = d3.axisRight(yLoadScale)
+  .ticks(5)
+  .tickFormat((v, i) => v);
+
+
+const yDepositScale = d3.scaleLinear()
   .range([
     indicatorTop(0) + dim.indicator.height * 2,
     indicatorTop(0) + dim.indicator.height,
@@ -101,33 +112,13 @@ const yIndScale = d3.scaleLinear()
     indicatorTop(0) - 20,
   ]);
 
-const yValueAxis = d3.axisRight(yValueScale)
+const yDepositAxis = d3.axisRight(yDepositScale)
   .ticks(5)
   .tickFormat((v, i) => v);
 
-const yIndAxis = d3.axisRight(yIndScale)
-  .ticks(5)
-  .tickFormat((v, i) => v);
-
-// define the line
-const valueline1 = d3.area()
-  .x(function (d) {
-    return x(d.date);
-  })
-  .y0(yValueScale(0))
-  .y1(function (d) {
-    return yValueScale(d.value);
-  })
-
-// define the line
-const valueline2 = d3.area()
-  .x(function (d) {
-    return x(d.date);
-  })
-  .y0(yDrawdownScale(0))
-  .y1(function (d) {
-    return yDrawdownScale(d.drawdown);
-  })
+// const yIndAxis = d3.axisRight(yIndScale)
+//   .ticks(5)
+//   .tickFormat((v, i) => v);
 
 
 const svg = d3.select("body").append("svg")
@@ -135,7 +126,6 @@ const svg = d3.select("body").append("svg")
   .attr("height", dim.height)
   .append("g")
   .attr("transform", "translate(" + dim.margin.left + "," + dim.margin.top + ")");
-// .call(zoom);
 
 const valueText = svg.append('text')
   .style("text-anchor", "start")
@@ -150,14 +140,21 @@ svg.append("clipPath")
   .attr("width", width)
   .attr("height", y(0) - y(1));
 
+// clip блока индикаторов справа и слева
+svg.append("clipPath")
+  .attr("id", "clip-macd")
+  .append("rect")
+  .attr("x", 0)
+  .attr("y", 0)
+  .attr("width", width)
+  .attr("height", 2000);
+
 svg.append("g")
-  .attr("class", "candlestick")
-  .attr("clip-path", "url(#clip)");
+  .attr("class", "main-grid")
 
-// svg.append("g")
-//   .attr("class", "atrtrailingstop");
-
-const macd_svg = svg.append("g").attr("class", "macd");
+const macd_svg = svg.append("g")
+  .attr("class", "macd")
+  .attr("clip-path", "url(#clip-macd)");
 
 svg.append("g")
   .attr("class", "x axis")
@@ -169,28 +166,35 @@ svg.append("g")
     (indicatorTop(0) + dim.indicator.height * 2) + ")");
 
 svg.append("g")
-  .attr("class", "y axis")
+  .attr("class", "y-axis")
 
 svg.append("g")
-  .attr("class", "y-axis")
+  .attr("class", "y-axis-deposit")
   .attr("transform", "translate(" +
     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 svg.append("g")
   .attr("class", "y-axis-right")
   .attr("transform", "translate(" +
     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
-// svg.append("g")
-//   .attr("class", "y-axis-dd")
-//   .attr("transform", "translate(" +
-//     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 svg.append("g")
   .attr("class", "y-axis-ind")
+  .attr("transform", "translate(" +
+    (dim.width - dim.margin.left - dim.margin.right) + ",0)");
+svg.append("g")
+  .attr("class", "y-axis-load")
   .attr("transform", "translate(" +
     (dim.width - dim.margin.left - dim.margin.right) + ",0)");
 
 svg.append("g")
   .attr("class", "ohlc")
   .attr("clip-path", "url(#clip)");
+
+svg.append("g")
+  .attr("class", "candlestick")
+  .attr("clip-path", "url(#clip)");
+
+// svg.append("g")
+//   .attr("class", "atrtrailingstop");
 
 svg.append("g")
   .attr("class", "profit")
@@ -229,11 +233,18 @@ async function run() {
     profit: d.Profit,
   }));
 
-  stats = stats.map((d) => ({
-    date: parseDate(d.Date),
-    value: d.Value,
-    drawdown: d.Drawdown
-  }));
+  let max_value = 0
+  stats = stats.map(d => {
+    const value = +d.Value;
+    max_value = Math.max(max_value, value);
+    const drawdown = max_value - value;
+    return {
+      date: parseDate(d.Date),
+      value: +d.Value,
+      drawdown: drawdown,
+      load: +d.RelEquity,
+    }
+  });
 
   indicator = indicator.map((d) => { d.date = parseDate(d.Date); return d });
 
@@ -247,8 +258,8 @@ function draw(data, trades, stats, indicator) {
     d3.ascending(accessor.d(a), accessor.d(b))
   ));
 
-  console.log(data.length);
-  // const bgn = 300;
+  console.log("data length:", data.length);
+  // const bgn = 3000;
   // data = data.slice(bgn, bgn + 1000);
 
   x.domain(data.map(accessor.d));
@@ -258,9 +269,35 @@ function draw(data, trades, stats, indicator) {
   const max_pl = d3.max(trades, (d) => Math.abs(+d.profit));
   y_profit.domain([0, Math.max(160, max_pl)]).nice();
 
+  // Вертикальные линии дней
+  svg.select("g.main-grid")
+    .call(
+      d3.axisTop(x)
+        .ticks(width)
+        .tickSize(-height)
+        .tickFormat("")
+    )
+  // Отметить начало новой недели
+  const ticks = d3.selectAll(".tick line");
+  const ticks_data = ticks.data();
+  ticks.attr("class", function(d, i){
+    const prev_d = ticks_data[i > 0 ? i - 1 : 0];
+    if (d.getDay() < prev_d.getDay()) {
+      return "new_week";
+    }
+  });
+
+
   svg.select('g.candlestick')
     .datum(data)
-    .call(candlestick);  // ohlc
+    .call(ohlc)
+    // .call(candlestick)
+
+  // Net Value gridlines
+  svg.select("g.macd-grid")
+    .call(
+      d3.axisLeft(y).ticks(0).tickSize(-width).tickFormat("")
+    )
 
   // ATR TRAILING STOP
   // const atrtrailingstopData = techan.indicator.atrtrailingstop()(data);
@@ -271,34 +308,34 @@ function draw(data, trades, stats, indicator) {
     .datum(trades)
     .call(tradearrow);
 
-  // ФОН ГРИБОЧКОВ
-  svg.select('g.profit')
-    .selectAll("background")
-    .data(trades)
-    .enter()
-    .append("rect")
-      .attr("x", (d, i) => {
-        let prev_d = trades[i > 0 ? i - 1 : 0];
-        return x(prev_d.date) - 2;
-      })
-      .attr("width", (d, i) => {
-        let prev_d = trades[i > 0 ? i - 1 : 0];
-        return x(d.date) - x(prev_d.date) + 4;
-      })
-      .attr("height", d => y_profit(0) )
-      .attr("y", 0 )
-      .style("fill", d => {
-        if (d.profit < -30) {
-          return "rgba(220,0,50,0.05)"
-        } else if (d.profit < -5) {
-          return "rgba(200,150,0,0.05)"
-        } else if (d.profit > 5) {
-          return "none"
-          // return "rgba(0,150,0,0.08)"
-        } else {
-          return "none"
-        }
-      })
+  // // ФОН ГРИБОЧКОВ
+  // svg.select('g.profit')
+  //   .selectAll("background")
+  //   .data(trades)
+  //   .enter()
+  //   .append("rect")
+  //     .attr("x", (d, i) => {
+  //       let prev_d = trades[i > 0 ? i - 1 : 0];
+  //       return x(prev_d.date) - 2;
+  //     })
+  //     .attr("width", (d, i) => {
+  //       let prev_d = trades[i > 0 ? i - 1 : 0];
+  //       return x(d.date) - x(prev_d.date) + 4;
+  //     })
+  //     .attr("height", d => y_profit(0) )
+  //     .attr("y", 0 )
+  //     .style("fill", d => {
+  //       if (d.profit < -30) {
+  //         return "rgba(220,0,50,0.05)"
+  //       } else if (d.profit < -5) {
+  //         return "rgba(200,150,0,0.05)"
+  //       } else if (d.profit > 5) {
+  //         // return "none"
+  //         return "rgba(0,150,0,0.08)"
+  //       } else {
+  //         return "none"
+  //       }
+  //     })
 
   // ЛИНИИ ГРИБОЧКОВ
   svg.select('g.profit')
@@ -332,99 +369,134 @@ function draw(data, trades, stats, indicator) {
       .attr("stroke-width", 0.5)
       .attr("stroke", "white")
 
-  yValueScale.domain([
-    d3.min(stats, (d) => +d.value),
-    d3.max(stats, (d) => +d.value),
-  ]); //.nice();
-
-  yDrawdownScale.domain([0, d3.max(stats, (d) => +d.drawdown*3)]);
-
+  const min_deposit = d3.min(stats, d => d.value);
+  const max_deposit = d3.max(stats, d => d.value);
+  yDepositScale.domain([min_deposit, max_deposit]);
   macd_svg.append("path")
     .datum(stats)
-    .attr("class", "signal")
-    .attr("d", valueline1);
-
+    .attr("class", "deposit")
+    .attr("d", d3.area()
+      .curve(d3.curveStepAfter)
+      .x(d => x(d.date))
+      .y0(yDepositScale(min_deposit))
+      .y1(d => yDepositScale(d.value))
+    );
+  yDrawdownScale.domain([0, max_deposit-min_deposit]);
   macd_svg.append("path")
     .datum(stats)
     .attr("class", "drawdown")
-    .attr("d", valueline2);
+    .attr("d", d3.area()
+      .curve(d3.curveStepAfter)
+      .x(d => x(d.date))
+      .y0(yDrawdownScale(0))
+      .y1(d => yDrawdownScale(d.drawdown))
+    );
+
+  yLoadScale.domain([0, d3.max(stats, d => +d.load)]).nice();
+  macd_svg.append("path")
+    .datum(stats)
+    .attr("class", "load")
+    .attr("d", d3.area()
+      .curve(d3.curveStepAfter)
+      .x(d => x(d.date))
+      .y0(yLoadScale(0))
+      .y1(d => yLoadScale(d.load))
+    );
+  macd_svg.append("g")
+    .attr("class", "macd-grid")
+    .call(d3.axisLeft(yLoadScale).ticks(5).tickSize(-width).tickFormat(""))
+
 
 
   // Индикаторы на графике цены
   svg.select('g.candlestick').append("path")
     .datum(indicator)
-    .attr("class", "indicator-top line")
-    .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.top)));
-  svg.select('g.candlestick').append("path")
-    .datum(indicator)
-    .attr("class", "indicator-mid line")
-    .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.mid)));
-  svg.select('g.candlestick').append("path")
-    .datum(indicator)
     .attr("class", "indicator-bottom line")
     .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.bottom)));
+    .attr("d", d3.line()
+      .x(d => x(d.date))
+      .y(d => y(+d.up))
+      .defined(d => +d.up && (d.trend === undefined || d.trend > 0))
+    );
 
-  // Линии стоп-сигнала
-  svg.select('g.candlestick').append("path")
-    .datum(indicator)
-    .attr("class", "indicator-stop line")
-    .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.min_win)));
-  svg.select('g.candlestick').append("path")
-    .datum(indicator)
-    .attr("class", "indicator-stop line")
-    .attr("clip-path", "url(#clip)")
-    .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.max_win)));
-
-
-  // Индикатор, разрешающий торговлю
-  // масштаб
-  // atr, sar, kama
-  const ind_field = "ind";
-  let min = d3.min(indicator, d => +d[ind_field]);
-  let max = d3.max(indicator, d => +d[ind_field]);
-  let range = Math.max(Math.abs(min), Math.abs(max));
-  // yIndScale.domain([
-  //   d3.min(indicator, d => +d[ind_field]),
-  //   d3.max(indicator, d => +d[ind_field]),
-  // ]);
-  yIndScale.domain([-range, range]).nice();
-  // ЛИНИЯ ИНДИКАТОРА
-  // macd_svg.append("path")
+  // svg.select('g.candlestick').append("path")
   //   .datum(indicator)
-  //   .attr("class", "ind line")
-  //   .attr("d", d3.line()
-  //     .x(d => x(d.date))
-  //     .y(d => yIndScale(d[ind_field]))
-  //   );
+  //   .attr("class", "indicator-mid line")
+  //   .attr("clip-path", "url(#clip)")
+  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(+d.trend + 21)));
 
-  // БАРЫ ИНДИКАТОРА
-  const x_band = d3.scaleBand()
-    .range([0, width])
-    .padding(0.5);
-  x_band.domain(data.map(accessor.d));
-  const zero_y = yIndScale(0);
-  // macd_svg.selectAll(".bar")
-  //   .data(indicator)
-  //   .enter().append("rect")
-  //     .attr("x", function(d) { return x_band(d.date); })
-  //     .attr("width", x_band.bandwidth() * 3)
-  //     .attr("y", d => {
-  //       if (d[ind_field] > 0) {
-  //         return yIndScale(d[ind_field]);
-  //       } else {
-  //         return zero_y;
-  //       }
-  //     })
-  //     .attr("height", d => Math.abs(zero_y - yIndScale(d[ind_field])))
-  //     .attr("fill", d => (d[ind_field] > 0 ? "#00aa00" : "red"))
-  // линия 0
-  macd_svg.append("g")
-    .attr("class", "ind_grid")
-    .call(d3.axisLeft(yIndScale).ticks(1).tickSize(-width).tickFormat(""))
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-top line")
+    .attr("clip-path", "url(#clip)")
+    .attr("d", d3.line()
+      .x(d => x(d.date))
+      .y(d => y(+d.dn))
+      .defined(d => +d.dn && (d.trend === undefined || d.trend < 0))
+    );
+
+  // // Линии стоп-сигнала
+  // svg.select('g.candlestick').append("path")
+  //   .datum(indicator)
+  //   .attr("class", "indicator-stop line")
+  //   .attr("clip-path", "url(#clip)")
+  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.min_win)));
+  // svg.select('g.candlestick').append("path")
+  //   .datum(indicator)
+  //   .attr("class", "indicator-stop line")
+  //   .attr("clip-path", "url(#clip)")
+  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.max_win)));
+
+
+  // Индикатор загрузки депозита
+
+
+  //
+  // // Индикатор, разрешающий торговлю
+  // // масштаб
+  // // atr, sar, kama
+  // const ind_field = "ind";
+  // let min = d3.min(indicator, d => +d[ind_field]);
+  // let max = d3.max(indicator, d => +d[ind_field]);
+  // let range = Math.max(Math.abs(min), Math.abs(max));
+  // // yIndScale.domain([
+  // //   d3.min(indicator, d => +d[ind_field]),
+  // //   d3.max(indicator, d => +d[ind_field]),
+  // // ]);
+  // yIndScale.domain([-range, range]).nice();
+  // // ЛИНИЯ ИНДИКАТОРА
+  // // macd_svg.append("path")
+  // //   .datum(indicator)
+  // //   .attr("class", "ind line")
+  // //   .attr("d", d3.line()
+  // //     .x(d => x(d.date))
+  // //     .y(d => yIndScale(d[ind_field]))
+  // //   );
+  //
+  // // БАРЫ ИНДИКАТОРА
+  // const x_band = d3.scaleBand()
+  //   .range([0, width])
+  //   .padding(0.5);
+  // x_band.domain(data.map(accessor.d));
+  // const zero_y = yIndScale(0);
+  // // macd_svg.selectAll(".bar")
+  // //   .data(indicator)
+  // //   .enter().append("rect")
+  // //     .attr("x", d => x_band(d.date))
+  // //     .attr("width", x_band.bandwidth() * 3)
+  // //     .attr("y", d => {
+  // //       if (d[ind_field] > 0) {
+  // //         return yIndScale(d[ind_field]);
+  // //       } else {
+  // //         return zero_y;
+  // //       }
+  // //     })
+  // //     .attr("height", d => Math.abs(zero_y - yIndScale(d[ind_field])))
+  // //     .attr("fill", d => (d[ind_field] > 0 ? "#00aa00" : "red"))
+  // // линия 0
+  // macd_svg.append("g")
+  //   .attr("class", "ind_grid")
+  //   .call(d3.axisLeft(yIndScale).ticks(1).tickSize(-width).tickFormat(""))
 
   // Indicator on main chart
   // svg.select('g.candlestick').selectAll("dot")
@@ -438,32 +510,33 @@ function draw(data, trades, stats, indicator) {
 
   // // Drawdown gridlines
   // svg.append("g")
-  //   .attr("class", "grid")
+  //   .attr("class", "macd-grid")
   //   .call(
   //     d3.axisLeft(yDrawdownScale).ticks(5).tickSize(-width).tickFormat("")
   //   )
 
   // Net Value gridlines
   macd_svg.append("g")
-    .attr("class", "grid")
+    .attr("class", "macd-grid")
     .call(
-      d3.axisLeft(yValueScale).ticks(5).tickSize(-width).tickFormat("")
+      d3.axisLeft(yDepositScale).ticks(5).tickSize(-width).tickFormat("")
     )
 
-  macd_svg.append("line")
-    .attr("class", "line")
-    .attr({
-      x1: x(indicator[0].date), y1: yIndScale(0),
-      x2: x(indicator[100].date), y2: yIndScale(0)
-    });
+  // macd_svg.append("line")
+  //   .attr("class", "line")
+  //   .attr({
+  //     x1: x(indicator[0].date), y1: yIndScale(0),
+  //     x2: x(indicator[100].date), y2: yIndScale(0)
+  //   });
 
   svg.selectAll("g.x.axis").call(xAxis);
   svg.selectAll("g.x-axis-2").call(xAxis1);
 
-  svg.selectAll("g.y.axis").call(yAxis);
+  svg.selectAll("g.y-axis").call(yAxis);
   svg.selectAll("g.y-axis-right").call(yAxisProfit);
-  svg.selectAll("g.y-axis").call(yValueAxis);
-  svg.selectAll("g.y-axis-ind").call(yIndAxis);
+  svg.selectAll("g.y-axis-deposit").call(yDepositAxis);
+  svg.selectAll("g.y-axis-load").call(yLoadAxis);
+  // svg.selectAll("g.y-axis-ind").call(yIndAxis);
 }
 
 function enter(d) {

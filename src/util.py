@@ -1,13 +1,15 @@
 import json
-from datetime import datetime, timezone
+import os
+import orjson
+from datetime import datetime
 from decimal import Decimal
 from collections import defaultdict
 from termcolor import colored, cprint
+import requests
 
 
 def interval_dt(interval):
-    dt = datetime.fromtimestamp(interval["timestamp"] // 1000)
-    return dt.astimezone(timezone.utc)
+    return datetime.utcfromtimestamp(interval["timestamp"] // 1000)
 
 
 def trades_to_ohlc(item) -> dict:
@@ -128,7 +130,7 @@ def print_trade_final_info(
         color = "green"
     if profit < 0:
         color = "red"
-    txt = f"{position_open_dt:%Y-%m-%d %H:%M}  {pos_sign} {length_str}  "
+    txt = f"{position_open_dt}  {pos_sign} {length_str}  "
     txt += colored(trade, color, attrs=["reverse"])
     color = "white"
     if total_profit > 0:
@@ -189,18 +191,91 @@ def print_order_info(dt, signal, price, position_size, cash):
     cprint(res, color)
 
 
+def read_line_ts(f, byte):
+    f.seek(byte)
+    lines = f.readlines(1000)
+    return int(lines[1][14:27]) // 1000
+
+
 def load_from_file(file, dt_from=datetime(1900, 1, 1), symbol=None):
+    """
+    Загрузка данных из файла с бинарным поиском нужной даты.
+    """
+
+    min_ts = int(dt_from.timestamp())
+
+    # найти дату плюс-минус 5 дней (на случай праздников)
+    min_diff = 3600 * 24 * 5
+
     data = []
-    with open(file, "r") as f:
-        min_ts = str(int(dt_from.timestamp()))
-        for line in f.readlines():
-            if line[14:27] < min_ts:
+
+    with open(file) as f:
+        step = os.path.getsize(file) // 2
+        pos = step
+
+        # binary search for the time before min_ts
+        for _ in range(10):
+            step = step // 2
+            diff = read_line_ts(f, pos) - min_ts
+            # print(_, datetime.utcfromtimestamp(read_line_ts(f, pos)), (diff // 3600))
+            if diff >= 0:
+                pos -= step
                 continue
-            interval = json.loads(line)
+            elif diff < -min_diff:
+                pos += step
+                continue
+            else:
+                break
+        else:
+            ts = read_line_ts(f, 0)
+            dt = datetime.utcfromtimestamp(ts)
+            pos = 0
+            cprint(f"Line for {dt_from} not found {file} {dt}", "red")
+
+        f.seek(pos)
+        f.readline()  # skip incomplete line
+
+        for line in f:
+            if line[14:27] < str(min_ts):
+                continue
+            interval = orjson.loads(line)
             if symbol:
                 interval["symbolId"] = symbol
             data.append(interval)
+
     return data
+
+
+def fix_splits(ticker, trades):
+    ticker = ticker.split(".")[0]
+    params = "interval=3mo&events=split&period1=1400000000&period2=1800000000"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?{params}"
+    res = requests.get(url, headers={'User-Agent': 'Godzilla'})
+    try:
+        splits = res.json()["chart"]["result"][0]["events"]["splits"]
+        splits = sorted(splits.values(), key=lambda x: x["date"], reverse=True)
+    except:
+        return trades
+
+    # for split in splits:
+    #     print(datetime.utcfromtimestamp(split["date"]), split)
+
+    for trade in trades:
+        rate = Decimal("1")
+        for split in splits:
+            if int(trade["timestamp"]) < int(split["date"] * 1000):
+                # splits.pop(0)
+                rate = rate * split["denominator"] / split["numerator"]
+
+        if rate != 1:
+            # print(trade)
+            # print(trade["close"], rate)
+            trade["open"] = str(Decimal(trade["open"]) * rate)
+            trade["high"] = str(Decimal(trade["high"]) * rate)
+            trade["low"] = str(Decimal(trade["low"]) * rate)
+            trade["close"] = str(Decimal(trade["close"]) * rate)
+
+    return trades
 
 
 def parse_quote(quote):
@@ -208,3 +283,13 @@ def parse_quote(quote):
         "price": Decimal(quote["price"]),
         "size": Decimal(quote.get("size", 1)),
     }
+
+
+DT_ZERO = datetime(1970, 1, 1)
+
+
+def unix_timestamp(dt, micro=False):
+    ts = int((dt - DT_ZERO).total_seconds())
+    if micro:
+        ts *= 1000
+    return ts

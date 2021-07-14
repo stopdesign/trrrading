@@ -1,9 +1,9 @@
+import math
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from strategy import BaseStrategy, Signal
-from termcolor import colored, cprint
-from util import trades_to_ohlc
+from util import trades_to_ohlc, interval_dt
 
 
 class ChannelBreakout(BaseStrategy):
@@ -15,8 +15,8 @@ class ChannelBreakout(BaseStrategy):
         super().__init__()
         self.historical_short = []
         self.historical_last_ts = None
-        self.indicator_data = [{"ind": 0, "mid": 0, "timestamp": datetime.now()}]
-
+        self.indicator_data = []
+        self.interval_size = 60
         self.length = params.pop("length")
 
         # локальные минимумы/максимумы последнего интервала
@@ -100,6 +100,26 @@ class ChannelBreakout(BaseStrategy):
         if data_len < self.length:
             # cprint(f"PASS: lack of data, {data_len} < {self.length}", "yellow")
             return signal
+
+        ######
+        # Индикаторы
+        bar = {
+            "timestamp": dt,
+            "up": self.len_hi,
+            "dn": self.len_lo,
+        }
+        if self.indicator_data:
+            prev_bar = self.indicator_data[-1]
+            if (
+                prev_bar["timestamp"].hour != dt.hour
+                or
+                prev_bar["up"] != bar["up"]
+                or
+                prev_bar["dn"] != bar["dn"]
+            ):
+                self.indicator_data.append(bar)
+        else:
+            self.indicator_data.append(bar)
 
         # Это стратегия
         if self.len_lo and self.len_hi:

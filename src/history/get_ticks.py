@@ -9,12 +9,13 @@ from time import sleep
 from datetime import datetime, timezone
 from settings import keys
 from util import interval_dt
+from termcolor import cprint
 
 env = "live"
 api_keys = getattr(keys, env)
 
 
-ticker = "URA.ARCA"
+ticker = "URNM.ARCA"
 base = f"https://api-{env}.exante.eu"
 url_tick = f"{base}/md/3.0/ticks/{ticker}"
 
@@ -36,7 +37,14 @@ def fetch_data(data_type, dt_from):
 
     while True:
         params = {"type": data_type, "from": dt_from, "size": size}
-        res = requests.get(url_tick, params=params, headers=get_next_headers())
+        try:
+            res = requests.get(
+                url_tick, params=params, headers=get_next_headers(), timeout=15,
+            )
+        except requests.exceptions.RequestException as e:
+            cprint(f"{e!s}", color="red")
+            sleep(3)
+            continue
 
         if res.status_code == 200:
             data = res.json()
@@ -63,7 +71,7 @@ def fetch_data(data_type, dt_from):
                 print("ALL DONE")
                 break
 
-            sleep(1)
+            sleep(3)
 
         elif res.status_code == 429:
             print("429")
@@ -76,9 +84,9 @@ def fetch_data(data_type, dt_from):
 
 
 def main():
-    dt_from = datetime(year=2021, month=5, day=21)
+    dt_from = datetime(year=2018, month=1, day=1)
 
-    for data_type in ["quotes", "trades"]:
+    for data_type in ["trades", "quotes"]:
         print()
         print(data_type, dt_from)
         fetch_data(data_type, dt_from)

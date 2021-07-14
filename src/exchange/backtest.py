@@ -1,21 +1,22 @@
+import sys
 from datetime import datetime, timedelta
 from decimal import Decimal
 import pandas_market_calendars as mcal
 from termcolor import cprint, colored
 from exchange import BaseExchange
 from history.ohlc_to_ticks import ohlc_to_trades, ohlc_to_quotes
-from util import interval_dt, load_from_file, parse_quote, normalize_ohlc
+from util import interval_dt, load_from_file, parse_quote, unix_timestamp, fix_splits
 
 
 class BacktestExchange(BaseExchange):
-
     def __init__(self, symbols: list, **kwargs):
         super().__init__(symbols)
 
         self.quotes = {}
 
+        self.mode = kwargs.get("mode", "ticks")
         self.dt_start = kwargs.pop("dt_start")
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=30))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
@@ -25,30 +26,36 @@ class BacktestExchange(BaseExchange):
         data = []
         for symbol in self.symbols:
             data += self.load_tick_data(symbol, self.dt_from)
+        # data = data[:37000]
         return sorted(data, key=lambda x: x["timestamp"])
 
     def load_tick_data(self, symbol, dt_from):
         """
         Чтение архивных данных из файлов.
         """
-        quotes_file = f"../data/live-{symbol}-quotes-ticks.jsonl"
-        trades_file = f"../data/live-{symbol}-trades-ticks.jsonl"
-        # quotes_file = ""
-        # trades_file = f"./history/live-{symbol}-trades-60.jsonl"
-        # trades = ohlc_to_trades(trades)
-        # cprint(f" Load ticks: {dt_from}, {symbol} ", attrs=["reverse"])
+        exchange = symbol.split(".")[1]
+        if self.mode == "ticks":
+            quotes_file = f"../data/live-{symbol}-quotes-ticks.jsonl"
+            trades_file = f"../data/live-{symbol}-trades-ticks.jsonl"
+        elif self.mode in ["300", "60"]:
+            quotes_file = ""
+            tf = self.mode
+            trades_file = f"../data/{exchange.lower()}-{tf}/live-{symbol}-trades-{tf}.jsonl"
+        else:
+            raise Exception(f"Unknown mode '{self.mode}'")
 
         try:
             quotes = load_from_file(quotes_file, dt_from, symbol)
         except FileNotFoundError:
-            cprint("No quotes data", "red")
-            print()
+            # cprint("No quotes data\n", "red")
             quotes = []
 
         trades = load_from_file(trades_file, dt_from, symbol)
+        trades = fix_splits(symbol, trades)
 
-        # trades = ohlc_to_trades(trades)
-        # quotes = ohlc_to_quotes(quotes)
+        if self.mode != "ticks":
+            trades = ohlc_to_trades(trades)
+            quotes = ohlc_to_quotes(quotes)
 
         # Добавляются фейковые интервалы, повторяющие имеющуюся цену
         # trades = normalize_ohlc(trades, 60)
@@ -64,13 +71,21 @@ class BacktestExchange(BaseExchange):
                     "ask": [{"price": price + spread, "size": 100}],
                     "bid": [{"price": price - spread, "size": 100}],
                 })
+        else:
+            # Прибавляю N секунд к Quotes, чтобы они запаздывали относительно Trades.
+            # Это эмулирует задержку при размещении ордера.
+            # Работает только с настоящими tick quotes.
+            for quote in quotes:
+                quote["timestamp"] += 10_000
 
         # Расписание биржи
         nyse = mcal.get_calendar("NYSE")
         schedule = nyse.schedule(start_date=dt_from, end_date=datetime.utcnow())
         schedule_dict = {}
         for day, t in schedule.T.to_dict("list").items():
-            schedule_dict[day.date()] = [t[0].timestamp(), t[1].timestamp()]
+            t0 = t[0].replace(tzinfo=None)
+            t1 = t[1].replace(tzinfo=None)
+            schedule_dict[day.date()] = [unix_timestamp(t0), unix_timestamp(t1)]
 
         # Разметить нерабочее время
         for trade in trades:
@@ -80,11 +95,6 @@ class BacktestExchange(BaseExchange):
                 is_open = day[0] <= ts < day[1]
             if not is_open:
                 trade["extra"] = True
-
-        # Прибавляю N секунд к Quotes, чтобы они запаздывали относительно Trades.
-        # Это эмулирует задержку при размещении ордера.
-        for quote in quotes:
-            quote["timestamp"] += 10_000
 
         # Combine data and sort by time
         data = sorted(quotes + trades, key=lambda x: x["timestamp"])
@@ -118,7 +128,7 @@ class BacktestExchange(BaseExchange):
         Изображаю события, приходящие с биржи.
         """
         prev_dt = None
-        for event in self.all_data:
+        for i, event in enumerate(self.all_data):
             symbol = event.get("symbolId")
 
             if not symbol or "timestamp" not in event:
@@ -146,7 +156,7 @@ class BacktestExchange(BaseExchange):
                 on_event("trade", dt, symbol, parse_quote(event))
 
             # Любое событие биржи
-            on_event("after_event", dt, symbol)
+            # on_event("after_event", dt, symbol)
 
     def start_listen(self, on_event, loop=None):
         """

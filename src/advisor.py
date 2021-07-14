@@ -20,8 +20,8 @@ class Advisor:
         strategy,
         instrument,
         length=10,
-        extra_hours=False,
-        extra_hours_data=True,
+        extra_trade=False,
+        extra_data=True,
         interval=None,
     ):
         strategy_class = all_strategies[strategy]
@@ -29,13 +29,13 @@ class Advisor:
         self.instrument = instrument
         self.state = None
         self.strategy_name = strategy
-        self.extra_hours = extra_hours
+        self.extra_trade = extra_trade
 
-        self.use_extra_hours_data = bool(extra_hours_data)
-        self.trade_in_extra_hours = bool(extra_hours)
+        self.use_extra_data = bool(extra_data)
+        self.trade_in_extra_hours = bool(extra_trade)
 
         start = datetime.utcnow() - timedelta(days=365 * 5)
-        end = datetime.utcnow() + timedelta(days=365)
+        end = datetime.utcnow() + timedelta(days=10)
         self.schedule = self.init_schedule(start, end)
 
     def __str__(self):
@@ -56,24 +56,24 @@ class Advisor:
             for day, t in sorted(cal.T.to_dict("list").items()):
                 t0 = t[0].to_pydatetime().replace(hour=0, minute=0)
                 t1 = t[0].to_pydatetime().replace(hour=23, minute=59, second=59)
-                by_days[day.date()] = [t0, t1]
+                by_days[day.date()] = [t0.replace(tzinfo=None), t1.replace(tzinfo=None)]
         else:
             cal = mcal.get_calendar(self.exchange_symbol).schedule(start, end)
             for day, t in sorted(cal.T.to_dict("list").items()):
-                by_days[day.date()] = [t[0].to_pydatetime(), t[1].to_pydatetime()]
+                t0 = t[0].to_pydatetime()
+                t1 = t[1].to_pydatetime()
+                by_days[day.date()] = [t0.replace(tzinfo=None), t1.replace(tzinfo=None)]
         return by_days
 
     def is_main_session(self, dt):
-        dt = dt.astimezone(timezone.utc)
         t0, t1 = self.schedule.get(dt.date(), (None, None))
         return t0 and t1 and t0 < dt < t1
 
-    def update_strategy(self, trade):
-        dt = interval_dt(trade)
-        if not (self.is_main_session(dt) or self.use_extra_hours_data):
+    def update_strategy(self, dt, trade):
+        if not (self.is_main_session(dt) or self.use_extra_data):
             return
         # Обновить текущий внутренний state стратегии
-        self.test_price(interval_dt(trade), trade["price"])
+        self.test_price(dt, trade["price"])
         # Обновить набор исторических данных
         self.strategy.update_trades(trade)
 

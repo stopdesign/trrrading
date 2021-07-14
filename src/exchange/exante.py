@@ -240,7 +240,7 @@ class ExanteExchange(BaseExchange):
         Используется для наполнения историческими данными.
         Запускается синхронно.
         """
-        now = datetime.now().astimezone(timezone.utc)
+        now = datetime.utcnow()
         data = []
         for symbol in self.symbols:
             data += self.get_past_data(symbol, now, 60 * 25)  # подсчитать, сколько надо

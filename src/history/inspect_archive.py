@@ -1,18 +1,39 @@
 import json
 import os, re
+import requests
+import jwt
 from datetime import datetime
 from statistics import mean
-from urllib.parse import quote
+from settings import keys
 from termcolor import cprint
 
 
+env = "live"
+api_keys = getattr(keys, env)
+
+
 def interval_dt(interval):
-    return datetime.fromtimestamp(interval["timestamp"] // 1000)
+    return datetime.utcfromtimestamp(interval["timestamp"] // 1000)
+
+
+def get_next_headers():
+    global api_keys
+    api_keys = api_keys[1:] + [api_keys[0]]
+    key = api_keys[0]
+    payload = {"iss": key[0], "sub": key[1], "aud": ["ohlc", "feed", "symbols"]}
+    token = jwt.encode(payload, key[2], algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
 
 
 def main():
 
-    base = os.path.abspath("../../data/nasdaq/")
+    url = "https://api-live.exante.eu/md/3.0/exchanges/ARCA"
+    res = requests.get(url, headers=get_next_headers())
+    descriptions = {}
+    for stock in res.json():
+        descriptions[stock["symbolId"]] = stock["description"]
+
+    base = os.path.abspath("../../data/arca-60/")
     print(base)
     print()
 
@@ -21,19 +42,25 @@ def main():
         if mtc := re.search(r"^live-([A-Z.]+)-trades-60\.jsonl$", file_name):
             files.append(mtc[0])
 
-    files = files[:50]
+    # files = files[:50]
+
+    # header
+    print(f"ticker {' ' * 9} price   gap  days   ticks\n".title())
 
     cnt = 0
     for file in files:
         f_name = f"{base}/{file}"
-        # first_last_date(f_name)
+        ticker = file.split("-")[1]
+        size = os.path.getsize(f_name) // (1024 * 1024)
 
         diffs = []
         prev_dt = None
-        f = open(f_name, "r")
         days = set()
-        for line in f:
-            dt = interval_dt(json.loads(line))
+
+        line = None
+
+        for line in open(f_name):
+            dt = datetime.utcfromtimestamp(int(line[14:24]))
             if dt < datetime(2021, 1, 1):
                 continue
             if prev_dt and dt.date() == prev_dt.date():
@@ -41,15 +68,35 @@ def main():
                 days.add(dt.date())
             prev_dt = dt
 
+        if not diffs:
+            continue
+
+        # последняя известная цена
+        close = int(float(json.loads(line)["close"]))
+
+        # среднее расстояние между тиками внутри дня
         m_diff = int(mean(diffs))
-        days_2021 = len(days)
+
+        # количество дней
+        days_21 = len(days)
+
+        # количество тиков
         l_diff = len(diffs)
 
-        if m_diff < 250 and days_2021 > 100 and l_diff > 20000:
-            cnt += 1
-            print(f"{file}\t{m_diff:8.0f}{l_diff:8.0f}{days_2021:8.0f}")
+        # Leverage
+        d = descriptions.get(ticker, "").lower()
+        lev = ""
+        if "leverage" in d or "1x" in d or "2x" in d or "3x" in d or "5x" in d:
+            lev = "leverage"
 
-    print(">>>>", cnt)
+        if close > 20 and m_diff < 250 and days_21 > 100 and l_diff < 20000 and l_diff > 15000 and not lev:
+            cnt += 1
+            cprint(f"{ticker:<15}\t{close:6}{m_diff:6}{days_21:6}{l_diff:8}{size:5} MB")
+        else:
+            pass
+            # cprint(f"{ticker:<15}\t{close:6}{m_diff:6}{days_21:6}{l_diff:8}{size:5} MB {lev}", "yellow")
+
+    print("\n>>>>", cnt)
 
 
 def get_first_line(f_name):

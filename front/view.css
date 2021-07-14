@@ -40,13 +40,16 @@ path.ind {
     stroke-width: 1;
 }
 path.indicator-bottom {
-    stroke: #080;
+    stroke: #0a0;
+    stroke-width: 2;
 }
 path.indicator-top {
-    stroke: #d80050;
+    stroke: #f66;
+    stroke-width: 2;
 }
 path.indicator-mid {
     stroke: #5080d8;
+    stroke-width: 2;
 }
 path.indicator-stop {
     stroke-width: 5;
@@ -80,11 +83,11 @@ path.ohlc {
 }
 
 path.ohlc.up {
-    stroke: #8bb;
+    stroke: #50b1b1;
 }
 
 path.ohlc.down {
-    stroke: #eaa;
+    stroke: #ff6b97;
 }
 
 
@@ -112,18 +115,19 @@ path.highlight {
     fill: #ff00ff !important;
 }
 
-path.signal {
-    stroke: none;
+path.deposit {
+    stroke: #6796a2;
     fill: #94ddef;
     stroke-width: 0;
 }
-
 path.drawdown {
-    stroke: none;
-    /*fill: #e99a9a;*/
-    fill: #d50;
-    opacity: 0.4;
+    stroke: #cb816a;
+    fill: #ffc2b0;
     stroke-width: 0;
+}
+path.load {
+    stroke: none;
+    fill: #ccc;
 }
 
 path.zero {
@@ -141,20 +145,27 @@ path.difference {
     fill: #d00;
 }
 
-.grid .domain,
-.ind_grid .domain {
+.main-grid .domain,
+.macd-grid .domain {
     stroke: #000;
     stroke-opacity: 0.5;
     stroke-width: 0.5;
 }
-.grid .tick line {
-    stroke: #000;
-    stroke-dasharray: 5 5;
-    stroke-opacity: 0.5;
+.main-grid .tick line {
+    stroke: #999;
+    stroke-dasharray: 3 10;
+    stroke-width: 0.5;
+}
+.macd-grid .tick line {
+    stroke: #666;
+    stroke-dasharray: 1 3;
     stroke-width: 0.5;
 }
 .ind_grid .tick line {
-    stroke: #ccc;
+
+}
+.tick line.new_week {
+    stroke-dasharray: none;
 }
 
 

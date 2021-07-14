@@ -37,6 +37,7 @@ class Dummy(BaseStrategy):
             ]
 
         ts_q = math.ceil(trade["timestamp"] / (1000 * self.interval_size))
+        # ts_q = math.ceil((trade["timestamp"] + 30 * 60 * 1000) / (1000 * self.interval_size))
         ts_r = int(ts_q * 1000 * self.interval_size)
         trades_by_interval[ts_r].append(trade)
 
