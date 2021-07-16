@@ -39,7 +39,7 @@ def get_hist_data(ticker, start=None, end=None):
 
 def get_exante_data(ticker, start=None, end=None):
 
-    path = f"{BASE_PATH}/forex/live-{ticker}.E.FX-quotes-60.jsonl"
+    path = f"{BASE_PATH}/arca-60/live-{ticker}-trades-60.jsonl"
 
     md = pd.read_json(path, orient="records", lines=True)
     md = md.rename(

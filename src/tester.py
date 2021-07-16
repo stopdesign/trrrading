@@ -1,8 +1,10 @@
 import numpy as np
+import pandas as pd
 import scipy.stats
 from termcolor import cprint, colored
 from strategy import Signal
 from trader import Trader
+from io import StringIO
 
 
 class Tester(Trader):
@@ -19,7 +21,7 @@ class Tester(Trader):
         if not invalid_advisor:
             self.exchange.start_listen(self.on_event, loop)
 
-    def get_stats(self):
+    def get_stats(self, test_name=""):
 
         pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
         p = self.exchange.net_value - self.exchange.cash_initial
@@ -42,6 +44,13 @@ class Tester(Trader):
             f"Trades: {trades:0.0f}\t "
         )
         cprint(txt)
+
+        with open(f"../res/{test_name}-stats.csv", "w+") as s:
+            df = pd.read_csv(StringIO(self.log_stats), index_col="Date")
+            df.index = pd.to_datetime(df.index)
+            df = df.resample("1d").pad()
+            df["Change"] = df["Value"].pct_change(periods=10).dropna()
+            df.to_csv(s)
 
         return (
             roi,

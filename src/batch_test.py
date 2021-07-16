@@ -8,7 +8,7 @@ from tester import Tester
 from multiprocessing import Pool, cpu_count
 
 
-PROCESSES = 4  # cpu_count()
+PROCESSES = 3  # cpu_count()
 
 
 def get_stored_symbols():
@@ -29,7 +29,7 @@ def main() -> None:
     dt = datetime.now()
 
     # symbols = get_stored_symbols()
-    # symbols = ["URA.ARCA", "COPX.ARCA"]
+    # symbols = ["EMQQ.ARCA"]
     symbols = [
         "AMZA.ARCA",
         "ARKK.ARCA",
@@ -45,7 +45,7 @@ def main() -> None:
         "ITOT.ARCA",
         "IWP.ARCA",
         "IXC.ARCA",
-        "JNK.ARCA",
+        # "JNK.ARCA",
         "OIH.ARCA",
         "ROBO.ARCA",
         "URA.ARCA",
@@ -54,7 +54,10 @@ def main() -> None:
         "XSD.ARCA",
     ]
 
-    strategy = "ChannelBreakout2"
+    strategy = "ChannelBreakout"
+    extra_data = False
+
+    dt_start = datetime(2018, 3, 1)
 
     params = []
 
@@ -63,13 +66,12 @@ def main() -> None:
         trades_file = f"../data/{exchange.lower()}-60/live-{symbol}-trades-60.jsonl"
         with open(trades_file) as f:
             ts = read_line_ts(f)
-            dt_start = datetime.utcfromtimestamp(ts) + timedelta(days=55)
+            dt_start = max(dt_start, datetime.utcfromtimestamp(ts) + timedelta(days=55))
 
         print(f"\n{symbol}\t{dt_start:%Y-%m-%d}")
 
-        extra_data = False
-
-        for length in [250, 300, 350, 400, 500, 600, 700, 800]:
+        # for length in [450]:
+        for length in [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200]:
             params.append((dt_start, extra_data, length, strategy, symbol))
 
     with Pool(processes=PROCESSES) as pool:
@@ -85,11 +87,12 @@ def test_params(params):
     advisors = [
         Advisor(strategy, symbol, length=length, extra_data=extra_data),
     ]
+    test_name = f"{symbol}_{strategy}_{length}"
     try:
         tester = Tester(advisors, dt_start=dt_start)
         tester.start()
         tester.stop()
-        roi, max_dd, cnt, pf, r2, roi_dd = tester.get_stats()
+        roi, max_dd, cnt, pf, r2, roi_dd = tester.get_stats(test_name)
     except Exception as e:
         cprint(e, "red")
         return "error"

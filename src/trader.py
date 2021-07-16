@@ -30,18 +30,19 @@ class Trader:
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
-        self.dt_start = dt_start or datetime(2021, 4, 1)
+        self.dt_start = dt_start or datetime(2018, 3, 1)
         self.dt_chart_start = self.dt_start  # + timedelta(days=2)
 
         # Как торговать
-        sym = "CQQQ.ARCA"
+        sym = "OIH.ARCA"
         self.advisors = advisors or [
             Advisor("Dummy", sym, interval=1 * 60 * 60),
             # Advisor("ChannelBreakout2", sym, length=450, extra_data=False),
 
-            Advisor("ChannelBreakout2", "COPX.ARCA", length=350, extra_data=False),
-            Advisor("ChannelBreakout2", "URA.ARCA",  length=450, extra_data=False),
-            Advisor("ChannelBreakout2", "AMZA.ARCA", length=300, extra_data=False),
+            Advisor("ChannelBreakout", "OIH.ARCA", length=300, extra_data=False),
+
+            # Advisor("ChannelBreakout2", "URA.ARCA",  length=450, extra_data=False),
+            # Advisor("ChannelBreakout2", "AMZA.ARCA", length=300, extra_data=False),
             # Advisor("ChannelBreakout2", "AMZA.ARCA", length=350, extra_data=False),
             # Advisor("ChannelBreakout2", "AMZA.ARCA", length=400, extra_data=False),
             # Advisor("ChannelBreakout2", "ARKK.ARCA", length=300, extra_data=False),

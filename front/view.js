@@ -259,8 +259,9 @@ function draw(data, trades, stats, indicator) {
   ));
 
   console.log("data length:", data.length);
-  // const bgn = 3000;
-  // data = data.slice(bgn, bgn + 1000);
+  const bgn = 0;
+  const len = 450;
+  data = data.slice(bgn, bgn + len);
 
   x.domain(data.map(accessor.d));
   let dom = techan.scale.plot.ohlc(data, accessor).domain();

@@ -167,6 +167,10 @@ path.difference {
 .tick line.new_week {
     stroke-dasharray: none;
 }
+.horizon .x-axis .tick line {
+    stroke: #999;
+    stroke-width: 0.5;
+}
 
 
 .crosshair {
