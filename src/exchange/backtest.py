@@ -6,6 +6,7 @@ from termcolor import cprint, colored
 from exchange import BaseExchange
 from history.ohlc_to_ticks import ohlc_to_trades, ohlc_to_quotes
 from util import interval_dt, load_from_file, parse_quote, unix_timestamp, fix_splits
+from util import load_from_ib_file, load_quotes_from_ib_file
 
 
 class BacktestExchange(BaseExchange):
@@ -50,12 +51,15 @@ class BacktestExchange(BaseExchange):
             # cprint("No quotes data\n", "red")
             quotes = []
 
+        # trades = load_from_ib_file(dt_from, symbol)
         trades = load_from_file(trades_file, dt_from, symbol)
         trades = fix_splits(symbol, trades)
 
         if self.mode != "ticks":
             trades = ohlc_to_trades(trades)
             quotes = ohlc_to_quotes(quotes)
+
+        # quotes = load_quotes_from_ib_file(dt_from, symbol)
 
         # Добавляются фейковые интервалы, повторяющие имеющуюся цену
         # trades = normalize_ohlc(trades, 60)
@@ -71,7 +75,7 @@ class BacktestExchange(BaseExchange):
                     "ask": [{"price": price + spread, "size": 100}],
                     "bid": [{"price": price - spread, "size": 100}],
                 })
-        else:
+        elif self.mode == "ticks":
             # Прибавляю N секунд к Quotes, чтобы они запаздывали относительно Trades.
             # Это эмулирует задержку при размещении ордера.
             # Работает только с настоящими tick quotes.

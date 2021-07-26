@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from termcolor import cprint, colored
 from advisor import Advisor
-from exchange import BacktestExchange, ExanteExchange  # noqa
+from exchange import BacktestExchange, ExanteExchange, InteractiveBrokersExchange  # noqa
 from notifications.alert import send_telegram  # noqa
 from strategy import Signal
 from util import interval_dt, unix_timestamp
@@ -18,8 +18,8 @@ CURSOR_UP_ONE = "\x1b[1A"
 ERASE_LINE = "\x1b[2K"
 
 
-def cprint(*args, **kwargs):
-    pass
+# def cprint(*args, **kwargs):
+#     pass
 
 
 class Trader:
@@ -30,43 +30,22 @@ class Trader:
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
-        self.dt_start = dt_start or datetime(2018, 3, 1)
+        self.dt_start = dt_start or datetime(2021, 3, 1)
         self.dt_chart_start = self.dt_start  # + timedelta(days=2)
 
         # Как торговать
-        sym = "OIH.ARCA"
+        sym = "COPX.ARCA"
         self.advisors = advisors or [
-            Advisor("Dummy", sym, interval=1 * 60 * 60),
-            # Advisor("ChannelBreakout2", sym, length=450, extra_data=False),
+            Advisor("Dummy", sym, interval=3 * 60 * 60),
 
-            Advisor("ChannelBreakout", "OIH.ARCA", length=300, extra_data=False),
-
-            # Advisor("ChannelBreakout2", "URA.ARCA",  length=450, extra_data=False),
-            # Advisor("ChannelBreakout2", "AMZA.ARCA", length=300, extra_data=False),
-            # Advisor("ChannelBreakout2", "AMZA.ARCA", length=350, extra_data=False),
-            # Advisor("ChannelBreakout2", "AMZA.ARCA", length=400, extra_data=False),
-            # Advisor("ChannelBreakout2", "ARKK.ARCA", length=300, extra_data=False),
-            # Advisor("ChannelBreakout2", "BLOK.ARCA", length=400, extra_data=False),
-            # Advisor("ChannelBreakout2", "BLOK.ARCA", length=450, extra_data=False),
-            # Advisor("ChannelBreakout2", "CHIQ.ARCA", length=450, extra_data=False),
-            # Advisor("ChannelBreakout2", "CQQQ.ARCA", length=450, extra_data=False),
-            # Advisor("ChannelBreakout2", "EMQQ.ARCA", length=600, extra_data=False),
-            # Advisor("ChannelBreakout2", "EMQQ.ARCA", length=800, extra_data=False),
-            # Advisor("ChannelBreakout2", "EPOL.ARCA", length=400, extra_data=False),
-            # Advisor("ChannelBreakout2", "EPOL.ARCA", length=450, extra_data=False),
-            # Advisor("ChannelBreakout2", "JNK.ARCA",  length=700, extra_data=False),
-            # Advisor("ChannelBreakout2", "LIT.ARCA",  length=450, extra_data=False),
-            # Advisor("ChannelBreakout2", "OIH.ARCA",  length=400, extra_data=False),
-            # Advisor("ChannelBreakout2", "ROBO.ARCA", length=300, extra_data=False),
-            # Advisor("ChannelBreakout2", "ROBO.ARCA", length=350, extra_data=False),
-            # Advisor("ChannelBreakout2", "ROBO.ARCA", length=400, extra_data=False),
-            # Advisor("ChannelBreakout2", "VCR.ARCA",  length=300, extra_data=False),
-            # Advisor("ChannelBreakout2", "VDE.ARCA",  length=450, extra_data=False),
-
-            # Advisor("Volty", sym, length=500, extra_data=False),
-            # Advisor("SuperTrend", sym, length=100, extra_data=False),
-            # Advisor("ParabolicSAR", sym, interval=3600, extra_data=False),
-            # Advisor("ChannelBreakout", sym, length=500),
+            ## Advisor("ChannelBreakout2", "OIH.ARCA",  length=350, extra_data=True),   # +3  ~боковик
+            Advisor("ChannelBreakout2", "COPX.ARCA", length=350, extra_data=False, extra_trade=False),  # +60
+            # Advisor("ChannelBreakout2", "ARKK.ARCA", length=700, extra_data=False),  # +норм
+            # Advisor("ChannelBreakout2", "AMZA.ARCA", length=500, extra_data=False),  # +36.9%
+            # Advisor("ChannelBreakout2", "EMQQ.ARCA", length=400, extra_data=True),   # +22.9
+            # Advisor("ChannelBreakout2", "BLOK.ARCA", length=1000, extra_data=True),  # +16  — был боковик, но...
+            # Advisor("ChannelBreakout2", "URA.ARCA",  length=500, extra_data=True),   # +40
+            ## Advisor("ChannelBreakout2", "ROBO.ARCA", length=900, extra_data=False),  # сейчас боковик
         ]
 
         self.log_intervals = "Date,Open,High,Low,Close\n"
@@ -80,6 +59,7 @@ class Trader:
             ss, dt_start=self.dt_start, dt_from=dt_from, mode="60"
         )
         # self.exchange = ExanteExchange(ss)
+        # self.exchange = InteractiveBrokersExchange(ss, loop=loop)
 
         cprint("Historical data", "white")
 
@@ -118,13 +98,13 @@ class Trader:
         self.exchange.start_listen(self.on_event, loop)
 
     def stop(self, loop=None):  # noqa
-        self.exchange.stop_listen()
-
         # Актуализация статистики DD
         drawdown = max(Decimal(0), self.max_net_value - self.exchange.net_value)
         self.max_net_value = max(self.max_net_value, self.exchange.net_value)
         self.cur_drawdown = drawdown / self.max_net_value * 100
         self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
+
+        self.exchange.stop_listen()
 
         # Подсчет gross profit/loss после закрытия
         self.update_profit_loss()
@@ -212,7 +192,8 @@ class Trader:
         """
         В стриме биржи возникло новое событие.
         """
-        # cprint(f"{dt}: EVENT {event_type} {symbol}", "white")
+        # if "historical" not in event_type and event_type != "quote":
+        #     cprint(f"{dt}: EVENT {event_type} {symbol}", "white")
 
         # На бирже произошла новая сделка
         if event_type == "trade":
@@ -353,7 +334,7 @@ class Trader:
         Здесь же риск-менеджмент уровня аккаунта,
         контроль использования маржи.
         """
-        # cprint(f"\nON_TRADE {dt} {instrument} {price}", "cyan")
+        # cprint(f"\nON_TRADE {dt} {instrument} {trade_price}", "cyan")
         # self.portfolio_info()
 
         # Протестировать новую цену (не добавляя в историю).
@@ -401,11 +382,13 @@ class Trader:
             color = "red"
             sign = "-"
         action = colored(f"{(sign+str(asset_amount_diff)):>5}", color)
+
+        price_diff = abs(trade_price - price) / price * 100
         txt = (
-            f"{dt}  {symbol_str}    "
+            f"{dt:%Y-%m-d %H:%M:%S}  {symbol_str}    "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
             f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
-            f"do: {action}"
+            f"do: {action}    𝝙: {price_diff:0.2f}"
         )
         txt = txt.replace("+0", colored(" 0", "white"))
         cprint(txt)
@@ -423,7 +406,7 @@ class Trader:
             # Подсчет gross profit/loss после каждой сделки
             profit_loss = self.update_profit_loss()
 
-            txt = f"{dt},{side},{price:0.4f},{profit_loss:0.4f}\n"
+            txt = f"{dt:%Y-%m-d %H:%M:%S},{side},{price:0.4f},{profit_loss:0.4f}\n"
             self.log_trades += txt
             # cprint(txt)
 

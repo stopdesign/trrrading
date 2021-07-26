@@ -1,12 +1,10 @@
-import json
-import math
 from talipp.indicators import EMA, ATR, DonchianChannels
 from collections import defaultdict, namedtuple
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from strategy import BaseStrategy, Signal
 from util import trades_to_ohlc, interval_dt, unix_timestamp
-from termcolor import cprint
+from termcolor import cprint, colored
 
 # TODO: dataclass
 OHLC = namedtuple("OHLC", "timestamp, interval, open, high, low, close")
@@ -117,6 +115,7 @@ class ChannelBreakout2(BaseStrategy):
         signal = Signal.PASS
 
         if not self.indicator_data:
+            # cprint("no indicator_data", "yellow")
             return signal
 
         bar = self.indicator_data[-1]
@@ -133,6 +132,8 @@ class ChannelBreakout2(BaseStrategy):
         #
         # elif bar["sig_dn"]:
         #     signal = Signal.SHORT
+
+        # signal = random.choice([Signal.SHORT, Signal.LONG, Signal.PASS])
 
         # if signal.value:
         #     txt = f"{dt:%Y-%m-%d %H:%M:%S} "

@@ -246,6 +246,46 @@ def load_from_file(file, dt_from=datetime(1900, 1, 1), symbol=None):
     return data
 
 
+def load_from_ib_file(dt_from=datetime(1900, 1, 1), symbol=None):
+    f = "/Users/gregory/projects/life/trrrading/src/history/ARCA/COPX/trades.txt"
+    import pandas as pd
+    import numpy as np
+
+    min_ts = int(dt_from.timestamp()) * 1000
+
+    df = pd.read_csv(f, sep="\t", index_col="date", dtype=str)
+    df["symbolId"] = symbol
+    df.sort_index(inplace=True)
+    df["timestamp"] = pd.to_datetime(df.index, utc=True).values.astype(np.int64) // 10 ** 6
+    df = df[df["timestamp"] > min_ts]
+    df = df[df["timestamp"] <= 1626206400000]
+    return df.to_dict(orient="records")
+
+
+def load_quotes_from_ib_file(dt_from=datetime(1900, 1, 1), symbol=None):
+    f = "/Users/gregory/projects/life/trrrading/src/history/ARCA/COPX/bidask.txt"
+    import pandas as pd
+    import numpy as np
+
+    min_ts = int(dt_from.timestamp()) * 1000
+
+    df = pd.read_csv(f, sep="\t", index_col="date", dtype=str)
+    df["symbolId"] = symbol
+    df.sort_index(inplace=True)
+    df["timestamp"] = pd.to_datetime(df.index, utc=True).values.astype(np.int64) // 10 ** 6
+    df = df[df["timestamp"] > min_ts]
+    df = df[df["timestamp"] <= 1626206400000]
+    df = df[["timestamp", "av_bid", "av_ask", "symbolId"]]
+
+    df_rows = df.to_dict(orient="records")
+
+    for row in df_rows:
+        row["ask"] = [{"price": row["av_ask"], "size": 100}]
+        row["bid"] = [{"price": row["av_bid"], "size": 100}]
+
+    return df_rows
+
+
 def fix_splits(ticker, trades):
     ticker = ticker.split(".")[0]
     params = "interval=3mo&events=split&period1=1400000000&period2=1800000000"

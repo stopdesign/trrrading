@@ -32,11 +32,15 @@ class BaseExchange:
         current_quote = self.quotes.get(symbol)
         if current_quote and current_quote["dt"] > dt:
             return
-        self.quotes[symbol] = {
-            "ask": list(map(parse_quote, event["ask"])),
-            "bid": list(map(parse_quote, event["bid"])),
-            "dt": dt,
-        }
+        if symbol not in self.quotes:
+            self.quotes[symbol] = {}
+        # ask и bid могут приходить независимо
+        if event["ask"]:
+            self.quotes[symbol]["ask"] = list(map(parse_quote, event["ask"]))
+            self.quotes[symbol]["dt"] = dt
+        if event["bid"]:
+            self.quotes[symbol]["bid"] = list(map(parse_quote, event["bid"]))
+            self.quotes[symbol]["dt"] = dt
 
     def get_past_data(self, symbol, start_at, minutes):
         pass

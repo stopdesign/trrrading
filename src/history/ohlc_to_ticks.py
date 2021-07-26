@@ -36,6 +36,7 @@ def interval_to_trades(interval):
         l.as_tuple().exponent,
         c.as_tuple().exponent,
     )
+    longest_exp = max(-10, longest_exp)
     q = Decimal(10) ** longest_exp
 
     # open

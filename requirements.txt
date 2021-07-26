@@ -5,4 +5,7 @@ termcolor==1.1.0
 pandas_market_calendars
 aioconsole
 TA-Lib==0.4.20
+talipp==1.6.0
 orjson
+scipy
+ib-insync==0.9.66
