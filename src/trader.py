@@ -33,20 +33,7 @@ class Trader:
         self.dt_start = dt_start or datetime(2021, 3, 1)
         self.dt_chart_start = self.dt_start  # + timedelta(days=2)
 
-        # Как торговать
-        sym = "COPX.ARCA"
-        self.advisors = advisors or [
-            Advisor("Dummy", sym, interval=3 * 60 * 60),
-
-            ## Advisor("ChannelBreakout2", "OIH.ARCA",  length=350, extra_data=True),   # +3  ~боковик
-            Advisor("ChannelBreakout2", "COPX.ARCA", length=350, extra_data=False, extra_trade=False),  # +60
-            # Advisor("ChannelBreakout2", "ARKK.ARCA", length=700, extra_data=False),  # +норм
-            # Advisor("ChannelBreakout2", "AMZA.ARCA", length=500, extra_data=False),  # +36.9%
-            # Advisor("ChannelBreakout2", "EMQQ.ARCA", length=400, extra_data=True),   # +22.9
-            # Advisor("ChannelBreakout2", "BLOK.ARCA", length=1000, extra_data=True),  # +16  — был боковик, но...
-            # Advisor("ChannelBreakout2", "URA.ARCA",  length=500, extra_data=True),   # +40
-            ## Advisor("ChannelBreakout2", "ROBO.ARCA", length=900, extra_data=False),  # сейчас боковик
-        ]
+        self.advisors = advisors
 
         self.log_intervals = "Date,Open,High,Low,Close\n"
         self.log_trades = "Date,Direction,Price,Profit\n"
@@ -93,7 +80,7 @@ class Trader:
         log = f"{self.exchange.net_value:0.2f},{self.cur_drawdown:0.2f},0,0\n"
         self.log_stats += f"{self.dt_start},{log}"
 
-    def start(self, loop):
+    def start(self, loop=None):
         cprint("Start listening for updates...", "white")
         self.exchange.start_listen(self.on_event, loop)
 
@@ -385,7 +372,7 @@ class Trader:
 
         price_diff = abs(trade_price - price) / price * 100
         txt = (
-            f"{dt:%Y-%m-d %H:%M:%S}  {symbol_str}    "
+            f"{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
             f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
             f"do: {action}    𝝙: {price_diff:0.2f}"
@@ -406,7 +393,7 @@ class Trader:
             # Подсчет gross profit/loss после каждой сделки
             profit_loss = self.update_profit_loss()
 
-            txt = f"{dt:%Y-%m-d %H:%M:%S},{side},{price:0.4f},{profit_loss:0.4f}\n"
+            txt = f"{dt:%Y-%m-%d %H:%M:%S},{side},{price:0.4f},{profit_loss:0.4f}\n"
             self.log_trades += txt
             # cprint(txt)
 
