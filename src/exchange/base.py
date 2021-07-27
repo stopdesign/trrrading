@@ -74,7 +74,7 @@ class BaseExchange:
         total_value = self.cash
         for symbol, position in self.positions.items():
             if position["amount"] > 0:
-                price = self.get_price(symbol, "sell")
+                price = Decimal(self.get_price(symbol, "sell"))
                 if price is None:
                     # FIXME:
                     cprint(f"WARNING: {symbol} price is {price}", "yellow")
@@ -82,7 +82,7 @@ class BaseExchange:
                 total_value += position["amount"] * (price - position["price"])
                 total_value -= self.fee_rate * position["amount"]
             if position["amount"] < 0:
-                price = self.get_price(symbol, "buy")
+                price = Decimal(self.get_price(symbol, "buy"))
                 if price is None:
                     cprint(f"WARNING: {symbol} price is {price}", "yellow")
                     continue
@@ -99,14 +99,14 @@ class BaseExchange:
         total_value = 0
         for symbol, position in self.positions.items():
             if position["amount"] > 0:
-                price = self.get_price(symbol, "sell")
+                price = Decimal(self.get_price(symbol, "sell"))
                 if price is None:
                     # FIXME:
                     cprint(f"WARNING: {symbol} price is {price}", "yellow")
                     continue
                 total_value += position["amount"] * price
             if position["amount"] < 0:
-                price = self.get_price(symbol, "buy")
+                price = Decimal(self.get_price(symbol, "buy"))
                 if price is None:
                     cprint(f"WARNING: {symbol} price is {price}", "yellow")
                     continue

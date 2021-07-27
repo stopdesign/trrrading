@@ -1,174 +1,78 @@
-import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-import pandas_market_calendars as mcal
+from typing import Optional
 from termcolor import cprint, colored
 from exchange import BaseExchange
-from history.ohlc_to_ticks import ohlc_to_trades, ohlc_to_quotes
-from util import interval_dt, load_from_file, parse_quote, unix_timestamp, fix_splits
-from util import load_from_ib_file, load_quotes_from_ib_file
+from storage.ib import load_many
+
+
+@dataclass
+class Trade:
+    price: float
+    volume: int
+
+
+@dataclass
+class BidAsk:
+    bid: float
+    ask: float
 
 
 class BacktestExchange(BaseExchange):
     def __init__(self, symbols: list, **kwargs):
         super().__init__(symbols)
-
         self.quotes = {}
-
-        self.mode = kwargs.get("mode", "ticks")
         self.dt_start = kwargs.pop("dt_start")
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
         self.all_data = self.load_data()
 
     def load_data(self):
-        data = []
-        for symbol in self.symbols:
-            data += self.load_tick_data(symbol, self.dt_from)
-        # data = data[:37000]
-        return sorted(data, key=lambda x: x["timestamp"])
+        df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
 
-    def load_tick_data(self, symbol, dt_from):
-        """
-        Чтение архивных данных из файлов.
-        """
-        exchange = symbol.split(".")[1]
-        if self.mode == "ticks":
-            quotes_file = f"../data/live-{symbol}-quotes-ticks.jsonl"
-            trades_file = f"../data/live-{symbol}-trades-ticks.jsonl"
-        elif self.mode in ["300", "60"]:
-            quotes_file = ""
-            tf = self.mode
-            trades_file = f"../data/{exchange.lower()}-{tf}/live-{symbol}-trades-{tf}.jsonl"
-        else:
-            raise Exception(f"Unknown mode '{self.mode}'")
+        # BIDASK должен приходить раньше TRADES для этого интервала
+        df.sort_values(["date", "ticker", "data_type"], inplace=True)
 
-        try:
-            quotes = load_from_file(quotes_file, dt_from, symbol)
-        except FileNotFoundError:
-            # cprint("No quotes data\n", "red")
-            quotes = []
-
-        # trades = load_from_ib_file(dt_from, symbol)
-        trades = load_from_file(trades_file, dt_from, symbol)
-        trades = fix_splits(symbol, trades)
-
-        if self.mode != "ticks":
-            trades = ohlc_to_trades(trades)
-            quotes = ohlc_to_quotes(quotes)
-
-        # quotes = load_quotes_from_ib_file(dt_from, symbol)
-
-        # Добавляются фейковые интервалы, повторяющие имеющуюся цену
-        # trades = normalize_ohlc(trades, 60)
-
-        # Если нет настоящих quotes, то каждый trade используется как quote
-        if not quotes:
-            spread = self.fee_rate * 1
-            for trade in trades:
-                price = Decimal(trade["price"])
-                quotes.append({
-                    "symbolId": symbol,
-                    "timestamp": trade["timestamp"],
-                    "ask": [{"price": price + spread, "size": 100}],
-                    "bid": [{"price": price - spread, "size": 100}],
-                })
-        elif self.mode == "ticks":
-            # Прибавляю N секунд к Quotes, чтобы они запаздывали относительно Trades.
-            # Это эмулирует задержку при размещении ордера.
-            # Работает только с настоящими tick quotes.
-            for quote in quotes:
-                quote["timestamp"] += 10_000
-
-        # Расписание биржи
-        nyse = mcal.get_calendar("NYSE")
-        schedule = nyse.schedule(start_date=dt_from, end_date=datetime.utcnow())
-        schedule_dict = {}
-        for day, t in schedule.T.to_dict("list").items():
-            t0 = t[0].replace(tzinfo=None)
-            t1 = t[1].replace(tzinfo=None)
-            schedule_dict[day.date()] = [unix_timestamp(t0), unix_timestamp(t1)]
-
-        # Разметить нерабочее время
-        for trade in trades:
-            ts = trade["timestamp"] / 1000
-            is_open = False
-            if day := schedule_dict.get(datetime.utcfromtimestamp(ts).date()):
-                is_open = day[0] <= ts < day[1]
-            if not is_open:
-                trade["extra"] = True
-
-        # Combine data and sort by time
-        data = sorted(quotes + trades, key=lambda x: x["timestamp"])
-
-        return data
+        return df
 
     def process_historical_data(self, on_event):
         """
         Прогнать события по историческим данным.
-        Предзаполняются цены и сигналы, торговля не происходит.
         """
-        for event in self.all_data:
-            symbol = event.get("symbolId")
-
-            if not symbol or "timestamp" not in event:
-                continue
-
-            dt = interval_dt(event)
-
-            # Используется для наполнения историческими данными
-            if self.dt_from < dt < self.dt_start:
-                if "ask" in event:
-                    ask = list(map(parse_quote, event["ask"]))
-                    bid = list(map(parse_quote, event["bid"]))
-                    on_event("historical_quote", dt, symbol, {"ask": ask, "bid": bid})
-                if "price" in event:
-                    on_event("historical_trade", dt, symbol, parse_quote(event))
-
-    def data_stream(self, on_event):
-        """
-        Изображаю события, приходящие с биржи.
-        """
-        prev_dt = None
-        for i, event in enumerate(self.all_data):
-            symbol = event.get("symbolId")
-
-            if not symbol or "timestamp" not in event:
-                continue
-
-            dt = interval_dt(event)
-
-            # Используется для наполнения историческими данными
-            if dt < self.dt_start:
-                continue
-
-            # Аналитика перед открытием нового интервала
-            if prev_dt and dt.day != prev_dt.day:
-                norm_dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-                on_event("before_interval", norm_dt, symbol)
-            prev_dt = dt
-
-            # События с биржи
-            if "ask" in event and "bid" in event:
-                ask = list(map(parse_quote, event["ask"]))
-                bid = list(map(parse_quote, event["bid"]))
-                on_event("quote", dt, symbol, {"ask": ask, "bid": bid})
-
-            if "price" in event:
-                on_event("trade", dt, symbol, parse_quote(event))
-
-            # Любое событие биржи
-            # on_event("after_event", dt, symbol)
+        stream = self.all_data.loc[self.dt_from:self.dt_start]
+        for row in stream.itertuples():
+            self.process_event(row, on_event)
 
     def start_listen(self, on_event, loop=None):
         """
-        В данном случае можно синхронно прогнать все данные.
+        Эмулировать события, приходящие с биржи.
         """
-        self.data_stream(on_event)
-        if loop:
-            loop.stop()
+        stream = self.all_data.loc[self.dt_start:]
+        prev_date = None
+        for row in stream.itertuples():
+            dt = row.Index.to_pydatetime()
+            if prev_date and dt.hour != prev_date.hour:
+                norm_dt = dt.replace(minute=0, second=0, microsecond=0)
+                on_event("before_interval", norm_dt)
+            prev_date = dt
+            self.process_event(row, on_event)
+
+    def process_event(self, row, on_event):
+        dt = row.Index.to_pydatetime()
+        symbol = row.ticker
+
+        if row.data_type == "BIDASK":
+            payload = BidAsk(bid=row.av_bid, ask=row.av_ask)
+            on_event("quote", dt, symbol, payload)
+
+        if row.data_type == "TRADES":
+            for price in [row.open, row.high, row.low, row.close]:
+                payload = Trade(price=price, volume=row.volume)
+                on_event("trade", dt, symbol, payload)
+            on_event("bar", dt, symbol, row)
 
     def stop_listen(self, loop=None):
         """
@@ -179,6 +83,30 @@ class BacktestExchange(BaseExchange):
                 self.trade("sell", abs(position["amount"]), symbol)
             if position["amount"] < 0:
                 self.trade("buy", abs(position["amount"]), symbol)
+
+    def get_price(self, symbol: str, side: str) -> Optional[float]:
+        if quotes := self.quotes.get(symbol):
+            if side == "sell":
+                return quotes["bid"]
+            if side == "buy":
+                return quotes["ask"]
+
+    def add_quote(self, dt, symbol, payload):
+        """
+        Сохранить BID и ASK как актуальное состояние стакана на бирже.
+        """
+        current_quote = self.quotes.get(symbol)
+        if current_quote and current_quote["dt"] > dt:
+            return
+        if symbol not in self.quotes:
+            self.quotes[symbol] = {}
+        # ask и bid могут приходить независимо
+        if payload.ask:
+            self.quotes[symbol]["ask"] = payload.ask
+            self.quotes[symbol]["dt"] = dt
+        if payload.bid:
+            self.quotes[symbol]["bid"] = payload.bid
+            self.quotes[symbol]["dt"] = dt
 
     def trade(self, side: str, amount: Decimal, symbol: str):
         """
@@ -194,7 +122,7 @@ class BacktestExchange(BaseExchange):
 
         start_amount = amount
 
-        if price := self.get_price(symbol, side):
+        if price := Decimal(self.get_price(symbol, side)):
             self.cash -= self.fee_rate * amount
 
             if side == "sell":
@@ -254,7 +182,7 @@ class BacktestExchange(BaseExchange):
                     }
             else:
                 # Увеличение позиции в ту же сторону
-                total_value = position["amount"] * position["price"] + amount * price
+                total_value = position["amount"] * position["price"] + amount * Decimal(price)
                 total_amount = position["amount"] + amount
                 av_price = total_value / total_amount
                 self.positions[symbol] = {

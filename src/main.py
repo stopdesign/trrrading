@@ -11,11 +11,10 @@ def main() -> None:
     dt = datetime.now()
 
     advisors = [
-        Advisor("Dummy", "COPX.ARCA", interval=3 * 60 * 60),
-        Advisor("ChannelBreakout2", "COPX.ARCA", length=350, extra_data=False),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_data=False),
     ]
 
-    dt_start = datetime(2021, 3, 1)
+    dt_start = datetime(2021, 6, 1)
 
     trader = Trader(advisors, dt_start)
 

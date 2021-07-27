@@ -1,3 +1,4 @@
+import pathlib
 from settings import keys
 
 CAN_SHORT = True
@@ -16,3 +17,5 @@ ACCOUNT_ID = "HUYHUY.001"
 # Alerts
 TELEGRAM_TOKEN = "*****:*****"
 TELEGRAM_CHANNEL_ID = "*****"
+
+BASE_DIR = pathlib.Path(__file__).parents[2].absolute()

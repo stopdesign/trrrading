@@ -1,16 +1,15 @@
 import json  # noqa
 import sys
 import math
+import pandas as pd
 import scipy.stats
 import numpy as np
 from datetime import datetime, timedelta
 from decimal import Decimal
 from termcolor import cprint, colored
-from advisor import Advisor
 from exchange import BacktestExchange, ExanteExchange, InteractiveBrokersExchange  # noqa
 from notifications.alert import send_telegram  # noqa
 from strategy import Signal
-from util import interval_dt, unix_timestamp
 from settings import CAN_SHORT
 
 
@@ -30,40 +29,23 @@ class Trader:
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
-        self.dt_start = dt_start or datetime(2021, 3, 1)
-        self.dt_chart_start = self.dt_start  # + timedelta(days=2)
-
+        self.dt_start = dt_start
         self.advisors = advisors
 
-        self.log_intervals = "Date,Open,High,Low,Close\n"
         self.log_trades = "Date,Direction,Price,Profit\n"
         self.log_stats = "Date,Value,Drawdown,Equity,RelEquity\n"
 
         ss = list(set([a.instrument for a in self.advisors]))
 
-        dt_from = self.dt_start - timedelta(days=50)
-        self.exchange = BacktestExchange(
-            ss, dt_start=self.dt_start, dt_from=dt_from, mode="60"
-        )
+        self.exchange = BacktestExchange(ss, dt_start=self.dt_start)
         # self.exchange = ExanteExchange(ss)
-        # self.exchange = InteractiveBrokersExchange(ss, loop=loop)
+        # self.exchange = InteractiveBrokersExchange(ss)
 
         cprint("Historical data", "white")
 
         # Прогнать события по историческим данным.
         # Предзаполняются цены и сигналы, торговля не происходит.
         self.exchange.process_historical_data(self.on_event)
-
-        # Нужно получить достаточно данных, чтобы стратегия смогла
-        # восстановить последний торговый сигнал.
-        invalid_advisor = False
-        for advisor in self.get_advisors():
-            if advisor.state not in [Signal.LONG, Signal.SHORT, Signal.CLOSE]:
-                invalid_advisor = True
-                cprint(f" NO STATE: {advisor} ", color="red", attrs=["reverse"])
-        if invalid_advisor:
-            raise Exception("no state")
-            # sys.exit(1)
 
         self.portfolio_info()
 
@@ -113,10 +95,14 @@ class Trader:
         trades = self.trades_count["buy"] + self.trades_count["sell"]
 
         # R2
-        x = np.arange(len(self.deposits))
-        y = np.array(self.deposits, dtype=float)
-        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-        r2 = r_value ** 2
+        if trades:
+            x = np.arange(len(self.deposits))
+            y = np.array(self.deposits, dtype=float)
+            slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+            r2 = r_value ** 2
+        else:
+            r2 = 0
+            self.max_drawdown = 0
 
         txt = (
             "\n"
@@ -133,44 +119,14 @@ class Trader:
         with open("trades.csv", "w") as t:
             t.write(self.log_trades)
 
-        # Исторические данные собираются из специальных Dummy strategy
-        last_known_dt = self.dt_start
-        for advisor in self.get_advisors(include_dummy=True):
-            if hasattr(advisor.strategy, "final_info"):
-                advisor.strategy.final_info()
-
-            if advisor.strategy.__class__.__name__ != "Dummy":
-                continue
-
-            for interval in advisor.strategy.historical:
-                last_known_dt = interval_dt(interval)
-                if last_known_dt < self.dt_chart_start:
-                    continue
-                if self.advisors[0].is_main_session(last_known_dt):
-                    log = "{open},{high},{low},{close}\n".format(**interval)
-                    self.log_intervals += f"{last_known_dt},{log}"
-
-        log_indicators = "Date,"
-        for advisor in self.get_advisors():
-            if hasattr(advisor.strategy, "indicator_data"):
-                keys = advisor.strategy.indicator_data[0].keys()
-                log_indicators += ",".join(keys) + "\n"
-                for row in advisor.strategy.indicator_data:
-                    ts = row["timestamp"]
-                    val = ""
-                    for v in row.values():
-                        val += f",{v}"
-                    log_indicators += f"{ts}{val}\n"
-                break
-
-        with open("indicator.csv", "w") as d:
-            d.write(log_indicators)
-
         with open("data.csv", "w") as d:
-            d.write(self.log_intervals)
+            df = pd.DataFrame(self.get_advisors()[0].strategy.data)
+            df.set_index("date", inplace=True)
+            df = df.loc[self.dt_start:]
+            df.to_csv(d)
 
-        log = f"{self.exchange.net_value:0.2f},{self.cur_drawdown:0.2f}\n"
-        self.log_stats += f"{last_known_dt},{log}"
+        # log = f"{self.exchange.net_value:0.2f},{self.cur_drawdown:0.2f}\n"
+        # self.log_stats += f"{last_known_dt},{log}"
 
         with open("stats.csv", "w") as s:
             s.write(self.log_stats)
@@ -182,25 +138,23 @@ class Trader:
         # if "historical" not in event_type and event_type != "quote":
         #     cprint(f"{dt}: EVENT {event_type} {symbol}", "white")
 
-        # На бирже произошла новая сделка
+        if event_type == "bar":
+            for advisor in self.get_advisors(symbol):
+                advisor.strategy.on_bar(payload)
+
         if event_type == "trade":
-            self.on_trade(dt, symbol, payload["price"], payload["size"])
+            if dt < self.dt_start:
+                for advisor in self.get_advisors(symbol):
+                    advisor.strategy.test_price(payload.price)
+            else:
+                self.on_trade(dt, symbol, payload.price, payload.volume)
 
-        # Это должно происходить после запуска on_trade  TODO: СХУЯЛИ?
-        if event_type in ["trade", "historical_trade"]:
-            # Добавление нового значения цены в стратегию
-            for advisor in self.get_advisors(symbol, include_dummy=True):
-                ts = unix_timestamp(dt, micro=True)
-                price = payload["price"]
-                advisor.update_strategy(dt, {"timestamp": ts, "price": price})
-
-        if event_type in ["quote", "historical_quote"]:
+        if event_type == "quote":
             self.exchange.add_quote(dt, symbol, payload)
+            # strategy.on_quote?
 
-        if event_type == "before_interval":
+        if event_type == "before_interval" and dt > self.dt_start:
             # Логи: статистика на начало интервала
-            # if self.advisors[0].is_main_session(dt):
-
             net = self.exchange.net_value
             eq = self.exchange.equity_value
             rel_eq = self.exchange.equity_value / net * 100
@@ -219,9 +173,8 @@ class Trader:
             log = f"{net:0.2f},{self.cur_drawdown:0.2f},{eq:0.2f},{rel_eq:0.2f}\n"
             self.log_stats += f"{dt},{log}"
 
-        # After any exchange event
-        if event_type in ["trade", "quote"]:
-            # Обновление статистики
+        # Обновление статистики
+        if event_type in ["bar"] and dt > self.dt_start:
             net = self.exchange.net_value
             if self.advisors[0].is_main_session(dt):
                 drawdown = max(Decimal(0), self.max_net_value - net)
@@ -231,14 +184,12 @@ class Trader:
 
         return True
 
-    def get_advisors(self, instrument=None, include_dummy=False):
+    def get_advisors(self, instrument=None):
         """
         Все советники для данного инструмента.
         """
         res = []
         for advisor in self.advisors:
-            if not include_dummy and advisor.strategy.__class__.__name__ == "Dummy":
-                continue
             if not instrument or advisor.instrument == instrument:
                 res.append(advisor)
         return res
@@ -261,11 +212,11 @@ class Trader:
         for advisor in self.get_advisors(instrument):
             if advisor.state == Signal.LONG:
                 price = self.exchange.get_price(instrument, "buy")
-                amount = math.floor(buying_power / price)
+                amount = math.floor(buying_power / Decimal(price))
                 res += amount
             if advisor.state == Signal.SHORT:
                 price = self.exchange.get_price(instrument, "sell")
-                amount = math.floor(buying_power / price)
+                amount = math.floor(buying_power / Decimal(price))
                 res -= amount
             if advisor.state == Signal.CLOSE:
                 res = Decimal(0)
@@ -291,7 +242,7 @@ class Trader:
         if cnt:
             return cash_to_use / cnt
         else:
-            return Decimal(0)
+            return 0
 
     def portfolio_info(self):
         """
@@ -407,7 +358,7 @@ class Trader:
         """
         symbols = list(set([a.instrument for a in self.get_advisors()]))
         cash_per_symbol = self.exchange.net_value / len(symbols)
-        min_tradable_amount = math.floor((cash_per_symbol / 10) / price)
+        min_tradable_amount = math.floor((cash_per_symbol / 10) / Decimal(price))
         min_tradable_amount = max(1, min_tradable_amount)
         return min_tradable_amount
 
@@ -426,7 +377,7 @@ class Trader:
             signal = advisor.test_price(dt, price)
             if signal == Signal.LONG:
                 cur_price = self.exchange.get_price(instrument, "buy")
-                amount = math.floor(buying_power / cur_price)
+                amount = math.floor(buying_power / Decimal(cur_price))
                 if current_state == Signal.SHORT:
                     total_buy += amount * 2
                 elif current_state == Signal.LONG:
@@ -435,7 +386,7 @@ class Trader:
                     total_buy += amount
             if signal == Signal.SHORT:
                 cur_price = self.exchange.get_price(instrument, "sell")
-                amount = math.floor(buying_power / cur_price)
+                amount = math.floor(buying_power / Decimal(cur_price))
                 if current_state == Signal.LONG:
                     total_sell += amount * 2
                 elif current_state == Signal.SHORT:
@@ -445,11 +396,11 @@ class Trader:
             if signal == Signal.CLOSE:
                 if current_state == Signal.LONG:
                     cur_price = self.exchange.get_price(instrument, "sell")
-                    amount = math.floor(buying_power / cur_price)
+                    amount = math.floor(buying_power / Decimal(cur_price))
                     total_sell += amount
                 elif current_state == Signal.SHORT:
                     cur_price = self.exchange.get_price(instrument, "buy")
-                    amount = math.floor(buying_power / cur_price)
+                    amount = math.floor(buying_power / Decimal(cur_price))
                     total_buy += amount
 
         return total_buy, total_sell

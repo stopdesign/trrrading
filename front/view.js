@@ -215,14 +215,14 @@ async function run() {
   let data = await d3.csv('data.csv');
   let trades = await d3.csv('trades.csv');
   let stats = await d3.csv('stats.csv');
-  let indicator = await d3.csv('indicator.csv');
+  let indicator = await d3.csv('data.csv');
 
   data = data.map((d) => ({
-    date: parseDate(d.Date),
-    open: +d.Open,
-    high: +d.High,
-    low: +d.Low,
-    close: +d.Close,
+    date: parseDate(d.date),
+    open: +d.open,
+    high: +d.high,
+    low: +d.low,
+    close: +d.close,
     volume: 10
   }));
 
@@ -246,7 +246,7 @@ async function run() {
     }
   });
 
-  indicator = indicator.map((d) => { d.date = parseDate(d.Date); return d });
+  indicator = indicator.map((d) => { d.date = parseDate(d.date); return d });
 
   draw(data, trades, stats, indicator);
 }
@@ -259,9 +259,9 @@ function draw(data, trades, stats, indicator) {
   ));
 
   console.log("data length:", data.length);
-  const bgn = 0;
-  const len = 450;
-  data = data.slice(bgn, bgn + len);
+  // const bgn = 0;
+  // const len = 450;
+  // data = data.slice(bgn, bgn + len);
 
   x.domain(data.map(accessor.d));
   let dom = techan.scale.plot.ohlc(data, accessor).domain();
