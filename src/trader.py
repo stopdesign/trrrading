@@ -42,13 +42,13 @@ class Trader:
         cprint("\nHistorical data", "white")
         self.exchange.warm_up()
 
-    def start(self, loop=None):
+    def start(self):
         cprint("\nStart stream", "white")
         self.account_stats.snapshot()
         self.exchange.start_listen()
         self.stop()
 
-    def stop(self, loop=None):  # noqa
+    def stop(self):
         cprint("\nStop stream", "white")
         self.exchange.stop_listen()
         self.account_stats.snapshot()
@@ -212,7 +212,7 @@ class Trader:
             f"\n{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
             f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
-            f"do: {action}    𝝙: {price_diff:0.2f}"
+            f"do: {action}    𝝙: {price_diff:0.2f}%"
         )
         txt = txt.replace("+0", colored(" 0", "white"))
         log.info(txt)
