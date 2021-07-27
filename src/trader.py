@@ -1,14 +1,13 @@
 import json  # noqa
-import sys
+import logging
 import math
 import pandas as pd
-import scipy.stats
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from termcolor import cprint, colored
-from exchange import BacktestExchange, ExanteExchange, InteractiveBrokersExchange  # noqa
+from exchange import BaseExchange, all_exchanges
 from notifications.alert import send_telegram  # noqa
+from stats import AccountStats, TradeStats
 from strategy import Signal
 from settings import CAN_SHORT
 
@@ -17,189 +16,98 @@ CURSOR_UP_ONE = "\x1b[1A"
 ERASE_LINE = "\x1b[2K"
 
 
-# def cprint(*args, **kwargs):
-#     pass
+log = logging.getLogger("trader")
+logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 
 
 class Trader:
+    exchange: BaseExchange = None
 
-    def __init__(self, advisors=None, dt_start=None):
+    def __init__(self, exchange, advisors, dt_start):
         cprint("Init trader", "white")
 
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
-        self.dt_start = dt_start
+        self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
         self.advisors = advisors
 
-        self.log_trades = "Date,Direction,Price,Profit\n"
-        self.log_stats = "Date,Value,Drawdown,Equity,RelEquity\n"
+        exchange_class = all_exchanges[exchange]
+        self.exchange = exchange_class(advisors, dt_start=self.dt_start)
+        self.exchange.on_event = self.on_event
 
-        ss = list(set([a.instrument for a in self.advisors]))
+        self.account_stats = AccountStats(self.exchange)
+        self.trade_stats = TradeStats()
 
-        self.exchange = BacktestExchange(ss, dt_start=self.dt_start)
-        # self.exchange = ExanteExchange(ss)
-        # self.exchange = InteractiveBrokersExchange(ss)
-
+    def warm_up(self):
         cprint("Historical data", "white")
-
-        # Прогнать события по историческим данным.
-        # Предзаполняются цены и сигналы, торговля не происходит.
-        self.exchange.process_historical_data(self.on_event)
-
-        self.portfolio_info()
-
-        self.max_net_value = Decimal("-Infinity")
-        self.max_drawdown = Decimal("-Infinity")
-        self.cur_drawdown = 0
-        self.gross_profit = 0
-        self.gross_loss = 0
-        self.trades_count = {"buy": 0, "sell": 0, "close": 0}
-        self.prev_net_value = self.exchange.net_value
-
-        self.deposits = [self.exchange.cash_initial]
-
-        log = f"{self.exchange.net_value:0.2f},{self.cur_drawdown:0.2f},0,0\n"
-        self.log_stats += f"{self.dt_start},{log}"
+        self.exchange.warm_up()
 
     def start(self, loop=None):
-        cprint("Start listening for updates...", "white")
-        self.exchange.start_listen(self.on_event, loop)
+        cprint("Start stream", "white")
+        self.account_stats.snapshot()
+        self.exchange.start_listen()
 
     def stop(self, loop=None):  # noqa
-        # Актуализация статистики DD
-        drawdown = max(Decimal(0), self.max_net_value - self.exchange.net_value)
-        self.max_net_value = max(self.max_net_value, self.exchange.net_value)
-        self.cur_drawdown = drawdown / self.max_net_value * 100
-        self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
-
+        cprint("Stop stream", "white")
         self.exchange.stop_listen()
-
-        # Подсчет gross profit/loss после закрытия
-        self.update_profit_loss()
-
-    def update_profit_loss(self):
-        diff_value = self.exchange.net_value - self.prev_net_value
-        self.gross_profit += max(0, diff_value)
-        self.gross_loss += min(0, diff_value)
-        self.prev_net_value = self.exchange.net_value
-        self.deposits.append(self.exchange.net_value)
-        return diff_value
+        self.account_stats.snapshot()
 
     def final_info(self):
-        cprint("\n" + colored(" RESULTS ", attrs=["reverse"]))
-        self.portfolio_info()
-        pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
-        p = self.exchange.net_value - self.exchange.cash_initial
-        roi = p / self.exchange.cash_initial * 100
-        trades = self.trades_count["buy"] + self.trades_count["sell"]
-
-        # R2
-        if trades:
-            x = np.arange(len(self.deposits))
-            y = np.array(self.deposits, dtype=float)
-            slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-            r2 = r_value ** 2
-        else:
-            r2 = 0
-            self.max_drawdown = 0
-
-        txt = (
-            "\n"
-            f"ROI: {roi:+7.1f}%\n"
-            f"Max DD: {self.max_drawdown:4.1f}%\n"
-            f"PF: {pf:9.2f}\n"
-            f"R²: {r2:9.2f}\n"
-            f"Trades: {trades:5.0f}\n"
-            f"GP: {self.gross_profit:+9.0f}\n"
-            f"GL: {self.gross_loss:+9.0f}"
-        )
-        cprint(txt)
-
-        with open("trades.csv", "w") as t:
-            t.write(self.log_trades)
-
         with open("data.csv", "w") as d:
             df = pd.DataFrame(self.get_advisors()[0].strategy.data)
             df.set_index("date", inplace=True)
             df = df.loc[self.dt_start:]
             df.to_csv(d)
 
-        # log = f"{self.exchange.net_value:0.2f},{self.cur_drawdown:0.2f}\n"
-        # self.log_stats += f"{last_known_dt},{log}"
+        self.trade_stats.to_csv("trades.csv")
 
-        with open("stats.csv", "w") as s:
-            s.write(self.log_stats)
+        self.account_stats.to_csv("stats.csv")
+        self.account_stats.print_summary()
 
-    def on_event(self, event_type, dt, symbol=None, payload=None):
+    def on_event(self, event, dt, symbol=None, payload=None):
         """
         В стриме биржи возникло новое событие.
         """
-        # if "historical" not in event_type and event_type != "quote":
-        #     cprint(f"{dt}: EVENT {event_type} {symbol}", "white")
+        # cprint(f"{dt}: EVENT {event} {symbol}", "white")
 
-        if event_type == "bar":
+        if event == "bar":
             for advisor in self.get_advisors(symbol):
                 advisor.strategy.on_bar(payload)
 
-        if event_type == "trade":
-            if dt < self.dt_start:
-                for advisor in self.get_advisors(symbol):
-                    advisor.strategy.test_price(payload.price)
-            else:
-                self.on_trade(dt, symbol, payload.price, payload.volume)
+        if event == "trade" and dt < self.dt_start:
+            for advisor in self.get_advisors(symbol):
+                advisor.strategy.test_price(payload.price)
 
-        if event_type == "quote":
+        if event == "trade" and dt >= self.dt_start:
+            self.on_trade(dt, symbol, payload.price)
+
+        if event == "quote":
             self.exchange.add_quote(dt, symbol, payload)
-            # strategy.on_quote?
 
-        if event_type == "before_interval" and dt > self.dt_start:
-            # Логи: статистика на начало интервала
-            net = self.exchange.net_value
-            eq = self.exchange.equity_value
-            rel_eq = self.exchange.equity_value / net * 100
+        if event in ["hour", "day", "after_trade"]:
+            if dt >= self.dt_start:
+                self.account_stats.snapshot()
 
-            sys.stdout.write(CURSOR_UP_ONE)
-            sys.stdout.write(ERASE_LINE)
-            txt = (  # noqa
-                f"{dt}: "
-                f"net: {net:0.0f}  "
-                f"rel_eq: {rel_eq:0.0f}  "
-                f"dd: {self.cur_drawdown:0.1f}%  "
-                f"max dd: {self.max_drawdown:0.1f}%  "
-            )
-            # cprint(txt, "white")
-
-            log = f"{net:0.2f},{self.cur_drawdown:0.2f},{eq:0.2f},{rel_eq:0.2f}\n"
-            self.log_stats += f"{dt},{log}"
-
-        # Обновление статистики
-        if event_type in ["bar"] and dt > self.dt_start:
-            net = self.exchange.net_value
-            if self.advisors[0].is_main_session(dt):
-                drawdown = max(Decimal(0), self.max_net_value - net)
-                self.max_net_value = max(self.max_net_value, net)
-                self.cur_drawdown = drawdown / self.max_net_value * 100
-                self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
+        if event == "after_trade":
+            self.trade_stats.on_trade(dt, symbol, payload)
+            self.account_stats.on_trade(symbol, payload)
+            self.account_stats.update_pl()
 
         return True
 
-    def get_advisors(self, instrument=None):
+    def get_advisors(self, symbol=None):
         """
         Все советники для данного инструмента.
         """
-        res = []
-        for advisor in self.advisors:
-            if not instrument or advisor.instrument == instrument:
-                res.append(advisor)
-        return res
+        return [a for a in self.advisors if not symbol or a.instrument == symbol]
 
     def get_current_position(self, instrument):
         """
         Сколько сейчас в портфолио этой штуки.
         """
         positions = self.exchange.get_positions()
-        return positions.get(instrument, BacktestExchange.empty_position)["amount"]
+        return positions.get(instrument, BaseExchange.empty_position)["amount"]
 
     def get_advised_position(self, instrument):
         """
@@ -234,39 +142,16 @@ class Trader:
         Сейчас депозит делится равными долями между всеми.
         Если reinvest_profit выключен, то делится начальный депозит.
         """
-        if self.reinvest_profit:
-            cash_to_use = self.exchange.net_value
-        else:
-            cash_to_use = min(self.exchange.cash_initial, self.exchange.net_value)
+        cash_to_use = self.exchange.net_value
+        if not self.reinvest_profit:
+            cash_to_use = min(self.exchange.cash_initial, cash_to_use)
         cnt = len(self.get_advisors())
         if cnt:
             return cash_to_use / cnt
         else:
             return 0
 
-    def portfolio_info(self):
-        """
-        Вывод информации о состоянии портфолио.
-        """
-        cprint("")
-        for instrument in sorted(set([a.instrument for a in self.get_advisors()])):
-            current_position = self.get_current_position(instrument)
-            advised_position = self.get_advised_position(instrument)
-            cprint(
-                f"{instrument:<12} "
-                f"current: {current_position:+6.0f},   "
-                f"advised: {advised_position:+6.0f}  ",
-                "blue",
-            )
-        cprint(
-            f"CASH: {self.exchange.cash:0.0f},  "
-            f"VALUE: {self.exchange.net_value:0.0f},  "
-            f"EQUITY: {self.exchange.equity_value:0.0f}",
-            "green",
-        )
-        cprint("")
-
-    def on_trade(self, dt: datetime, instrument, trade_price, volume=None):  # noqa
+    def on_trade(self, dt: datetime, instrument, trigger_price, volume=None):  # noqa
         """
         Тут торговля, если стратегия дала сигнал.
         Здесь же риск-менеджмент уровня аккаунта,
@@ -277,7 +162,7 @@ class Trader:
 
         # Протестировать новую цену (не добавляя в историю).
         # Получить суммарный объем на покупку/продажу по всем сигналам.
-        total_buy, total_sell = self.test_new_price(instrument, dt, trade_price)
+        total_buy, total_sell = self.test_new_price(instrument, dt, trigger_price)
 
         # Это всё должно быть после тестирования новой цены // TODO: почему?
         current_position = self.get_current_position(instrument)
@@ -292,36 +177,37 @@ class Trader:
 
         # Посчитать, куда нужно торговать.
         # Скоректировать объем по возможностям, которые есть по сигналам.
-        side = None
-        asset_amount_diff = 0
+        asset_amount_diff, side = 0, None
         if diff > 0:
-            asset_amount_diff = min(abs(diff), total_buy)
-            side = "buy"
-        elif diff < 0:
-            asset_amount_diff = min(abs(diff), total_sell)
-            side = "sell"
+            asset_amount_diff, side = min(abs(diff), total_buy), "buy"
+        if diff < 0:
+            asset_amount_diff, side = min(abs(diff), total_sell), "sell"
 
         price = self.exchange.get_price(instrument, side)
-        min_tradable_amount = self.get_min_tradable_amount(price)
 
         # Предлагаемое изменение должно быть больше минимального
-        if asset_amount_diff < min_tradable_amount:
-            asset_amount_diff = 0
-            side = None
+        if asset_amount_diff < self.get_min_tradable_amount(price):
+            asset_amount_diff, side = 0, None
 
-        # Логи: какая операция должна произойти
-        symbol_str = colored(f"{instrument:>10}", attrs=["bold"])
-        color = "cyan"
-        sign = "*** "
+        self.log_trade(
+            dt, side, instrument, trigger_price, price, current_position,
+            advised_position, asset_amount_diff, total_sell, total_buy
+        )
+
+        # Если есть все параметры — запустить сделку
+        if price and side and asset_amount_diff:
+            self.exchange.trade(side, asset_amount_diff, instrument, dt)
+
+    def log_trade(self, dt, side, symbol, trigger_price, market_price, current_position,
+                  advised_position, amount_diff, total_sell, total_buy):
+        symbol_str = colored(f"{symbol:>10}", attrs=["bold"])
+        color, sign = "cyan", "*** "
         if side == "buy":
-            color = "green"
-            sign = "+"
+            color, sign = "green", "+"
         if side == "sell":
-            color = "red"
-            sign = "-"
-        action = colored(f"{(sign+str(asset_amount_diff)):>5}", color)
-
-        price_diff = abs(trade_price - price) / price * 100
+            color, sign = "red", "-"
+        action = colored(f"{(sign + str(amount_diff)):>5}", color)
+        price_diff = abs(trigger_price - market_price) / market_price * 100
         txt = (
             f"{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
@@ -329,28 +215,8 @@ class Trader:
             f"do: {action}    𝝙: {price_diff:0.2f}"
         )
         txt = txt.replace("+0", colored(" 0", "white"))
-        cprint(txt)
+        log.info(txt)
         # send_telegram(txt)
-
-        # Если есть все параметры — запустить сделку
-        if price and side and asset_amount_diff:
-            self.trades_count[side] += 1
-
-            assert self.prev_net_value is not None
-
-            # Сделка
-            self.exchange.trade(side, asset_amount_diff, instrument)
-
-            # Подсчет gross profit/loss после каждой сделки
-            profit_loss = self.update_profit_loss()
-
-            txt = f"{dt:%Y-%m-%d %H:%M:%S},{side},{price:0.4f},{profit_loss:0.4f}\n"
-            self.log_trades += txt
-            # cprint(txt)
-
-            # Записать log_stats сразу после сделки.
-            # Не уверен, что это нужно.
-            self.on_event("before_interval", dt, instrument)
 
     def get_min_tradable_amount(self, price):
         """
@@ -375,6 +241,7 @@ class Trader:
         for advisor in self.get_advisors(instrument):
             current_state = advisor.state
             signal = advisor.test_price(dt, price)
+
             if signal == Signal.LONG:
                 cur_price = self.exchange.get_price(instrument, "buy")
                 amount = math.floor(buying_power / Decimal(cur_price))
@@ -384,6 +251,7 @@ class Trader:
                     total_buy += 0
                 else:
                     total_buy += amount
+
             if signal == Signal.SHORT:
                 cur_price = self.exchange.get_price(instrument, "sell")
                 amount = math.floor(buying_power / Decimal(cur_price))
@@ -393,6 +261,7 @@ class Trader:
                     total_sell += 0
                 else:
                     total_sell += amount
+
             if signal == Signal.CLOSE:
                 if current_state == Signal.LONG:
                     cur_price = self.exchange.get_price(instrument, "sell")

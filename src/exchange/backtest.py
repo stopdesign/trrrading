@@ -1,3 +1,4 @@
+import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -20,61 +21,52 @@ class BidAsk:
 
 
 class BacktestExchange(BaseExchange):
-    def __init__(self, symbols: list, **kwargs):
-        super().__init__(symbols)
+    def __init__(self, advisors: list, **kwargs):
+        super().__init__(advisors)
         self.quotes = {}
         self.dt_start = kwargs.pop("dt_start")
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
-        self.all_data = self.load_data()
+        self.symbols = list(set([a.instrument for a in self.advisors]))
+        self.all_data = pd.DataFrame()
 
     def load_data(self):
         df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
-
         # BIDASK должен приходить раньше TRADES для этого интервала
-        df.sort_values(["date", "ticker", "data_type"], inplace=True)
+        return df.sort_values(["date", "ticker", "data_type"])
 
-        return df
-
-    def process_historical_data(self, on_event):
+    def warm_up(self):
         """
         Прогнать события по историческим данным.
         """
+        self.all_data = self.load_data()
+
         stream = self.all_data.loc[self.dt_from:self.dt_start]
         for row in stream.itertuples():
-            self.process_event(row, on_event)
+            self.process_event(row)
 
-    def start_listen(self, on_event, loop=None):
+    def start_listen(self):
         """
         Эмулировать события, приходящие с биржи.
         """
         stream = self.all_data.loc[self.dt_start:]
         prev_date = None
         for row in stream.itertuples():
+            # On interval change
             dt = row.Index.to_pydatetime()
             if prev_date and dt.hour != prev_date.hour:
                 norm_dt = dt.replace(minute=0, second=0, microsecond=0)
-                on_event("before_interval", norm_dt)
+                if dt.day != prev_date.day:
+                    norm_dt = norm_dt.replace(hour=0)
+                    self.on_event("day", norm_dt)
+                else:
+                    self.on_event("hour", norm_dt)
             prev_date = dt
-            self.process_event(row, on_event)
+            self.process_event(row)
 
-    def process_event(self, row, on_event):
-        dt = row.Index.to_pydatetime()
-        symbol = row.ticker
-
-        if row.data_type == "BIDASK":
-            payload = BidAsk(bid=row.av_bid, ask=row.av_ask)
-            on_event("quote", dt, symbol, payload)
-
-        if row.data_type == "TRADES":
-            for price in [row.open, row.high, row.low, row.close]:
-                payload = Trade(price=price, volume=row.volume)
-                on_event("trade", dt, symbol, payload)
-            on_event("bar", dt, symbol, row)
-
-    def stop_listen(self, loop=None):
+    def stop_listen(self):
         """
         Позакрывать все позиции.
         """
@@ -83,6 +75,20 @@ class BacktestExchange(BaseExchange):
                 self.trade("sell", abs(position["amount"]), symbol)
             if position["amount"] < 0:
                 self.trade("buy", abs(position["amount"]), symbol)
+
+    def process_event(self, row):
+        dt = row.Index.to_pydatetime()
+        symbol = row.ticker
+
+        if row.data_type == "BIDASK":
+            payload = BidAsk(bid=row.av_bid, ask=row.av_ask)
+            self.on_event("quote", dt, symbol, payload)
+
+        if row.data_type == "TRADES":
+            for price in [row.open, row.high, row.low, row.close]:
+                payload = Trade(price=price, volume=row.volume)
+                self.on_event("trade", dt, symbol, payload)
+            self.on_event("bar", dt, symbol, row)
 
     def get_price(self, symbol: str, side: str) -> Optional[float]:
         if quotes := self.quotes.get(symbol):
@@ -108,7 +114,7 @@ class BacktestExchange(BaseExchange):
             self.quotes[symbol]["bid"] = payload.bid
             self.quotes[symbol]["dt"] = dt
 
-    def trade(self, side: str, amount: Decimal, symbol: str):
+    def trade(self, side: str, amount: Decimal, symbol: str, dt: datetime):
         """
         Создать ордер на бирже, скорректировать позицию.
         """
@@ -186,11 +192,17 @@ class BacktestExchange(BaseExchange):
                 total_amount = position["amount"] + amount
                 av_price = total_value / total_amount
                 self.positions[symbol] = {
-                    # "dt": position["dt"],
                     "amount": total_amount,
                     "price": av_price,
                 }
 
+            # Событие «успешное завершение сделки»
+            payload = {
+                "side": side,
+                "amount": start_amount,
+                "price": price,
+            }
+            self.on_event("after_trade", dt, symbol, payload)
             return price, start_amount
         else:
             cprint(" SKIP TRADE: Not enough quote data ", "red", attrs=["reverse"])
@@ -198,3 +210,27 @@ class BacktestExchange(BaseExchange):
 
     def get_positions(self):
         return self.positions
+
+    @property
+    def net_value(self):
+        """
+        Суммарное количество бабла депозита: кэш плюс стоимость активов.
+        """
+        total_value = self.cash
+        for symbol, position in self.positions.items():
+            if position["amount"] > 0:
+                price = Decimal(self.get_price(symbol, "sell"))
+                if price is None:
+                    # FIXME:
+                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
+                    continue
+                total_value += position["amount"] * (price - position["price"])
+                total_value -= self.fee_rate * position["amount"]
+            if position["amount"] < 0:
+                price = Decimal(self.get_price(symbol, "buy"))
+                if price is None:
+                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
+                    continue
+                total_value += position["amount"] * (price - position["price"])
+                total_value -= self.fee_rate * position["amount"]
+        return total_value

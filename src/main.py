@@ -14,19 +14,17 @@ def main() -> None:
         Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_data=False),
     ]
 
-    dt_start = datetime(2021, 6, 1)
-
-    trader = Trader(advisors, dt_start)
+    trader = Trader("BacktestExchange", advisors, "2021-06-01")
 
     try:
+        trader.warm_up()
         trader.start()
     except KeyboardInterrupt:
         trader.stop()
     finally:
         trader.final_info()
 
-    total_time = (datetime.now() - dt).total_seconds()
-    cprint(f"\nDone in {total_time:0.2f} s", attrs=['bold'])
+    cprint(f"\nDone in {str(datetime.now() - dt)[:-7]}", attrs=['bold'])
 
 
 if __name__ == "__main__":

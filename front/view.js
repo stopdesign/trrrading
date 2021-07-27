@@ -43,7 +43,7 @@ const ohlc = techan.plot.ohlc()
 const tradearrow = techan.plot.tradearrow()
   .xScale(x)
   .yScale(y)
-  .orient((d) => d.type.startsWith("buy") ? "up" : "down")
+  .orient((d) => d.side.startsWith("buy") ? "up" : "down")
   .on("mouseenter", enter)
   .on("mouseout", out);
 
@@ -227,10 +227,11 @@ async function run() {
   }));
 
   trades = trades.map((d) => ({
-    date: parseDate(d.Date),
-    type: d.Direction,
-    price: d.Price,
-    profit: d.Profit,
+    date: parseDate(d.date),
+    side: d.side,
+    type: d.side,
+    price: d.price,
+    profit: d.profit,
   }));
 
   let max_value = 0
@@ -553,7 +554,7 @@ function refreshText(d) {
   valueText.html(
     "<tspan x='0' dy='1.5em'>" + dateFormat(d.date) + "</tspan>" +
     "<tspan x='0' dy='1.5em'>" +
-    d.type + " " + valueFormat(d.price) + " " + valueFormat2(d.profit) +
+    d.side + " " + valueFormat(d.price) + " " + valueFormat2(d.profit) +
     "</tspan>"
   );
   // valueText.attr("transform", "translate(" + x(d.date) + ")");
