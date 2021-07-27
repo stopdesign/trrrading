@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -6,6 +7,9 @@ from typing import Optional
 from termcolor import cprint, colored
 from exchange import BaseExchange
 from storage.ib import load_many
+
+
+log = logging.getLogger("backtest")
 
 
 @dataclass
@@ -70,11 +74,12 @@ class BacktestExchange(BaseExchange):
         """
         Позакрывать все позиции.
         """
+        dt = self.all_data.last_valid_index().to_pydatetime()  # the last known date
         for symbol, position in self.positions.items():
             if position["amount"] > 0:
-                self.trade("sell", abs(position["amount"]), symbol)
+                self.trade("sell", abs(position["amount"]), symbol, dt)
             if position["amount"] < 0:
-                self.trade("buy", abs(position["amount"]), symbol)
+                self.trade("buy", abs(position["amount"]), symbol, dt)
 
     def process_event(self, row):
         dt = row.Index.to_pydatetime()
@@ -136,6 +141,8 @@ class BacktestExchange(BaseExchange):
 
             position = self.positions.get(symbol, self.empty_position)
 
+            trade_profit = None
+
             # Если открыта позиция и заявка пришла в другую сторону,
             # то происходит частичное закрытие, а прибыль материализуется.
             # На оставшуюся сумму происходит открытие позиции.
@@ -165,7 +172,9 @@ class BacktestExchange(BaseExchange):
                 # Одно или другое должно сократиться полностью
                 assert amount == 0 or position["amount"] == 0
 
-                txt = f"Close {partial_close_amount} {symbol} "
+                self.cash += trade_profit
+
+                txt = ""  # f"Close {partial_close_amount} {symbol}  "
 
                 color = "white"
                 if trade_profit > 0:
@@ -173,12 +182,11 @@ class BacktestExchange(BaseExchange):
                 if trade_profit < 0:
                     color = "red"
                 rel_profit = (trade_profit / self.cash) * 100
-                self.cash += trade_profit
 
-                txt += colored(f" {trade_profit:+0.2f} ", color, attrs=["reverse"])
-                txt += colored(f"{rel_profit:+0.2f}% ", color, attrs=["reverse"])
-                txt += colored(f" Σ {self.cash:0.0f} ", "white", attrs=["reverse"])
-                # print(txt)
+                txt += colored(f"Σ {self.cash:0.0f}  ", "grey")
+                txt += colored(f"{trade_profit:+0.2f}  ", color)
+                txt += colored(f"{rel_profit:+0.2f}%  ", color)
+                log.info(txt)
 
                 # Если amount еще остался — открыть позицию
                 if amount != 0:
@@ -201,6 +209,7 @@ class BacktestExchange(BaseExchange):
                 "side": side,
                 "amount": start_amount,
                 "price": price,
+                "profit": trade_profit,
             }
             self.on_event("after_trade", dt, symbol, payload)
             return price, start_amount

@@ -17,7 +17,6 @@ ERASE_LINE = "\x1b[2K"
 
 
 log = logging.getLogger("trader")
-logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 
 
 class Trader:
@@ -40,16 +39,17 @@ class Trader:
         self.trade_stats = TradeStats()
 
     def warm_up(self):
-        cprint("Historical data", "white")
+        cprint("\nHistorical data", "white")
         self.exchange.warm_up()
 
     def start(self, loop=None):
-        cprint("Start stream", "white")
+        cprint("\nStart stream", "white")
         self.account_stats.snapshot()
         self.exchange.start_listen()
+        self.stop()
 
     def stop(self, loop=None):  # noqa
-        cprint("Stop stream", "white")
+        cprint("\nStop stream", "white")
         self.exchange.stop_listen()
         self.account_stats.snapshot()
 
@@ -73,11 +73,11 @@ class Trader:
 
         if event == "bar":
             for advisor in self.get_advisors(symbol):
-                advisor.strategy.on_bar(payload)
+                advisor.on_bar(dt, payload)
 
         if event == "trade" and dt < self.dt_start:
             for advisor in self.get_advisors(symbol):
-                advisor.strategy.test_price(payload.price)
+                advisor.test_price(dt, payload.price)
 
         if event == "trade" and dt >= self.dt_start:
             self.on_trade(dt, symbol, payload.price)
@@ -209,7 +209,7 @@ class Trader:
         action = colored(f"{(sign + str(amount_diff)):>5}", color)
         price_diff = abs(trigger_price - market_price) / market_price * 100
         txt = (
-            f"{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
+            f"\n{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
             f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
             f"do: {action}    𝝙: {price_diff:0.2f}"

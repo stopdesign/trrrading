@@ -69,13 +69,11 @@ class Advisor:
         t0, t1 = self.schedule.get(dt.date(), (None, None))
         return t0 and t1 and t0 < dt < t1
 
-    # def update_strategy(self, dt, trade):
-    #     if not (self.is_main_session(dt) or self.use_extra_data):
-    #         return
-    #     # Обновить текущий внутренний state стратегии
-    #     self.test_price(dt, trade["price"])
-    #     # Обновить набор исторических данных
-    #     self.strategy.update_trades(trade)
+    def on_bar(self, dt, trade):
+        if not (self.is_main_session(dt) or self.use_extra_data):
+            return
+        # Обновить набор исторических данных
+        self.strategy.on_bar(trade)
 
     def test_price(self, dt, price):
         if not (self.is_main_session(dt) or self.trade_in_extra_hours):
