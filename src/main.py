@@ -8,7 +8,13 @@ import sys, os
 sys.path.append(os.path.abspath("."))
 
 
-logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+handler.setFormatter(logging.Formatter("%(message)s"))
+
+root = logging.getLogger()
+root.setLevel(logging.DEBUG)
+root.addHandler(handler)
 
 
 def main() -> None:
