@@ -145,13 +145,13 @@ def print_trade_final_info(
 
 
 def print_summary(
-        position,
-        profit,
-        profit_rel,
-        cash,
-        cash_initial,
-        max_drawdown,
-        local_max_drawdown,
+    position,
+    profit,
+    profit_rel,
+    cash,
+    cash_initial,
+    max_drawdown,
+    local_max_drawdown,
 ):
     total_profit = (cash - cash_initial) / cash_initial * 100
     pos_sign = colored("↗", "green") if position == "LONG" else colored("↘", "red")
@@ -256,7 +256,9 @@ def load_from_ib_file(dt_from=datetime(1900, 1, 1), symbol=None):
     df = pd.read_csv(f, sep="\t", index_col="date", dtype=str)
     df["symbolId"] = symbol
     df.sort_index(inplace=True)
-    df["timestamp"] = pd.to_datetime(df.index, utc=True).values.astype(np.int64) // 10 ** 6
+    df["timestamp"] = (
+        pd.to_datetime(df.index, utc=True).values.astype(np.int64) // 10 ** 6
+    )
     df = df[df["timestamp"] > min_ts]
     df = df[df["timestamp"] <= 1626206400000]
     return df.to_dict(orient="records")
@@ -272,7 +274,9 @@ def load_quotes_from_ib_file(dt_from=datetime(1900, 1, 1), symbol=None):
     df = pd.read_csv(f, sep="\t", index_col="date", dtype=str)
     df["symbolId"] = symbol
     df.sort_index(inplace=True)
-    df["timestamp"] = pd.to_datetime(df.index, utc=True).values.astype(np.int64) // 10 ** 6
+    df["timestamp"] = (
+        pd.to_datetime(df.index, utc=True).values.astype(np.int64) // 10 ** 6
+    )
     df = df[df["timestamp"] > min_ts]
     df = df[df["timestamp"] <= 1626206400000]
     df = df[["timestamp", "av_bid", "av_ask", "symbolId"]]
@@ -290,7 +294,7 @@ def fix_splits(ticker, trades):
     ticker = ticker.split(".")[0]
     params = "interval=3mo&events=split&period1=1400000000&period2=1800000000"
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?{params}"
-    res = requests.get(url, headers={'User-Agent': 'Godzilla'})
+    res = requests.get(url, headers={"User-Agent": "Godzilla"})
     try:
         splits = res.json()["chart"]["result"][0]["events"]["splits"]
         splits = sorted(splits.values(), key=lambda x: x["date"], reverse=True)
@@ -333,3 +337,34 @@ def unix_timestamp(dt, micro=False):
     if micro:
         ts *= 1000
     return ts
+
+
+def log_trade(
+    log,
+    dt,
+    symbol,
+    trigger_price,
+    market_price,
+    current_position,
+    advised_position,
+    amount_diff,
+    total_sell,
+    total_buy,
+):
+    symbol_str = colored(f"{symbol:>10}", attrs=["bold"])
+    color, sign = "cyan", "*** "
+    if amount_diff > 0:
+        color, sign = "green", "+"
+    if amount_diff < 0:
+        color, sign = "red", "-"
+    action = colored(f"{(sign + str(abs(amount_diff))):>5}", color)
+    price_diff = abs(trigger_price - market_price) / market_price * 100
+    txt = (
+        f"\n{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
+        f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
+        f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
+        f"do: {action}    𝝙: {price_diff:0.2f}%"
+    )
+    txt = txt.replace("+0", colored(" 0", "white"))
+    log.info(txt)
+    # send_telegram(txt)

@@ -23,6 +23,8 @@ class BaseExchange:
         self.fee_rate = Decimal(0)
         self.last_event = {}
         self.finished = False
+        self.dt_start = None
+        self.dt_last = None
 
     def get_price(self, symbol: str, side: str) -> Optional[Decimal]:
         pass

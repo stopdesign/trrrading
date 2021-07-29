@@ -35,6 +35,7 @@ class BacktestExchange(BaseExchange):
         self.fee_rate = Decimal("0.02")
         self.symbols = list(set([a.instrument for a in self.advisors]))
         self.all_data = pd.DataFrame()
+        self.dt_last = None
 
     def load_data(self):
         df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
@@ -49,39 +50,44 @@ class BacktestExchange(BaseExchange):
 
         stream = self.all_data.loc[self.dt_from:self.dt_start]
         for row in stream.itertuples():
-            self.process_event(row)
+            self.stream_event(row)
 
     def start_listen(self):
         """
         Эмулировать события, приходящие с биржи.
         """
         stream = self.all_data.loc[self.dt_start:]
-        prev_date = None
         for row in stream.itertuples():
-            # On interval change
-            dt = row.Index.to_pydatetime()
-            if prev_date and dt.hour != prev_date.hour:
-                norm_dt = dt.replace(minute=0, second=0, microsecond=0)
-                if dt.day != prev_date.day:
-                    norm_dt = norm_dt.replace(hour=0)
-                    self.on_event("day", norm_dt)
-                else:
-                    self.on_event("hour", norm_dt)
-            prev_date = dt
-            self.process_event(row)
+            self.interval_event(row)
+            self.stream_event(row)
 
     def stop_listen(self):
         """
         Позакрывать все позиции.
         """
-        dt = self.all_data.last_valid_index().to_pydatetime()  # the last known date
+        # The last known date
         for symbol, position in self.positions.items():
-            if position["amount"] > 0:
-                self.trade("sell", abs(position["amount"]), symbol, dt)
-            if position["amount"] < 0:
-                self.trade("buy", abs(position["amount"]), symbol, dt)
+            amount = position["amount"]
+            if amount > 0:
+                self.trade("sell", abs(amount), symbol, self.dt_last)
+            if amount < 0:
+                self.trade("buy", abs(amount), symbol, self.dt_last)
 
-    def process_event(self, row):
+    def interval_event(self, row):
+        """
+        Запустить интервальное событие при необходимости.
+        """
+        dt = row.Index.to_pydatetime()
+        if self.dt_last and dt.hour != self.dt_last.hour:
+            norm_dt = dt.replace(minute=0, second=0, microsecond=0)
+            if dt.day != self.dt_last.day:
+                norm_dt = norm_dt.replace(hour=0)
+                self.on_event("day", norm_dt)
+            else:
+                self.on_event("hour", norm_dt)
+        self.dt_last = dt
+
+    def stream_event(self, row):
         dt = row.Index.to_pydatetime()
         symbol = row.ticker
 

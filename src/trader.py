@@ -10,7 +10,7 @@ from notifications.alert import send_telegram  # noqa
 from stats import AccountStats, TradeStats
 from strategy import Signal
 from settings import CAN_SHORT
-
+from util import log_trade
 
 CURSOR_UP_ONE = "\x1b[1A"
 ERASE_LINE = "\x1b[2K"
@@ -63,7 +63,7 @@ class Trader:
         self.trade_stats.to_csv("trades.csv")
 
         self.account_stats.to_csv("stats.csv")
-        self.account_stats.print_summary()
+        self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """
@@ -151,7 +151,7 @@ class Trader:
         else:
             return 0
 
-    def on_trade(self, dt: datetime, instrument, trigger_price, volume=None):  # noqa
+    def on_trade(self, dt: datetime, symbol, tr_price, volume=None):  # noqa
         """
         Тут торговля, если стратегия дала сигнал.
         Здесь же риск-менеджмент уровня аккаунта,
@@ -162,61 +162,37 @@ class Trader:
 
         # Протестировать новую цену (не добавляя в историю).
         # Получить суммарный объем на покупку/продажу по всем сигналам.
-        total_buy, total_sell = self.test_new_price(instrument, dt, trigger_price)
+        can_buy, can_sell = self.test_new_price(symbol, dt, tr_price)
 
         # Это всё должно быть после тестирования новой цены // TODO: почему?
-        current_position = self.get_current_position(instrument)
-        advised_position = self.get_advised_position(instrument)
-
-        diff = advised_position - current_position
+        cp = self.get_current_position(symbol)
+        ap = self.get_advised_position(symbol)
+        diff = ap - cp
 
         # Всё равно ничего сделать нельзя
-        if not (diff and (total_buy or total_sell)):
+        if not (diff and (can_buy or can_sell)):
             # cprint(f"SKIP: diff: {diff}, buy: {total_buy}, sell: {total_sell}")
             return
 
         # Посчитать, куда нужно торговать.
         # Скоректировать объем по возможностям, которые есть по сигналам.
-        asset_amount_diff, side = 0, None
+        amount, side = 0, None
         if diff > 0:
-            asset_amount_diff, side = min(abs(diff), total_buy), "buy"
+            amount, side = min(abs(diff), can_buy), "buy"
         if diff < 0:
-            asset_amount_diff, side = min(abs(diff), total_sell), "sell"
+            amount, side = -min(abs(diff), can_sell), "sell"
 
-        price = self.exchange.get_price(instrument, side)
+        price = self.exchange.get_price(symbol, side)
 
         # Предлагаемое изменение должно быть больше минимального
-        if asset_amount_diff < self.get_min_tradable_amount(price):
-            asset_amount_diff, side = 0, None
+        if abs(amount) < self.get_min_tradable_amount(price):
+            amount, side = 0, None
 
-        self.log_trade(
-            dt, side, instrument, trigger_price, price, current_position,
-            advised_position, asset_amount_diff, total_sell, total_buy
-        )
+        log_trade(log, dt, symbol, tr_price, price, cp, ap, amount, can_sell, can_buy)
 
         # Если есть все параметры — запустить сделку
-        if price and side and asset_amount_diff:
-            self.exchange.trade(side, asset_amount_diff, instrument, dt)
-
-    def log_trade(self, dt, side, symbol, trigger_price, market_price, current_position,
-                  advised_position, amount_diff, total_sell, total_buy):
-        symbol_str = colored(f"{symbol:>10}", attrs=["bold"])
-        color, sign = "cyan", "*** "
-        if side == "buy":
-            color, sign = "green", "+"
-        if side == "sell":
-            color, sign = "red", "-"
-        action = colored(f"{(sign + str(amount_diff)):>5}", color)
-        price_diff = abs(trigger_price - market_price) / market_price * 100
-        txt = (
-            f"\n{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
-            f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
-            f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
-            f"do: {action}    𝝙: {price_diff:0.2f}%"
-        )
-        txt = txt.replace("+0", colored(" 0", "white"))
-        log.info(txt)
-        # send_telegram(txt)
+        if price and amount:
+            self.exchange.trade(side, abs(amount), symbol, dt)
 
     def get_min_tradable_amount(self, price):
         """

@@ -8,13 +8,10 @@ import sys, os
 sys.path.append(os.path.abspath("."))
 
 
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.DEBUG)
-handler.setFormatter(logging.Formatter("%(message)s"))
-
+# Чтобы логи валились в stdout
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
-root.addHandler(handler)
+root.addHandler(logging.StreamHandler(sys.stdout))
 
 
 def main() -> None:

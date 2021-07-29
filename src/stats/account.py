@@ -18,8 +18,7 @@ class AccountStats:
         self.deposits = [self.exchange.cash_initial]
 
     def on_trade(self, symbol, payload):
-        side = payload["side"]
-        self.trades_count[side] += 1
+        self.trades_count[payload["side"]] += 1
 
     def update_pl(self):
         diff_value = self.exchange.net_value - self.prev_net_value
@@ -58,6 +57,8 @@ class AccountStats:
             self.max_drawdown = 0
 
         txt = (
+            "\n"
+            f"{self.exchange.dt_start}\n{self.exchange.dt_last}\n"
             "\n"
             f"ROI: {roi:+7.1f}%\n"
             f"Max DD: {self.max_drawdown:4.1f}%\n"
