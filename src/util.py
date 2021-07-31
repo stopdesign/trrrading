@@ -368,3 +368,20 @@ def log_trade(
     txt = txt.replace("+0", colored(" 0", "white"))
     log.info(txt)
     # send_telegram(txt)
+
+
+def log_trade_result(log, exchange, payload):
+    txt = ""  # f"Close {partial_close_amount} {symbol}  "
+    color = "white"
+    profit = payload["profit"]
+    if not profit:
+        return
+    if profit > 0:
+        color = "green"
+    if profit < 0:
+        color = "red"
+    rel_profit = (profit / exchange.cash) * 100
+    txt += colored(f"Σ {exchange.cash:0.0f}  ", "grey")
+    txt += colored(f"{profit:+0.2f}  ", color)
+    txt += colored(f"{rel_profit:+0.2f}%  ", color)
+    log.info(txt)

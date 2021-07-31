@@ -1,15 +1,11 @@
-import logging
 import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
-from termcolor import cprint, colored
+from termcolor import cprint
 from exchange import BaseExchange
 from storage.ib import load_many
-
-
-log = logging.getLogger("backtest")
 
 
 @dataclass
@@ -62,16 +58,7 @@ class BacktestExchange(BaseExchange):
             self.stream_event(row)
 
     def stop_listen(self):
-        """
-        Позакрывать все позиции.
-        """
-        # The last known date
-        for symbol, position in self.positions.items():
-            amount = position["amount"]
-            if amount > 0:
-                self.trade("sell", abs(amount), symbol, self.dt_last)
-            if amount < 0:
-                self.trade("buy", abs(amount), symbol, self.dt_last)
+        self.close_all()
 
     def interval_event(self, row):
         """
@@ -107,6 +94,11 @@ class BacktestExchange(BaseExchange):
                 return quotes["bid"]
             if side == "buy":
                 return quotes["ask"]
+            if side == "mid":
+                return (quotes["ask"] + quotes["bid"]) / 2
+
+    def get_positions(self):
+        return self.positions
 
     def add_quote(self, dt, symbol, payload):
         """
@@ -125,106 +117,85 @@ class BacktestExchange(BaseExchange):
             self.quotes[symbol]["bid"] = payload.bid
             self.quotes[symbol]["dt"] = dt
 
+    def close_all(self):
+        """
+        Закрыть все открытые позиции.
+        """
+        for symbol, position in self.positions.items():
+            amount = position["amount"]
+            if amount > 0:
+                self.trade("sell", abs(amount), symbol, self.dt_last)
+            if amount < 0:
+                self.trade("buy", abs(amount), symbol, self.dt_last)
+
     def trade(self, side: str, amount: Decimal, symbol: str, dt: datetime):
         """
         Создать ордер на бирже, скорректировать позицию.
+
+        Если открыта позиция и заявка пришла в другую сторону,
+        то происходит частичное закрытие, а прибыль материализуется.
+        На оставшуюся сумму происходит открытие позиции.
+
+        Если позиция и заявка имеют одно направление,
+        то позиция увеличивается на нужную сумму.
         """
-        if side == "sell":
-            color = "red"
-        else:
-            color = "green"
-        # cprint(f"TRADE: {side} {symbol} {amount}", color)
-
-        assert amount != 0
-
         start_amount = amount
+        trade_profit = None
+        position = self.positions.get(symbol, self.empty_position)
+        price = Decimal(self.get_price(symbol, side))
 
-        if price := Decimal(self.get_price(symbol, side)):
-            self.cash -= self.fee_rate * amount
-
-            if side == "sell":
-                amount = -amount
-
-            position = self.positions.get(symbol, self.empty_position)
-
-            trade_profit = None
-
-            # Если открыта позиция и заявка пришла в другую сторону,
-            # то происходит частичное закрытие, а прибыль материализуется.
-            # На оставшуюся сумму происходит открытие позиции.
-
-            # Если позиция и заявка имеют одно направление,
-            # то позиция увеличивается на нужную сумму.
-
-            # Позиция и дельта не 0 и имеют разный знак
-            if amount * position["amount"] < 0:
-                # Частичное закрытие позиции
-                partial_close_amount = min(abs(amount), abs(position["amount"]))
-
-                # Сократить позицию
-                if position["amount"] >= 0:
-                    position["amount"] -= partial_close_amount
-                    trade_profit = partial_close_amount * (price - position["price"])
-                else:
-                    position["amount"] += partial_close_amount
-                    trade_profit = partial_close_amount * (position["price"] - price)
-
-                # Сократить требование
-                if amount >= 0:
-                    amount -= partial_close_amount
-                else:
-                    amount += partial_close_amount
-
-                # Одно или другое должно сократиться полностью
-                assert amount == 0 or position["amount"] == 0
-
-                self.cash += trade_profit
-
-                txt = ""  # f"Close {partial_close_amount} {symbol}  "
-
-                color = "white"
-                if trade_profit > 0:
-                    color = "green"
-                if trade_profit < 0:
-                    color = "red"
-                rel_profit = (trade_profit / self.cash) * 100
-
-                txt += colored(f"Σ {self.cash:0.0f}  ", "grey")
-                txt += colored(f"{trade_profit:+0.2f}  ", color)
-                txt += colored(f"{rel_profit:+0.2f}%  ", color)
-                log.info(txt)
-
-                # Если amount еще остался — открыть позицию
-                if amount != 0:
-                    self.positions[symbol] = {
-                        "amount": amount,
-                        "price": price,
-                    }
-            else:
-                # Увеличение позиции в ту же сторону
-                total_value = position["amount"] * position["price"] + amount * Decimal(price)
-                total_amount = position["amount"] + amount
-                av_price = total_value / total_amount
-                self.positions[symbol] = {
-                    "amount": total_amount,
-                    "price": av_price,
-                }
-
-            # Событие «успешное завершение сделки»
-            payload = {
-                "side": side,
-                "amount": start_amount,
-                "price": price,
-                "profit": trade_profit,
-            }
-            self.on_event("after_trade", dt, symbol, payload)
-            return price, start_amount
-        else:
-            cprint(" SKIP TRADE: Not enough quote data ", "red", attrs=["reverse"])
+        if not price:
+            cprint(" SKIP TRADE: No price data ", "red", attrs=["reverse"])
             return None, None
 
-    def get_positions(self):
-        return self.positions
+        self.cash -= self.fee_rate * amount
+
+        if side == "sell":
+            amount = -amount
+
+        # Позиция и дельта не 0 и имеют разный знак
+        if amount * position["amount"] < 0:
+            # Частичное закрытие позиции
+            amount_to_close = min(abs(amount), abs(position["amount"]))
+
+            if side == "sell":
+                amount_to_close = -amount_to_close
+
+            # Одно с другим сокращается на partial_close_amount
+            amount -= amount_to_close
+            position["amount"] += amount_to_close
+
+            # Записать профит
+            trade_profit = amount_to_close * (position["price"] - price)
+            self.cash += trade_profit
+
+            # Если amount еще остался — открыть позицию
+            if amount != 0:
+                self.positions[symbol] = {
+                    "amount": amount,
+                    "price": price,
+                }
+        else:
+            # Увеличение позиции в ту же сторону
+            total_value = position["amount"] * position["price"]
+            total_value += amount * Decimal(price)
+            total_amount = position["amount"] + amount
+            av_price = total_value / total_amount
+            self.positions[symbol] = {
+                "amount": total_amount,
+                "price": av_price,
+            }
+
+        # Событие «успешное завершение сделки»
+        payload = {
+            "side": side,
+            "amount": start_amount,
+            "price": price,
+            "profit": trade_profit,
+        }
+        self.on_event("after_trade", dt, symbol, payload)
+
+        return price, start_amount
 
     @property
     def net_value(self):
@@ -233,19 +204,6 @@ class BacktestExchange(BaseExchange):
         """
         total_value = self.cash
         for symbol, position in self.positions.items():
-            if position["amount"] > 0:
-                price = Decimal(self.get_price(symbol, "sell"))
-                if price is None:
-                    # FIXME:
-                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
-                    continue
-                total_value += position["amount"] * (price - position["price"])
-                total_value -= self.fee_rate * position["amount"]
-            if position["amount"] < 0:
-                price = Decimal(self.get_price(symbol, "buy"))
-                if price is None:
-                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
-                    continue
-                total_value += position["amount"] * (price - position["price"])
-                total_value -= self.fee_rate * position["amount"]
+            mid = Decimal(self.get_price(symbol, "mid")) - self.fee_rate
+            total_value += position["amount"] * (mid - position["price"])
         return total_value

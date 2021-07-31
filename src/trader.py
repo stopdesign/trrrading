@@ -10,7 +10,7 @@ from notifications.alert import send_telegram  # noqa
 from stats import AccountStats, TradeStats
 from strategy import Signal
 from settings import CAN_SHORT
-from util import log_trade
+from util import log_trade, log_trade_result
 
 CURSOR_UP_ONE = "\x1b[1A"
 ERASE_LINE = "\x1b[2K"
@@ -54,15 +54,12 @@ class Trader:
         self.account_stats.snapshot()
 
     def final_info(self):
-        with open("data.csv", "w") as d:
-            df = pd.DataFrame(self.get_advisors()[0].strategy.data)
-            df.set_index("date", inplace=True)
-            df = df.loc[self.dt_start:]
-            df.to_csv(d)
-
-        self.trade_stats.to_csv("trades.csv")
-
-        self.account_stats.to_csv("stats.csv")
+        df = pd.DataFrame(self.get_advisors()[0].strategy.data)
+        df.set_index("date", inplace=True)
+        df = df.loc[self.dt_start:]
+        df.to_csv("../front/data.csv")
+        self.trade_stats.to_csv("../front/trades.csv")
+        self.account_stats.to_csv("../front/stats.csv")
         self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
@@ -93,6 +90,7 @@ class Trader:
             self.trade_stats.on_trade(dt, symbol, payload)
             self.account_stats.on_trade(symbol, payload)
             self.account_stats.update_pl()
+            log_trade_result(log, self.exchange, payload)
 
         return True
 
