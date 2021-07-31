@@ -1,10 +1,12 @@
+import os
+import sys
 import logging
 from datetime import datetime
 from termcolor import cprint
 from advisor import Advisor
 from trader import Trader
 
-import sys, os
+
 sys.path.append(os.path.abspath("."))
 
 
@@ -31,7 +33,7 @@ def main() -> None:
     finally:
         trader.final_info()
 
-    cprint(f"\nDone in {str(datetime.now() - dt)[:-7]}", attrs=['bold'])
+    cprint(f"\nDone in {str(datetime.now() - dt)[:-7]}", attrs=["bold"])
 
 
 if __name__ == "__main__":

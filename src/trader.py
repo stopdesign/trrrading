@@ -4,7 +4,7 @@ import math
 import pandas as pd
 from datetime import datetime
 from decimal import Decimal
-from termcolor import cprint, colored
+from termcolor import cprint
 from exchange import BaseExchange, all_exchanges
 from notifications.alert import send_telegram  # noqa
 from stats import AccountStats, TradeStats
