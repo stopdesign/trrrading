@@ -58,7 +58,8 @@ class AccountStats:
 
         txt = (
             "\n"
-            f"{self.exchange.dt_start}\n{self.exchange.dt_last}\n"
+            f"{self.exchange.dt_start}\n"
+            f"{self.exchange.dt_last}\n"
             "\n"
             f"ROI: {roi:+7.1f}%\n"
             f"Max DD: {self.max_drawdown:4.1f}%\n"

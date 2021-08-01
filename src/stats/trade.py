@@ -18,6 +18,7 @@ class TradeStats:
         )
 
     def to_csv(self, file_name):
-        df = pd.DataFrame(self.trades)
-        df = df.set_index("date")
-        df.to_csv(file_name)
+        if self.trades:
+            df = pd.DataFrame(self.trades)
+            df = df.set_index("date")
+            df.to_csv(file_name)

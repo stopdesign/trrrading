@@ -1,8 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from termcolor import cprint
-from util import parse_quote
 
 
 class BaseExchange:
@@ -26,14 +24,31 @@ class BaseExchange:
         self.dt_start = None
         self.dt_last = None
 
-    def get_price(self, symbol: str, side: str) -> Optional[Decimal]:
-        pass
+    def get_price(self, symbol: str, side: str) -> Optional[float]:
+        if quotes := self.quotes.get(symbol):
+            if side == "sell":
+                return quotes["bid"]
+            if side == "buy":
+                return quotes["ask"]
+            if side == "mid":
+                return (quotes["ask"] + quotes["bid"]) / 2
 
-    def add_quote(self, dt, symbol, event):
-        pass
-
-    def get_past_data(self, symbol, start_at, minutes):
-        pass
+    def add_quote(self, dt, symbol, payload):
+        """
+        Сохранить BID и ASK как актуальное состояние стакана на бирже.
+        """
+        current_quote = self.quotes.get(symbol)
+        if current_quote and current_quote["dt"] > dt:
+            return
+        if symbol not in self.quotes:
+            self.quotes[symbol] = {}
+        # ask и bid могут приходить независимо
+        if payload.ask:
+            self.quotes[symbol]["ask"] = payload.ask
+            self.quotes[symbol]["dt"] = dt
+        if payload.bid:
+            self.quotes[symbol]["bid"] = payload.bid
+            self.quotes[symbol]["dt"] = dt
 
     def trade(self, side: str, amount: int, symbol: str, dt: datetime):
         raise NotImplementedError()
@@ -50,11 +65,8 @@ class BaseExchange:
     def print_final_info(self):
         pass
 
-    def load_last_orders(self):
-        pass
-
     def get_positions(self):
-        pass
+        return self.positions
 
     def get_cash_value(self):
         pass

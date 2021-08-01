@@ -1,7 +1,6 @@
 import pandas_market_calendars as mcal
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime
 from strategy import Signal, all_strategies
-from util import interval_dt
 
 
 class Advisor:

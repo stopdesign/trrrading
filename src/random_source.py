@@ -1,3 +1,16 @@
+"""
+Тестовый http-stream, изображающий события биржи при нажатии на кнопки.
+
+— запустить скрипт
+— подключиться к нему: curl http://127.0.0.1:8080/trades/
+— понажимать в скрипте кнопки
+
+Right: повторить trade с той же ценой
+Up: повысить цену
+Down: понизить цену
+Esc: выход
+"""
+
 import asyncio
 import json
 import sys
@@ -61,7 +74,7 @@ async def handle_trades(request):
     response = web.StreamResponse(status=200, reason="OK")
     await response.prepare(request)
 
-    price = Decimal("100.00")
+    price = Decimal("39.60")
 
     print("Connection:", dict(request.headers))
 
@@ -96,7 +109,7 @@ def main():
     app = web.Application()
     # app.add_routes([web.get("/quotes/", handle_quotes)])
     app.add_routes([web.get("/trades/", handle_trades)])
-    web.run_app(app, print=lambda x: None)
+    web.run_app(app, host="127.0.0.1", print=lambda x: None)
 
 
 if __name__ == "__main__":

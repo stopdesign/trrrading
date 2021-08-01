@@ -37,3 +37,21 @@ class Bar:
             "dn": None,
         }
         return cls(**dct)
+
+    @classmethod
+    def from_fake_trade(cls, ticker, date, price, volume):
+        dct = {
+            "date": date,
+            "open": price,
+            "high": price,
+            "low": price,
+            "close": price,
+            "volume": volume,
+            "average": price,
+            "barCount": 1,
+            "rth": 1,
+            "ticker": ticker,
+            "up": None,
+            "dn": None,
+        }
+        return cls(**dct)

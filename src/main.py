@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath("."))
 
 # Чтобы логи валились в stdout
 root = logging.getLogger()
-root.setLevel(logging.DEBUG)
+root.setLevel(logging.INFO)
 root.addHandler(logging.StreamHandler(sys.stdout))
 
 
@@ -20,10 +20,16 @@ def main() -> None:
     dt = datetime.now()
 
     advisors = [
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_data=True),
+        Advisor(
+            "ChannelBreakout3",
+            "COPX.ARCA",
+            length=5,
+            extra_data=True,
+            extra_trade=True,
+        ),
     ]
 
-    trader = Trader("BacktestExchange", advisors, "2021-01-01")
+    trader = Trader("IBFakeExchange", advisors, "2021-05-01")
 
     try:
         trader.warm_up()

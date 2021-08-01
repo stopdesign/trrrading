@@ -1,23 +1,11 @@
 import pandas as pd
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 from termcolor import cprint
 from exchange import BaseExchange
+from exchange.data_types import BidAsk, Trade
 from storage.ib import load_many
-
-
-@dataclass
-class Trade:
-    price: float
-    volume: int
-
-
-@dataclass
-class BidAsk:
-    bid: float
-    ask: float
 
 
 class BacktestExchange(BaseExchange):

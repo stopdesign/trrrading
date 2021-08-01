@@ -1,10 +1,12 @@
 import json  # noqa
 import logging
 import math
+from typing import List
 import pandas as pd
 from datetime import datetime
 from decimal import Decimal
 from termcolor import cprint
+from advisor import Advisor
 from exchange import BaseExchange, all_exchanges
 from notifications.alert import send_telegram  # noqa
 from stats import AccountStats, TradeStats
@@ -56,7 +58,7 @@ class Trader:
     def final_info(self):
         df = pd.DataFrame(self.get_advisors()[0].strategy.data)
         df.set_index("date", inplace=True)
-        df = df.loc[self.dt_start:]
+        df = df[df.index > self.dt_start]
         df.to_csv("../front/data.csv")
         self.trade_stats.to_csv("../front/trades.csv")
         self.account_stats.to_csv("../front/stats.csv")
@@ -94,7 +96,7 @@ class Trader:
 
         return True
 
-    def get_advisors(self, symbol=None):
+    def get_advisors(self, symbol=None) -> List[Advisor]:
         """
         Все советники для данного инструмента.
         """

@@ -1,4 +1,3 @@
-from .bar import Bar
 from .signal import Signal
 from .base import BaseStrategy
 from .channel_breakout import ChannelBreakout
@@ -22,7 +21,6 @@ all_strategies = {
 __all__ = [
     "Dummy",
     "Signal",
-    "Bar",
     "Volty",
     "BaseStrategy",
     "ChannelBreakout",

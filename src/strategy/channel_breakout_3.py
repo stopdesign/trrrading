@@ -1,5 +1,6 @@
 from talipp.indicators import DonchianChannels
-from strategy import BaseStrategy, Signal, Bar
+from strategy import BaseStrategy, Signal
+from exchange.data_types import Bar
 
 
 class ChannelBreakout3(BaseStrategy):
