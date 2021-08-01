@@ -36,7 +36,7 @@ class AccountStats:
 
     def to_csv(self, file_name):
         # Date, Value, Drawdown, Equity, RelEquity
-        pass
+        open(file_name, "w").close()
 
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]))

@@ -22,3 +22,5 @@ class TradeStats:
             df = pd.DataFrame(self.trades)
             df = df.set_index("date")
             df.to_csv(file_name)
+        else:
+            open(file_name, "w").close()

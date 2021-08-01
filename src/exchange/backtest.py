@@ -1,7 +1,6 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional
 from termcolor import cprint
 from exchange import BaseExchange
 from exchange.data_types import BidAsk, Trade
@@ -75,35 +74,6 @@ class BacktestExchange(BaseExchange):
                 payload = Trade(price=price, volume=row.volume)
                 self.on_event("trade", dt, symbol, payload)
             self.on_event("bar", dt, symbol, row)
-
-    def get_price(self, symbol: str, side: str) -> Optional[float]:
-        if quotes := self.quotes.get(symbol):
-            if side == "sell":
-                return quotes["bid"]
-            if side == "buy":
-                return quotes["ask"]
-            if side == "mid":
-                return (quotes["ask"] + quotes["bid"]) / 2
-
-    def get_positions(self):
-        return self.positions
-
-    def add_quote(self, dt, symbol, payload):
-        """
-        Сохранить BID и ASK как актуальное состояние стакана на бирже.
-        """
-        current_quote = self.quotes.get(symbol)
-        if current_quote and current_quote["dt"] > dt:
-            return
-        if symbol not in self.quotes:
-            self.quotes[symbol] = {}
-        # ask и bid могут приходить независимо
-        if payload.ask:
-            self.quotes[symbol]["ask"] = payload.ask
-            self.quotes[symbol]["dt"] = dt
-        if payload.bid:
-            self.quotes[symbol]["bid"] = payload.bid
-            self.quotes[symbol]["dt"] = dt
 
     def close_all(self):
         """
