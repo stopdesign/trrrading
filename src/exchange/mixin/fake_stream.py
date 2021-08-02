@@ -6,7 +6,7 @@ from termcolor import cprint
 class FakeStream:
     finished = None
 
-    async def fake_stream(self, url):
+    async def fake_stream(self, url, params):
         """
         Подписка на стрим фейковой биржи.
         """
@@ -18,7 +18,7 @@ class FakeStream:
             cprint(f"Fake stream at {url}", "blue")
             async with aiohttp.ClientSession(timeout=timeout) as cs:
                 try:
-                    async with cs.get(url) as resp:
+                    async with cs.get(url, params=params) as resp:
                         async for data in resp.content.iter_any():
                             await self.fake_stream_event(data)
                             delay = min_delay  # reset the delay

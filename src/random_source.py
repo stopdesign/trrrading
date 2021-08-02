@@ -74,9 +74,13 @@ async def handle_trades(request):
     response = web.StreamResponse(status=200, reason="OK")
     await response.prepare(request)
 
-    price = Decimal("39.60")
-
     print("Connection:", dict(request.headers))
+
+    params = request.rel_url.query
+
+    price = Decimal(params.get("price", "100.0"))
+    size = Decimal(params.get("size", "100.0"))
+    symbol = params.get("symbol", "WTF.ARCA")
 
     while True:
         if key == "esc":
@@ -92,8 +96,8 @@ async def handle_trades(request):
             msg = {
                 "timestamp": ts,
                 "price": price,
-                "size": "100.00",
-                "symbolId": "COPX.ARCA",
+                "size": size,
+                "symbolId": symbol,
             }
             msg = json.dumps(msg, default=str)
             print(key)

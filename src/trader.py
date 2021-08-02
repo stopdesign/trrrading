@@ -57,9 +57,10 @@ class Trader:
 
     def final_info(self):
         df = pd.DataFrame(self.get_advisors()[0].strategy.data)
-        df.set_index("date", inplace=True)
-        df = df[df.index > self.dt_start]
-        df.to_csv("../front/data.csv")
+        if not df.empty:
+            df.set_index("date", inplace=True)
+            df = df[df.index > self.dt_start]
+            df.to_csv("../front/data.csv")
         self.trade_stats.to_csv("../front/trades.csv")
         self.account_stats.to_csv("../front/stats.csv")
         self.account_stats.print_summary()  # RESULTS
@@ -68,7 +69,8 @@ class Trader:
         """
         В стриме биржи возникло новое событие.
         """
-        # cprint(f"{dt}: EVENT {event} {symbol}", "white")
+        # if dt >= self.dt_start and event != "quote":
+        #     cprint(f"{dt}: EVENT {event} {symbol} {payload}", "white")
 
         if event == "bar":
             for advisor in self.get_advisors(symbol):
@@ -157,7 +159,7 @@ class Trader:
         Здесь же риск-менеджмент уровня аккаунта,
         контроль использования маржи.
         """
-        # cprint(f"\nON_TRADE {dt} {instrument} {trade_price}", "cyan")
+        # cprint(f"\nON_TRADE {dt} {symbol} {tr_price}", "cyan")
         # self.portfolio_info()
 
         # Протестировать новую цену (не добавляя в историю).
@@ -171,7 +173,7 @@ class Trader:
 
         # Всё равно ничего сделать нельзя
         if not (diff and (can_buy or can_sell)):
-            # cprint(f"SKIP: diff: {diff}, buy: {total_buy}, sell: {total_sell}")
+            # cprint(f"SKIP: diff: {diff}, buy: {can_buy}, sell: {can_sell}")
             return
 
         # Посчитать, куда нужно торговать.
