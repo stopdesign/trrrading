@@ -99,10 +99,10 @@ def get_splits(ticker):
     splits = None
     for i in range(10):
         try:
-            splits = res.json()["chart"]["result"][0]["events"]["splits"]
+            splits = res.json()["chart"]["result"][0].get("events", {}).get("splits", {})
             splits = sorted(splits.values(), key=lambda x: x["date"], reverse=True)
             break
-        except RequestError as e:
+        except Exception as e:
             cprint(f"Failed finance.yahoo.com request: {e}", "red")
     if splits is None:
         raise ValueError("Empty response")
@@ -276,12 +276,11 @@ def test_strat_speed(df):
 if __name__ == "__main__":
     dt = datetime.now()
 
-    # start_dt = datetime(2021, 7, 1, tzinfo=timezone.utc).date()
-    # download_and_save("COPX.ARCA", start=start_dt)
+    start_dt = datetime(2021, 6, 1, tzinfo=timezone.utc).date()
+    download_and_save("SPY.ARCA", start=start_dt)
 
-    start_dt = datetime(2021, 1, 1, tzinfo=timezone.utc).date()
-    df = load_as_df("COPX.ARCA", start=start_dt)
-
-    test_strat_speed(df)
+    # start_dt = datetime(2021, 1, 1, tzinfo=timezone.utc).date()
+    # df = load_as_df("COPX.ARCA", start=start_dt)
+    # test_strat_speed(df)
 
     cprint(f"\nDone in {(datetime.now() - dt).total_seconds():0.2f} s", attrs=["bold"])

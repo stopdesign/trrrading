@@ -5,9 +5,10 @@ from termcolor import cprint
 
 class Healthcheck:
     finished = None
+    healthcheck_interval = 30
 
     def healthcheck_loop(self):
-        interval = timedelta(seconds=30)
+        interval = timedelta(seconds=self.healthcheck_interval)
         prev_dt = datetime.utcnow()
         while not self.finished:
             if datetime.utcnow() - prev_dt > interval:
