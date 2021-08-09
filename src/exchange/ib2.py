@@ -23,7 +23,7 @@ ASK_TYPES = TickerUpdateEvent().asks()._tickTypes  # noqa
 class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
     fake_stream_url = "http://127.0.0.1:8080/trades/"
     healthcheck_interval = 60
-    rel_price_cap = 0.02
+    rel_price_cap = 0.02  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
 
     def __init__(self, advisors: list, **kwargs):
@@ -292,7 +292,7 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
                 # norm_dt = dt.replace(second=0, microsecond=0)
                 # Собрать все бары и запустить событие
                 print()
-                cprint(" ON_METRONOM ", "green", attrs=["reverse"])
+                cprint(" ON_METRONOM ", "white", attrs=["reverse"])
             self.last_event["metronom"] = datetime.utcnow()
             await asyncio.sleep(0.1)
             prev_dt = dt
@@ -408,3 +408,6 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
             }
         self.positions = positions
         return self.positions
+
+    def get_margin_level(self, short=False):
+        return 0.3 if short else 0.25

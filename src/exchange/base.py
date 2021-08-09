@@ -78,3 +78,6 @@ class BaseExchange:
     @property
     def equity_value(self):
         return
+
+    def get_margin_level(self, short=False):
+        return 1

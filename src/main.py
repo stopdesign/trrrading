@@ -40,16 +40,12 @@ def main() -> None:
     dt = datetime.now()
 
     advisors = [
-        Advisor(
-            "ChannelBreakout3",
-            "SPY.ARCA",
-            length=2,
-            extra_data=True,
-            extra_trade=True,
-        ),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_trade=False),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, extra_trade=False),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=550, extra_trade=False),
     ]
 
-    trader = Trader("IBFakeExchange", advisors, "2021-05-01")
+    trader = Trader("IBFakeExchange", advisors, "2021-06-01", 10000)
 
     try:
         trader.warm_up()

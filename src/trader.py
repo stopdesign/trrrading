@@ -24,11 +24,14 @@ log = logging.getLogger("trader")
 class Trader:
     exchange: BaseExchange = None
 
-    def __init__(self, exchange, advisors, dt_start):
+    def __init__(self, exchange, advisors, dt_start, target_margin):
         cprint("Init trader", "white")
 
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
+
+        # Значение margin, к которому должен стремиться депозит
+        self.target_margin = target_margin
 
         self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
         self.advisors = advisors
@@ -37,7 +40,7 @@ class Trader:
         self.exchange = exchange_class(advisors, dt_start=self.dt_start)
         self.exchange.on_event = self.on_event
 
-        self.account_stats = AccountStats(self.exchange)
+        self.account_stats = AccountStats(self.exchange, target_margin)
         self.trade_stats = TradeStats()
 
     def warm_up(self):
@@ -95,6 +98,7 @@ class Trader:
             self.account_stats.on_trade(symbol, payload)
             self.account_stats.update_pl()
             log_trade_result(log, self.exchange, payload)
+            self.portfolio_info()
 
         return True
 
@@ -113,60 +117,42 @@ class Trader:
 
     def get_advised_position(self, instrument):
         """
-        Сколько сейчас в портфолио должно быть этой штуки,
-        если бы сработали все исторические сигналы.
+        Сколько сейчас в портфолио должно быть этой штуки.
         """
-        buying_power = self.get_buying_power()
-
-        res = Decimal("0")
+        state = 0
         for advisor in self.get_advisors(instrument):
-            if advisor.state == Signal.LONG:
-                price = self.exchange.get_price(instrument, "buy")
-                amount = math.floor(buying_power / Decimal(price))
-                res += amount
-            if advisor.state == Signal.SHORT:
-                price = self.exchange.get_price(instrument, "sell")
-                amount = math.floor(buying_power / Decimal(price))
-                res -= amount
-            if advisor.state == Signal.CLOSE:
-                res = Decimal(0)
+            state += advisor.state.numeric / len(self.advisors)
 
-        # Если нельзя шортить
         if not self.can_short:
-            res = max(Decimal(0), res)
+            state = max(0, state)
 
-        return res
+        return self.state_to_position(instrument, state)
 
-    def get_buying_power(self):
+    def state_to_position(self, instrument, state):
         """
-        Сумма, которой может управлять один советник.
-
-        Сейчас депозит делится равными долями между всеми.
-        Если reinvest_profit выключен, то делится начальный депозит.
+        Какому количеству акций соответствует данный state.
+        Учесть разный margin для шорта и лонга.
+        При state 1 позиция должна давать target margin.
         """
-        cash_to_use = self.exchange.net_value
-        if not self.reinvest_profit:
-            cash_to_use = min(self.exchange.cash_initial, cash_to_use)
-        cnt = len(self.get_advisors())
-        if cnt:
-            return cash_to_use / cnt
-        else:
-            return 0
+        margin = self.exchange.get_margin_level(state < 0)
+        price = self.exchange.get_price(instrument, "mid")
+        return int(math.floor(self.target_margin * state / margin / price))
 
     def on_trade(self, dt: datetime, symbol, tr_price, volume=None):  # noqa
         """
         Тут торговля, если стратегия дала сигнал.
-        Здесь же риск-менеджмент уровня аккаунта,
-        контроль использования маржи.
         """
         # cprint(f"\nON_TRADE {dt} {symbol} {tr_price}", "cyan")
-        # self.portfolio_info()
 
         # Протестировать новую цену (не добавляя в историю).
-        # Получить суммарный объем на покупку/продажу по всем сигналам.
-        can_buy, can_sell = self.test_new_price(symbol, dt, tr_price)
+        # Получить сигналы во все стороны.
+        can_buy, can_sell = self.get_signals(symbol, dt, tr_price)
 
-        # Это всё должно быть после тестирования новой цены // TODO: почему?
+        can_buy = self.state_to_position(symbol, can_buy)
+        can_sell = self.state_to_position(symbol, can_sell)
+
+        # Это всё должно быть после тестирования новой цены в get_signals,
+        # т.к. используется advisor.state, который должен быть посчитан.
         cp = self.get_current_position(symbol)
         ap = self.get_advised_position(symbol)
         diff = ap - cp
@@ -180,10 +166,11 @@ class Trader:
         # Скоректировать объем по возможностям, которые есть по сигналам.
         amount, side = 0, None
         if diff > 0:
-            amount, side = min(abs(diff), can_buy), "buy"
+            amount, side = min(abs(diff), abs(can_buy)), "buy"
         if diff < 0:
-            amount, side = -min(abs(diff), can_sell), "sell"
+            amount, side = -min(abs(diff), abs(can_sell)), "sell"
 
+        # Рыночная цена по текущему стакану
         price = self.exchange.get_price(symbol, side)
 
         # Предлагаемое изменение должно быть больше минимального
@@ -206,48 +193,35 @@ class Trader:
         min_tradable_amount = max(1, min_tradable_amount)
         return min_tradable_amount
 
-    def test_new_price(self, instrument, dt, price):
+    def get_signals(self, instrument, dt, price):
         """
         Посчитать суммарный объем покупки и продажи,
         который предлагают советники для новой цены
         """
-        # Сумма, которой может управлять один советник
-        buying_power = self.get_buying_power()
-
-        total_buy, total_sell = Decimal("0"), Decimal("0")
+        total_buy, total_sell = 0, 0
+        all_adv_len = len(self.advisors)
 
         for advisor in self.get_advisors(instrument):
-            current_state = advisor.state
+            assert advisor.state is not None, f"Empty state: {advisor}"
+
+            current_state = advisor.state.numeric
             signal = advisor.test_price(dt, price)
+            state_diff = signal.numeric - current_state
 
-            if signal == Signal.LONG:
-                cur_price = self.exchange.get_price(instrument, "buy")
-                amount = math.floor(buying_power / Decimal(cur_price))
-                if current_state == Signal.SHORT:
-                    total_buy += amount * 2
-                elif current_state == Signal.LONG:
-                    total_buy += 0
-                else:
-                    total_buy += amount
+            if signal == Signal.PASS:
+                continue
 
-            if signal == Signal.SHORT:
-                cur_price = self.exchange.get_price(instrument, "sell")
-                amount = math.floor(buying_power / Decimal(cur_price))
-                if current_state == Signal.LONG:
-                    total_sell += amount * 2
-                elif current_state == Signal.SHORT:
-                    total_sell += 0
-                else:
-                    total_sell += amount
+            if state_diff > 0:
+                total_buy += abs(state_diff / all_adv_len)
 
-            if signal == Signal.CLOSE:
-                if current_state == Signal.LONG:
-                    cur_price = self.exchange.get_price(instrument, "sell")
-                    amount = math.floor(buying_power / Decimal(cur_price))
-                    total_sell += amount
-                elif current_state == Signal.SHORT:
-                    cur_price = self.exchange.get_price(instrument, "buy")
-                    amount = math.floor(buying_power / Decimal(cur_price))
-                    total_buy += amount
+            if state_diff < 0:
+                total_sell += abs(state_diff / all_adv_len)
 
         return total_buy, total_sell
+
+    def portfolio_info(self):
+        for symbol, value in self.exchange.get_positions().items():
+            cprint(
+                f"{symbol}, "
+                f"amnt: {value['amount']}, "
+                f"price: {value['price']:0.2f}", "cyan")

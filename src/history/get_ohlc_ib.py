@@ -276,8 +276,8 @@ def test_strat_speed(df):
 if __name__ == "__main__":
     dt = datetime.now()
 
-    start_dt = datetime(2021, 6, 1, tzinfo=timezone.utc).date()
-    download_and_save("SPY.ARCA", start=start_dt)
+    start_dt = datetime(2021, 7, 1, tzinfo=timezone.utc).date()
+    download_and_save("URA.ARCA", start=start_dt)
 
     # start_dt = datetime(2021, 1, 1, tzinfo=timezone.utc).date()
     # df = load_as_df("COPX.ARCA", start=start_dt)

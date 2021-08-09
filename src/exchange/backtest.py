@@ -12,7 +12,7 @@ class BacktestExchange(BaseExchange):
         super().__init__(advisors)
         self.quotes = {}
         self.dt_start = kwargs.pop("dt_start")
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=7))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.fee_rate = Decimal("0.02")
@@ -165,3 +165,6 @@ class BacktestExchange(BaseExchange):
             mid = Decimal(self.get_price(symbol, "mid")) - self.fee_rate
             total_value += position["amount"] * (mid - position["price"])
         return total_value
+
+    def get_margin_level(self, short=False):
+        return 0.3 if short else 0.25

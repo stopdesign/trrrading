@@ -6,7 +6,7 @@ from termcolor import cprint, colored
 
 
 class AccountStats:
-    def __init__(self, exchange: BaseExchange):
+    def __init__(self, exchange: BaseExchange, target_margin):
         self.exchange = exchange
         self.max_net_value = Decimal("-Infinity")
         self.max_drawdown = Decimal("-Infinity")
@@ -16,6 +16,7 @@ class AccountStats:
         self.trades_count = {"buy": 0, "sell": 0, "close": 0}
         self.prev_net_value = self.exchange.net_value
         self.deposits = [self.exchange.cash_initial]
+        self.target_margin = target_margin
 
     def on_trade(self, symbol, payload):
         self.trades_count[payload["side"]] += 1
@@ -43,8 +44,11 @@ class AccountStats:
 
         pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
         p = self.exchange.net_value - self.exchange.cash_initial
-        roi = p / self.exchange.cash_initial * 100
         trades = self.trades_count["buy"] + self.trades_count["sell"]
+
+        # Не уверен, что это можно считать ROI, но это профит
+        # на единицу задействованных в торговле денег.
+        roi = p / self.target_margin * 100
 
         # R2
         if self.deposits:
