@@ -51,7 +51,7 @@ class AccountStats:
         roi = p / self.target_margin * 100
 
         # R2
-        if self.deposits:
+        if self.deposits and len(self.deposits) > 1:
             x = np.arange(len(self.deposits))
             y = np.array(self.deposits, dtype=float)
             slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)

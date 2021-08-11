@@ -1,6 +1,7 @@
 import json  # noqa
 import logging
 import math
+from collections import defaultdict
 from typing import List
 import pandas as pd
 from datetime import datetime
@@ -33,7 +34,8 @@ class Trader:
         # Значение margin, к которому должен стремиться депозит
         self.target_margin = target_margin
 
-        self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
+        # self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
+        self.dt_start = datetime.utcnow().replace(microsecond=0)
         self.advisors = advisors
 
         exchange_class = all_exchanges[exchange]
@@ -46,6 +48,7 @@ class Trader:
     def warm_up(self):
         cprint("\nHistorical data", "white")
         self.exchange.warm_up()
+        self.portfolio_info()
 
     def start(self):
         cprint("\nStart stream", "white")
@@ -57,6 +60,7 @@ class Trader:
         cprint("\nStop stream", "white")
         self.exchange.stop_listen()
         self.account_stats.snapshot()
+        self.portfolio_info()
 
     def final_info(self):
         df = pd.DataFrame(self.get_advisors()[0].strategy.data)
@@ -93,6 +97,10 @@ class Trader:
             if dt >= self.dt_start:
                 self.account_stats.snapshot()
 
+        if event in ["minute"]:
+            pass
+            # self.portfolio_info()
+
         if event == "after_trade":
             self.trade_stats.on_trade(dt, symbol, payload)
             self.account_stats.on_trade(symbol, payload)
@@ -126,7 +134,10 @@ class Trader:
         if not self.can_short:
             state = max(0, state)
 
-        return self.state_to_position(instrument, state)
+        try:
+            return self.state_to_position(instrument, state)
+        except TypeError:
+            return None
 
     def state_to_position(self, instrument, state):
         """
@@ -137,6 +148,11 @@ class Trader:
         margin = self.exchange.get_margin_level(state < 0)
         price = self.exchange.get_price(instrument, "mid")
         return int(math.floor(self.target_margin * state / margin / price))
+
+    def get_margin_for_position(self, instrument, position):
+        margin_level = self.exchange.get_margin_level(position < 0)
+        price = self.exchange.get_price(instrument, "mid")
+        return abs(float(position)) * float(price) * margin_level if price else None
 
     def on_trade(self, dt: datetime, symbol, tr_price, volume=None):  # noqa
         """
@@ -187,9 +203,7 @@ class Trader:
         """
         Минимальное количество акций, которое стоит покупать/продавать.
         """
-        symbols = list(set([a.instrument for a in self.get_advisors()]))
-        cash_per_symbol = self.exchange.net_value / len(symbols)
-        min_tradable_amount = math.floor((cash_per_symbol / 10) / Decimal(price))
+        min_tradable_amount = math.floor(Decimal(100) / Decimal(price))
         min_tradable_amount = max(1, min_tradable_amount)
         return min_tradable_amount
 
@@ -220,8 +234,41 @@ class Trader:
         return total_buy, total_sell
 
     def portfolio_info(self):
+        positions = defaultdict(dict)
+
         for symbol, value in self.exchange.get_positions().items():
+            positions[symbol] = value
+            positions[symbol]["advised"] = self.get_advised_position(symbol)
+
+        for advisor in self.get_advisors():
+            symbol = advisor.instrument
+            if symbol not in positions:
+                positions[symbol] = {
+                    "advised": self.get_advised_position(symbol),
+                    "price": self.exchange.get_price(symbol, "mid"),
+                    "amount": 0,
+                }
+        total_margin_used = 0
+        print()
+        for symbol, position in sorted(positions.items()):
+            if position["advised"] is not None:
+                advised = "{0:+0.0f}".format(position["advised"])
+                m_used = self.get_margin_for_position(symbol, position["amount"])
+                total_margin_used += m_used
+                m_used = "{0:0.0f}".format(m_used)
+                color = "cyan"
+            else:
+                advised = "-"
+                m_used = "-"
+                color = "white"
             cprint(
-                f"{symbol}, "
-                f"amnt: {value['amount']}, "
-                f"price: {value['price']:0.2f}", "cyan")
+                f"{symbol:<12}"
+                f"{position['price']:10.2f}"
+                f"{position['amount']:+10.0f}"
+                f"{m_used:>10}"
+                f"{advised:>10}",
+                color,
+            )
+        cprint(f"Net Value:   {self.exchange.net_value:9.2f}", "blue")
+        cprint(f"Margin Used: {total_margin_used:9.2f}", "blue")
+        print()

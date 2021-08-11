@@ -375,7 +375,6 @@ def log_trade_result(log, exchange, payload):
     color = "white"
     profit = payload["profit"]
     if not profit:
-        log.info(colored("INCREASE POSITION", "white"))
         return
     if profit > 0:
         color = "green"
