@@ -41,10 +41,12 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
 
         self.ib = ib.IB()
 
-        # Подписаться на события, приходящие с биржи.
+        # Подписаться на события шлюза IB
         self.ib.connectedEvent += self.on_connect
         self.ib.disconnectedEvent += self.on_disconnect
         self.ib.pendingTickersEvent += self.market_stream_event
+        self.ib.errorEvent += self.on_ib_error
+        self.ib.timeoutEvent += lambda *args: cprint(f"timeoutEvent: {args}", "yellow")
 
         self.ib_params = {
             "host": "127.0.0.1",
@@ -77,12 +79,27 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         self.dt_last = None
 
         self.finished = False
+        self.subscribed = False
 
     def on_connect(self):
         cprint(f"\nON_CONNECT, finished: {self.finished}", "green")
 
     def on_disconnect(self):
         cprint(f"\nON_DISCONNECT, finished: {self.finished}", "red")
+
+    def on_ib_error(self, req_id, error_code, error_string, contract):
+        if req_id and req_id < 0:
+            cprint(f"ON_ERROR: {req_id} {error_code} {error_string} {contract}", "red")
+
+        # Отвалилась market data.
+        # No market data during competing live session.
+        if error_code == 10197:
+            self.subscribed = False
+
+        # Отвалилась подписка на bar updates
+        # Failed to request live updates (disconnected).
+        if error_code == 10182:
+            self.subscribed = False
 
     def do_healthcheck(self):
         pass
@@ -135,6 +152,24 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         df = ib.util.df(bars)
         df["date"] = df["date"].dt.tz_localize(None)
         df = df.set_index("date")
+
+        # Убрать нулевые объемы
+        df = df.loc[df.volume != 0]
+
+        # В режиме BID_ASK данные имеют другой смысл. Переименовать.
+        if data_type == "BIDASK":
+            df.rename(columns=BID_ASK_COLUMNS_MAP, inplace=True)
+            # Убрать записи, где не было изменений.
+            # Запись для начала основной сессии (RTH) сохраняется.
+            df = df.drop_duplicates(
+                subset=["av_bid", "max_ask", "min_bid", "av_ask"],
+                keep="first",
+            )
+        symbol = f"{contract.symbol}.{contract.exchange}"
+        symbol = symbol.replace(".SMART", ".ARCA")
+        df["ticker"] = symbol
+        df["data_type"] = data_type
+
         return df
 
     def warm_up(self):
@@ -145,14 +180,15 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         for symbol in self.symbols:
             sym, pe = symbol.split(".")
             contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
+            contract.bars = None
+            contract.mkt_ticker = None
             contracts.append(contract)
         self.contracts = contracts
 
         self.all_data = self.load_historical_data()
 
+        cprint("\nGet real-time data", "white")
         current_data = []
-
-        cprint("\nGet last data", "white")
         try:
             self.ib.connect(**self.ib_params)
             for symbol in self.symbols:
@@ -164,21 +200,6 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
                     last_dt = tail_df.tail(1).index.item().to_pydatetime()
                     df = self.load_current_data(contract, data_type)
                     df = df[df.index > last_dt]
-
-                    # Убрать нулевые объемы
-                    df = df.loc[df.volume != 0]
-
-                    # В режиме BID_ASK данные имеют другой смысл. Переименовать.
-                    if data_type == "BIDASK":
-                        df.rename(columns=BID_ASK_COLUMNS_MAP, inplace=True)
-                        # Убрать записи, где не было изменений.
-                        # Запись для начала основной сессии (RTH) сохраняется.
-                        df = df.drop_duplicates(
-                            subset=["av_bid", "max_ask", "min_bid", "av_ask"],
-                            keep="first",
-                        )
-                    df["ticker"] = symbol
-                    df["data_type"] = data_type
                     current_data.append(df)
         finally:
             self.ib.disconnect()
@@ -187,10 +208,12 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         self.all_data = pd.concat(current_data)
         self.all_data = self.all_data.sort_values(["date", "ticker", "data_type"])
 
+        # Прогнать события по историческим данным
         stream = self.all_data.loc[self.dt_from: self.dt_start]
         for row in stream.itertuples():
             self.historical_stream_event(row)
 
+        # TODO: вынести отсюда куда-нибудь еще
         # Для каждого символа последние исторические данные должны быть
         # не позднее, чем 5 минут назад.
         now = datetime.utcnow().replace(microsecond=0)
@@ -214,17 +237,6 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         # Интервальные события
         self.loop.create_task(self.metronom())
 
-        # # Фейковая биржа
-        # if self.contracts:
-        #     contract = self.contracts[0]
-        #     symbol = f"{contract.symbol}.{contract.exchange}"
-        #     symbol = symbol.replace(".SMART", ".ARCA")
-        #     params = {
-        #         "symbol": symbol,
-        #         "price": "438.50",
-        #     }
-        #     self.loop.create_task(self.fake_stream(self.fake_stream_url, params))
-
         self.loop.run_forever()
 
     def stop_listen(self):
@@ -245,13 +257,18 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         """
         while not self.finished:
             if not self.ib.isConnected():
+                self.subscribed = False
                 try:
                     cprint(" reConnect ", "blue", attrs=["reverse"])
-                    await self.ib_reconnect()
+                    await self.ib.connectAsync(**self.ib_params)
                 except asyncio.exceptions.TimeoutError:
                     cprint("reConnect TimeoutError", "red")
                 except ConnectionRefusedError:
                     cprint("reConnect ConnectionRefusedError", "red")
+
+            if not self.subscribed:
+                await self.ib_resubscribe()
+
             await asyncio.sleep(1)
 
     def create_on_bar(self, symbol):
@@ -260,20 +277,25 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
 
         return func
 
-    async def ib_reconnect(self):
+    async def ib_resubscribe(self):
         """
-        Коннект и подписка на обновления по нужным контрактам.
+        Подписка на обновления по контрактам.
         """
-        await self.ib.connectAsync(**self.ib_params)
-        # await self.ib.qualifyContractsAsync(*contracts)
-        cprint(f"Start listening for TWS events\n", "blue")
+        if self.subscribed:
+            return
+
         for contract in self.contracts:
+            if contract.bars is not None:
+                cprint(f"Cancel HD, {contract}", "red")
+                self.ib.cancelHistoricalData(contract.bars)
+
             # Интервальные данные
-            bars = self.ib.reqHistoricalData(
+            contract.bars = self.ib.reqHistoricalData(
                 contract,
                 endDateTime="",
                 # Достаточно, чтобы заполнить пробел между
                 # историческими данными и real-time данными.
+                # TODO: учесть возможность восстановления соединения после паузы
                 durationStr="600 S",
                 barSizeSetting="1 min",
                 whatToShow="TRADES",
@@ -282,15 +304,24 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
                 keepUpToDate=True,
             )
             symbol = str(f"{contract.symbol}.{contract.primaryExchange}")
-            bars.updateEvent += self.create_on_bar(symbol)
+            contract.bars.updateEvent += self.create_on_bar(symbol)
 
         for contract in self.contracts:
             # Тиковые данные
-            self.ib.reqMktData(contract)
+            if contract.mkt_ticker:
+                cprint(f"Cancel MKT, {contract}", "red")
+                self.ib.cancelMktData(contract)
+            contract.mkt_ticker = self.ib.reqMktData(contract)
+
+        cprint(f"Started listening for IB events\n", "blue")
+
+        self.subscribed = True
 
     def historical_stream_event(self, row):
         dt = row.Index.to_pydatetime()
         symbol = row.ticker
+
+        # TODO: поставить RTH у payload
 
         if row.data_type == "BIDASK":
             payload = BidAsk(bid=row.av_bid, ask=row.av_ask)
@@ -375,16 +406,13 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
 
     async def on_bar_update(self, bars, has_new_bar, symbol):
         """
-        NOTE: при открытии приходит вчерашний BAR.
-        """
-        # if bars:
-        #     av = bars[-1].average
-        #     cnt = bars[-1].barCount
-        #     dt = datetime.utcnow().replace(microsecond=0)
-        #     color = "green" if has_new_bar else "yellow"
-        #     cprint(f"{dt}: ON_BAR, {symbol}, price: {av:0.2f}, cnt: {cnt}", color)
+        После появления нового бара отправить событие.
 
-        # После появления нового бара отправить событие
+        TODO: Учесть, что при открытии приходит вчерашний BAR.
+
+        TODO: Проверить, что нет разрывов в таймлайне.
+        TODO: При необходимости отправить несколько баров.
+        """
         if has_new_bar and len(bars) > 1:
             bar = bars[-2]  # The last closed bar
             bar_dt = bar.date.replace(tzinfo=None)
@@ -459,7 +487,7 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
             f"commissionCurrency: {what_if.commissionCurrency}\n"
             f"minCommission: {float(what_if.minCommission):0.2f}\n"
             f"maxCommission: {float(what_if.maxCommission):0.2f}\n"
-            f"margin_after: {margin_after:0.2f}\n",
+            f"margin_after: {margin_after:0.2f}",
             "white",
         )
 

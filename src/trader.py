@@ -76,7 +76,7 @@ class Trader:
         """
         В стриме биржи возникло новое событие.
         """
-        # if dt >= self.dt_start and event != "quote":
+        # if dt >= self.dt_start and event not in ["quote", "minute"]:
         #     cprint(f"{dt}: EVENT {event} {symbol} {payload}", "white")
 
         if event == "bar":
@@ -150,9 +150,11 @@ class Trader:
         return int(math.floor(self.target_margin * state / margin / price))
 
     def get_margin_for_position(self, instrument, position):
-        margin_level = self.exchange.get_margin_level(position < 0)
-        price = self.exchange.get_price(instrument, "mid")
-        return abs(float(position)) * float(price) * margin_level if price else None
+        amount = position["amount"]
+        price = position["price"]
+        # price = self.exchange.get_price(instrument, "mid")
+        margin_level = self.exchange.get_margin_level(amount < 0)
+        return abs(float(amount)) * float(price) * margin_level if price else None
 
     def on_trade(self, dt: datetime, symbol, tr_price, volume=None):  # noqa
         """
@@ -253,7 +255,7 @@ class Trader:
         for symbol, position in sorted(positions.items()):
             if position["advised"] is not None:
                 advised = "{0:+0.0f}".format(position["advised"])
-                m_used = self.get_margin_for_position(symbol, position["amount"])
+                m_used = self.get_margin_for_position(symbol, position)
                 total_margin_used += m_used
                 m_used = "{0:0.0f}".format(m_used)
                 color = "cyan"

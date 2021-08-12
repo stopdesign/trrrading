@@ -1,3 +1,5 @@
+import logging
+from datetime import datetime
 from talipp.indicators import DonchianChannels
 from strategy import BaseStrategy, Signal
 from exchange.data_types import Bar
@@ -22,6 +24,8 @@ class ChannelBreakout3(BaseStrategy):
             bar.dn = None
 
         self.data.append(bar)
+
+        return bar
 
     def test_price(self, price: float) -> Signal:
         """

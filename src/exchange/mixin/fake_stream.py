@@ -33,3 +33,15 @@ class FakeStream:
 
     async def fake_stream_event(self, data):
         raise NotImplementedError
+
+    # def start_listen(self):
+    #     # Фейковая биржа
+    #     if self.contracts:
+    #         contract = self.contracts[0]
+    #         symbol = f"{contract.symbol}.{contract.exchange}"
+    #         symbol = symbol.replace(".SMART", ".ARCA")
+    #         params = {
+    #             "symbol": symbol,
+    #             "price": "438.50",
+    #         }
+    #         self.loop.create_task(self.fake_stream(self.fake_stream_url, params))
