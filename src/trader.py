@@ -25,20 +25,24 @@ log = logging.getLogger("trader")
 class Trader:
     exchange: BaseExchange = None
 
-    def __init__(self, exchange, advisors, dt_start, target_margin):
+    def __init__(self, exchange, advisors, target_margin, dt_start=None):
         cprint("Init trader", "white")
 
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
-        # Значение margin, к которому должен стремиться депозит
+        # Значение used margin, к которому должен стремиться депозит
         self.target_margin = target_margin
 
-        # self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
-        self.dt_start = datetime.utcnow().replace(microsecond=0)
         self.advisors = advisors
 
         exchange_class = all_exchanges[exchange]
+
+        if exchange_class.backtest:
+            self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
+        else:
+            self.dt_start = datetime.utcnow().replace(microsecond=0)
+
         self.exchange = exchange_class(advisors, dt_start=self.dt_start)
         self.exchange.on_event = self.on_event
 
@@ -106,7 +110,7 @@ class Trader:
             self.account_stats.on_trade(symbol, payload)
             self.account_stats.update_pl()
             log_trade_result(log, self.exchange, payload)
-            self.portfolio_info()
+            # self.portfolio_info()
 
         return True
 

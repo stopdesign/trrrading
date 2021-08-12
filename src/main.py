@@ -9,16 +9,14 @@ from trader import Trader
 
 sys.path.append(os.path.abspath("."))
 
-
+template = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 root = logging.getLogger()
 root.setLevel(logging.INFO)
 h = logging.StreamHandler(sys.stdout)
-# h.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+# h.setFormatter(logging.Formatter(f"\033[0;35m{template}\033[0m"))
 root.addHandler(h)
-
-fmt = logging.Formatter('\033[0;35m%(name)s - %(levelname)s - %(message)s\033[0m')
 h = logging.StreamHandler(sys.stdout)
-h.setFormatter(fmt)
+h.setFormatter(logging.Formatter(f"\033[0;35m{template}\033[0m"))
 
 l1 = logging.getLogger('ib_insync.ib')
 l1.setLevel(logging.INFO)
@@ -40,12 +38,14 @@ def main() -> None:
     dt = datetime.now()
 
     advisors = [
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_trade=False),
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, extra_trade=False),
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=550, extra_trade=False),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=5, extra_trade=False),
+        Advisor("ChannelBreakout3", "URA.ARCA", length=5, extra_trade=False),
+        # Advisor("ChannelBreakout3", "COPX.ARCA", length=10, extra_trade=False),
+        # Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_data=True),
     ]
 
-    trader = Trader("IBFakeExchange", advisors, "2021-06-01", 10000)
+    # trader = Trader("BacktestExchange", advisors, 10000, "2021-07-01")
+    trader = Trader("IBFakeExchange", advisors, 10000)
 
     try:
         trader.warm_up()

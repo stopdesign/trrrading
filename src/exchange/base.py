@@ -11,6 +11,8 @@ class BaseExchange:
     # FIXME: заменить price на None
     empty_position = {"amount": Decimal("0"), "price": Decimal("0")}
 
+    backtest = False
+
     def __init__(self, advisors: list, **kwargs):
         self.advisors = advisors
         self.on_event = None

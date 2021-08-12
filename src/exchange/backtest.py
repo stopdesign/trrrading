@@ -8,6 +8,8 @@ from storage.ib import load_many
 
 
 class BacktestExchange(BaseExchange):
+    backtest = True
+
     def __init__(self, advisors: list, **kwargs):
         super().__init__(advisors)
         self.quotes = {}

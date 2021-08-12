@@ -1,5 +1,3 @@
-import logging
-from datetime import datetime
 from talipp.indicators import DonchianChannels
 from strategy import BaseStrategy, Signal
 from exchange.data_types import Bar
