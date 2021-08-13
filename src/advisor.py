@@ -1,6 +1,7 @@
 import pandas_market_calendars as mcal
 from datetime import timedelta, datetime
 from strategy import Signal, all_strategies
+from termcolor import cprint
 
 
 class Advisor:
@@ -32,6 +33,8 @@ class Advisor:
 
         self.use_extra_data = bool(extra_data)
         self.trade_in_extra_hours = bool(extra_trade)
+
+        self.last_bar_dt = None
 
         start = datetime.utcnow() - timedelta(days=365 * 5)
         end = datetime.utcnow() + timedelta(days=10)
@@ -68,11 +71,17 @@ class Advisor:
         t0, t1 = self.schedule.get(dt.date(), (None, None))
         return t0 and t1 and t0 < dt < t1
 
-    def on_bar(self, dt, trade):
+    def on_bar(self, dt, bar):
+        # Проверить, что bar идет без отрыва от предыдущего
+        if self.last_bar_dt and self.is_main_session(dt):
+            diff = dt - self.last_bar_dt
+            if diff != timedelta(minutes=1) and dt != self.schedule.get(dt.date()):
+                cprint(f"GAP — {diff} — {self.last_bar_dt} — {dt}", "red")
+        self.last_bar_dt = dt
         if not (self.is_main_session(dt) or self.use_extra_data):
             return
         # Обновить набор исторических данных
-        self.strategy.on_bar(trade)
+        self.strategy.on_bar(bar)
 
     def test_price(self, dt, price):
         if not (self.is_main_session(dt) or self.trade_in_extra_hours):

@@ -49,6 +49,27 @@ def load_as_df(ticker, data_type, start=None, end=None):
     # Отфильтровать данные по времени
     df = df.loc[start:end]
 
+    # Добавляю фейковые записи в минутрых промежутках
+    # (только в основную сессию)
+    # OHLC и average равны последнему известному close
+    if data_type == "TRADES":
+        df1 = df.resample('1T').pad()
+
+        df1["volume"] = df["volume"]
+        df1["volume"].fillna("0", inplace=True)
+
+        df1["barCount"] = df["barCount"]
+        df1["barCount"].fillna("0", inplace=True)
+
+        df1.loc[df1['volume'] == "0", ["open", "high", "low", "average"]] = df1["close"]
+
+        df1 = df1[(df1["barCount"] != "0") | (df1["rth"] == "1")]
+        df = df1
+
+    # Добавляю фейковые записи в минутрых промежутках
+    if data_type == "BIDASK":
+        df = df.resample('1T').pad()
+
     # Добавить колонку в начало df
     df.insert(loc=0, column="ticker", value=ticker)
     df.insert(loc=1, column="data_type", value=data_type)
