@@ -72,18 +72,38 @@ class Advisor:
         return t0 and t1 and t0 < dt < t1
 
     def on_bar(self, dt, bar):
+        if not (self.is_main_session(dt) or self.use_extra_data):
+            return
         # Проверить, что bar идет без отрыва от предыдущего
         if self.last_bar_dt and self.is_main_session(dt):
             diff = dt - self.last_bar_dt
             if diff != timedelta(minutes=1) and dt != self.schedule.get(dt.date()):
-                cprint(f"GAP — {diff} — {self.last_bar_dt} — {dt}", "red")
+                cprint(
+                    f" GAP {self.instrument} — {diff} — {self.last_bar_dt} — {dt} ",
+                    color="red",
+                    attrs=["reverse"],
+                )
         self.last_bar_dt = dt
-        if not (self.is_main_session(dt) or self.use_extra_data):
-            return
         # Обновить набор исторических данных
         self.strategy.on_bar(bar)
 
     def test_price(self, dt, price):
+        if not self.last_bar_dt:
+            cprint(
+                f" Test price with no bar {dt} ",
+                color="yellow",
+                attrs=["reverse"],
+            )
+            return Signal.PASS
+        else:
+            if self.is_main_session(dt):
+                diff = dt - self.last_bar_dt
+                if diff > timedelta(seconds=150):
+                    cprint(
+                        f" TEST PRICE with old bar — {dt} — {diff} ",
+                        color="magenta",
+                        attrs=["reverse"],
+                   )
         if not (self.is_main_session(dt) or self.trade_in_extra_hours):
             return Signal.PASS
         signal = self.strategy.test_price(price)

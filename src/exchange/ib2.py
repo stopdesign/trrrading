@@ -1,12 +1,13 @@
-import json
 import asyncio
 import nest_asyncio
 import pandas as pd
 import ib_insync as ib
+import pandas_market_calendars as mcal
 from time import sleep
 from datetime import datetime, timedelta
 from decimal import Decimal
-from termcolor import cprint
+from termcolor import cprint, colored
+from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
 from exchange import BaseExchange
 from exchange.mixin import FakeStream, Healthcheck
@@ -27,14 +28,16 @@ BID_ASK_COLUMNS_MAP = {
 }
 
 
-class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
+class IBFakeExchange(BaseExchange, Healthcheck):
     fake_stream_url = "http://127.0.0.1:8080/trades/"
-    healthcheck_interval = 60
+    healthcheck_interval = 10
     rel_price_cap = 0.02  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
 
     def __init__(self, advisors: list, **kwargs):
         super().__init__(advisors)
+
+        self.contracts = []
 
         self.loop = asyncio.get_event_loop()
         nest_asyncio.apply(self.loop)
@@ -57,19 +60,19 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
 
         self._net_value = 0
 
-        # Синхронно добыть параметры аккаунта:
-        # баланс депозита, позиции, стоимость активов...
-        try:
-            self.ib.connect(**self.ib_params)
-            future = asyncio.wait({self.initial_update()})
-            done, _ = self.loop.run_until_complete(future)
-        finally:
-            self.ib.disconnect()
+        # # Синхронно добыть параметры аккаунта:
+        # # баланс депозита, позиции, стоимость активов...
+        # try:
+        #     self.ib.connect(**self.ib_params)
+        #     future = asyncio.wait({self.initial_update()})
+        #     done, _ = self.loop.run_until_complete(future)
+        # finally:
+        #     self.ib.disconnect()
 
-        self.contracts = []
         self.quotes = {}
         self.dt_start = kwargs.pop("dt_start")
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
+        dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
+        self.dt_from = dt_from.replace(hour=0, minute=0, second=0)
         # self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash_initial = self._net_value
         self.cash = self.cash_initial
@@ -82,27 +85,66 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         self.subscribed = False
 
     def on_connect(self):
-        cprint(f"\nON_CONNECT, finished: {self.finished}", "green")
+        cprint(f"ON_CONNECT, finished: {self.finished}", "green")
 
     def on_disconnect(self):
-        cprint(f"\nON_DISCONNECT, finished: {self.finished}", "red")
+        cprint(f"ON_DISCONNECT, finished: {self.finished}", "red")
+        self.subscribed = False
+        for contract in self.contracts:
+            if contract.mkt_ticker:
+                cprint(f"Failed MKT: {contract.symbol}", "red")
+                contract.mkt_ticker = None
+            if contract.bars is not None:
+                cprint(f"Failed BAR: {contract.symbol}", "red")
+                contract.bars = None
 
-    def on_ib_error(self, req_id, error_code, error_string, contract):
-        if req_id and req_id < 0:
+    async def on_ib_error(self, req_id, error_code, error_string, contract):
+        if req_id and req_id < 0 and "connection is OK" not in error_string:
             cprint(f"ON_ERROR: {req_id} {error_code} {error_string} {contract}", "red")
 
-        # Отвалилась market data.
+        # Отвалилась market data, MKT
         # No market data during competing live session.
         if error_code == 10197:
+            for contract in self.contracts:
+                cprint(f"Failed MKT: {contract.symbol}", "red")
+                contract.mkt_ticker = None
             self.subscribed = False
 
-        # Отвалилась подписка на bar updates
-        # Failed to request live updates (disconnected).
-        if error_code == 10182:
-            self.subscribed = False
+        # Отвалилась подписка на BAR
+        # 10182: Failed to request live updates (disconnected).
+        # 162: Trading TWS session is connected from a different IP
+        if error_code in [10182, 162]:
+            n = 10
+            while n > 0:
+                n -= 1
+                for contract in self.contracts:
+                    if contract.bars is not None and contract.bars.reqId == req_id:
+                        cprint(f"Failed BAR: {contract.symbol}", "red")
+                        contract.bars = None
+                        n = 0
+                        break
+                await asyncio.sleep(0.5)
 
     def do_healthcheck(self):
-        pass
+        if self.finished:
+            return
+        dt = datetime.utcnow().replace(microsecond=0)
+        if not trading_session(dt):
+            return
+        txt = colored(f" do_healthcheck ", "white", attrs=["reverse"])
+        print(f"{dt}: {txt}")
+        for contract in self.contracts:
+            if contract.last_bar:
+                bar_age = (datetime.utcnow() - contract.last_bar)
+                if bar_age > timedelta(minutes=3):
+                    cprint(
+                        f"HEALTH: old bar {contract.symbol}, {bar_age}",
+                        color="red",
+                        attrs=["reverse"],
+                    )
+            if contract.last_mkt:
+                mkt_age = (datetime.utcnow() - contract.last_mkt)
+                cprint(mkt_age, "cyan")
 
     async def initial_update(self):
         summary = await self.ib.accountSummaryAsync()
@@ -132,15 +174,19 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         return df.sort_values(["date", "ticker", "data_type"])
 
     def load_current_data(self, contract, data_type):
+
+        # Узнать баланс депозита и всё такое
+        future = asyncio.wait({self.initial_update()})
+        done, _ = self.loop.run_until_complete(future)
+
         bars = []
-        data_type = data_type.replace("BIDASK", "BID_ASK")
         for i in range(10):
             bars = self.ib.reqHistoricalData(
                 contract,
                 endDateTime="",
                 durationStr="3 D",
                 barSizeSetting="1 min",
-                whatToShow=data_type,
+                whatToShow=data_type.replace("BIDASK", "BID_ASK"),
                 useRTH=False,
                 formatDate=2,
                 timeout=30,
@@ -149,22 +195,59 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
                 break
         if len(bars) == 0:
             raise ValueError("Empty response")
+
+        # Если после последнего бара прошло больше 100 секунд, то считаем его закрытым.
+        # Это происходит при запросе данных за пределами торговой сессии.
+        # В других случаях последний бар отрезается.
+        last_bar_dt = bars[-1].date.replace(tzinfo=None)
+        dt = datetime.utcnow().replace(microsecond=0)
+        if dt - last_bar_dt < timedelta(seconds=100):
+            bars = bars[:-1]
+
         df = ib.util.df(bars)
         df["date"] = df["date"].dt.tz_localize(None)
         df = df.set_index("date")
 
-        # Убрать нулевые объемы
-        df = df.loc[df.volume != 0]
+        # # Убрать нулевые объемы
+        # df = df.loc[df.volume != 0]
+
+        # РАЗМЕТИТЬ RTH
+        start = datetime.utcnow() - timedelta(days=300)
+        end = datetime.utcnow() + timedelta(days=1)
+        cal_exchange = contract.primaryExchange.replace("ARCA", "NYSE")
+        cal = mcal.get_calendar(cal_exchange).schedule(start, end)
+        by_days = {}
+        for day, t in sorted(cal.T.to_dict("list").items()):
+            t0 = t[0].to_pydatetime()
+            t1 = t[1].to_pydatetime()
+            by_days[day.date()] = [t0.replace(tzinfo=None), t1.replace(tzinfo=None)]
+
+        def is_main_session(dt):
+            t0, t1 = by_days.get(dt.date(), (None, None))
+            return str(int(t0 and t1 and t0 < dt < t1))
+
+        df["rth"] = df.index.map(is_main_session)
 
         # В режиме BID_ASK данные имеют другой смысл. Переименовать.
         if data_type == "BIDASK":
             df.rename(columns=BID_ASK_COLUMNS_MAP, inplace=True)
-            # Убрать записи, где не было изменений.
-            # Запись для начала основной сессии (RTH) сохраняется.
-            df = df.drop_duplicates(
-                subset=["av_bid", "max_ask", "min_bid", "av_ask"],
-                keep="first",
-            )
+            df = df.resample('1T').pad()
+
+        if data_type == "TRADES":
+            df1 = df.resample('1T').pad()
+
+            df1["volume"] = df["volume"]
+            df1["volume"].fillna("0", inplace=True)
+
+            df1["barCount"] = df["barCount"]
+            df1["barCount"].fillna("0", inplace=True)
+
+            cols = ["open", "high", "low", "average"]
+            df1.loc[df1['volume'] == "0", cols] = df1["close"]
+
+            df1 = df1[(df1["barCount"] != "0") | (df1["rth"] == "1")]
+            df = df1
+
         symbol = f"{contract.symbol}.{contract.exchange}"
         symbol = symbol.replace(".SMART", ".ARCA")
         df["ticker"] = symbol
@@ -182,6 +265,8 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
             contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
             contract.bars = None
             contract.mkt_ticker = None
+            contract.last_bar = None
+            contract.last_mkt = None
             contracts.append(contract)
         self.contracts = contracts
 
@@ -212,6 +297,14 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         stream = self.all_data.loc[self.dt_from: self.dt_start]
         for row in stream.itertuples():
             self.historical_stream_event(row)
+
+        # Вычислить последний исторический бар для данного контракта
+        for contract in self.contracts:
+            symbol = f"{contract.symbol}.{contract.primaryExchange}"
+            query = f"ticker == '{symbol}' & data_type == 'TRADES'"
+            last_dt = stream.query(query).tail(1).index.item().to_pydatetime()
+            # cprint(f"last_dt: {symbol} — {last_dt}", "blue")
+            contract.last_bar = last_dt
 
         # TODO: вынести отсюда куда-нибудь еще
         # Для каждого символа последние исторические данные должны быть
@@ -256,6 +349,20 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         Старается обеспечить постоянное соединение.
         """
         while not self.finished:
+            dt = datetime.utcnow().replace(microsecond=0)
+
+            time_to_next = time_to_next_session(dt, main=False)
+            wake_up_in_advance = 60
+            if time_to_next > timedelta(seconds=wake_up_in_advance):
+                print()
+                cprint(
+                    f" Next trading session in {time_to_next}, sleep. ",
+                    color="red",
+                    attrs=["reverse"],
+                )
+                await asyncio.sleep(time_to_next.total_seconds() - wake_up_in_advance)
+                continue
+
             if not self.ib.isConnected():
                 self.subscribed = False
                 try:
@@ -265,15 +372,13 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
                     cprint("reConnect TimeoutError", "red")
                 except ConnectionRefusedError:
                     cprint("reConnect ConnectionRefusedError", "red")
-
-            if not self.subscribed:
+            if self.ib.isConnected():
                 await self.ib_resubscribe()
+            await asyncio.sleep(5)
 
-            await asyncio.sleep(1)
-
-    def create_on_bar(self, symbol):
+    def create_on_bar_handler(self, contract):
         async def func(a, b):
-            return await self.on_bar_update(a, b, symbol)
+            return await self.on_bar_update(a, b, contract)
 
         return func
 
@@ -281,41 +386,47 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         """
         Подписка на обновления по контрактам.
         """
-        if self.subscribed:
-            return
+        if not self.subscribed:
+            for contract in self.contracts:
+                # Тиковые данные
+                if contract.mkt_ticker:
+                    cprint(f"Cancel MKT: {contract.symbol}", "red")
+                    self.ib.cancelMktData(contract)
+                cprint(f"Subscribe MKT: {contract.symbol}", "blue")
+                contract.mkt_ticker = self.ib.reqMktData(contract)
+            self.subscribed = True
 
         for contract in self.contracts:
-            if contract.bars is not None:
-                cprint(f"Cancel HD, {contract}", "red")
-                self.ib.cancelHistoricalData(contract.bars)
-
-            # Интервальные данные
-            contract.bars = self.ib.reqHistoricalData(
-                contract,
-                endDateTime="",
-                # Достаточно, чтобы заполнить пробел между
-                # историческими данными и real-time данными.
-                # TODO: учесть возможность восстановления соединения после паузы
-                durationStr="600 S",
-                barSizeSetting="1 min",
-                whatToShow="TRADES",
-                useRTH=False,
-                formatDate=2,
-                keepUpToDate=True,
-            )
-            symbol = str(f"{contract.symbol}.{contract.primaryExchange}")
-            contract.bars.updateEvent += self.create_on_bar(symbol)
+            if contract.bars is not None and contract.last_bar:
+                dt = datetime.utcnow()
+                if not trading_session(dt):
+                    continue
+                bar_age = dt - contract.last_bar
+                if bar_age > timedelta(minutes=3):
+                    cprint(f"Cancel BAR (old): {contract.symbol}", "red")
+                    self.ib.cancelHistoricalData(contract.bars)
+                    contract.bars = None
+                await asyncio.sleep(0)
 
         for contract in self.contracts:
-            # Тиковые данные
-            if contract.mkt_ticker:
-                cprint(f"Cancel MKT, {contract}", "red")
-                self.ib.cancelMktData(contract)
-            contract.mkt_ticker = self.ib.reqMktData(contract)
-
-        cprint(f"Started listening for IB events\n", "blue")
-
-        self.subscribed = True
+            if contract.bars is None:
+                cprint(f"Subscribe BAR: {contract.symbol}", "blue")
+                # Интервальные данные
+                contract.bars = self.ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    # Достаточно, чтобы заполнить пробел между
+                    # историческими данными и real-time данными.
+                    # TODO: учесть возможность восстановления соединения после паузы
+                    durationStr="600 S",
+                    barSizeSetting="1 min",
+                    whatToShow="TRADES",
+                    useRTH=False,
+                    formatDate=2,
+                    keepUpToDate=True,
+                )
+                contract.bars.updateEvent += self.create_on_bar_handler(contract)
+                await self.on_bar_update(contract.bars, False, contract)
 
     def historical_stream_event(self, row):
         dt = row.Index.to_pydatetime()
@@ -332,31 +443,6 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
                 payload = Trade(price=price, volume=row.volume)
                 self.on_event("trade", dt, symbol, payload)
             self.on_event("bar", dt, symbol, row)
-
-    async def fake_stream_event(self, data):
-        data = json.loads(data.decode())
-
-        dt = datetime.utcnow().replace(microsecond=0)
-        self.dt_last = dt
-
-        symbol = data["symbolId"]
-
-        price = float(data["price"])
-        volume = int(float(data["size"]))
-
-        quote = BidAsk(bid=price - 0.02, ask=price + 0.02)
-        self.on_event("quote", dt, symbol, quote)
-
-        trade = Trade(price=price, volume=volume)
-        self.on_event("trade", dt, symbol, trade)
-
-        bar = Bar.from_fake_trade(
-            ticker=symbol,
-            date=dt,
-            price=price,
-            volume=volume,
-        )
-        self.on_event("bar", dt, symbol, bar)
 
     async def market_stream_event(self, tickers):
         # Обработать quotes
@@ -404,20 +490,18 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
             await asyncio.sleep(0.1)
             prev_dt = dt
 
-    async def on_bar_update(self, bars, has_new_bar, symbol):
+    async def on_bar_update(self, bars, has_new_bar, contract):
         """
         После появления нового бара отправить событие.
-
-        TODO: Учесть, что при открытии приходит вчерашний BAR.
-
-        TODO: Проверить, что нет разрывов в таймлайне.
-        TODO: При необходимости отправить несколько баров.
         """
-        if has_new_bar and len(bars) > 1:
-            bar = bars[-2]  # The last closed bar
+        symbol = str(f"{contract.symbol}.{contract.primaryExchange}")
+        # Посмотреть, какой бар был последним, и добавить все новые бары
+        for bar in bars[-100:-1]:  # последние 100, кроме самого последнего
             bar_dt = bar.date.replace(tzinfo=None)
-            payload = Bar.from_bar_data(bar, symbol)
-            self.on_event("bar", bar_dt, symbol, payload)
+            if bar_dt > contract.last_bar:
+                payload = Bar.from_bar_data(bar, symbol)
+                self.on_event("bar", bar_dt, symbol, payload)
+                contract.last_bar = bar_dt
 
     def trade(self, side, amount, symbol, dt):
         """
@@ -442,7 +526,7 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         # Жду исполнения ордера
         while not trade.isDone():
             cprint(f"orderStatus: {trade.orderStatus.status}", "white")
-            self.ib.sleep(0.5)  # чтобы не вываливало 100500 строк сразу
+            self.ib.sleep(1)  # чтобы не вываливало 100500 строк сразу
             self.ib.waitOnUpdate(timeout=30)
 
         cprint(
@@ -483,13 +567,13 @@ class IBFakeExchange(BaseExchange, FakeStream, Healthcheck):
         margin_after = max(
             float(what_if.initMarginAfter), float(what_if.maintMarginAfter)
         )
-        cprint(
-            f"commissionCurrency: {what_if.commissionCurrency}\n"
-            f"minCommission: {float(what_if.minCommission):0.2f}\n"
-            f"maxCommission: {float(what_if.maxCommission):0.2f}\n"
-            f"margin_after: {margin_after:0.2f}",
-            "white",
-        )
+        # cprint(
+        #     f"commissionCurrency: {what_if.commissionCurrency}\n"
+        #     f"minCommission: {float(what_if.minCommission):0.2f}\n"
+        #     f"maxCommission: {float(what_if.maxCommission):0.2f}\n"
+        #     f"margin_after: {margin_after:0.2f}",
+        #     "white",
+        # )
 
     @property
     def net_value(self):

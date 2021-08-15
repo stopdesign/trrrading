@@ -19,12 +19,12 @@ h = logging.StreamHandler(sys.stdout)
 h.setFormatter(logging.Formatter(f"\033[0;35m{template}\033[0m"))
 
 l1 = logging.getLogger('ib_insync.ib')
-l1.setLevel(logging.INFO)
+l1.setLevel(logging.WARNING)
 l1.addHandler(h)
 l1.propagate = False
 
 l2 = logging.getLogger('ib_insync.client')
-l2.setLevel(logging.INFO)
+l2.setLevel(logging.WARNING)
 l2.addHandler(h)
 l2.propagate = False
 
@@ -38,14 +38,14 @@ def main() -> None:
     dt = datetime.now()
 
     advisors = [
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=5, extra_trade=False),
-        Advisor("ChannelBreakout3", "URA.ARCA", length=5, extra_trade=False),
+        # Advisor("ChannelBreakout3", "SPY.ARCA", length=5, extra_trade=True),
+        # Advisor("ChannelBreakout3", "URA.ARCA", length=5, extra_trade=False),
         # Advisor("ChannelBreakout3", "COPX.ARCA", length=10, extra_trade=False),
-        # Advisor("ChannelBreakout3", "COPX.ARCA", length=350, extra_data=True),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, extra_data=False),
     ]
 
-    # trader = Trader("BacktestExchange", advisors, 10000, "2021-07-01")
-    trader = Trader("IBFakeExchange", advisors, 10000)
+    trader = Trader("BacktestExchange", advisors, 10000, "2021-01-01")
+    # trader = Trader("IBFakeExchange", advisors, 5000)
 
     try:
         trader.warm_up()

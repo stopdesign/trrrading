@@ -45,3 +45,28 @@ class FakeStream:
     #             "price": "438.50",
     #         }
     #         self.loop.create_task(self.fake_stream(self.fake_stream_url, params))
+
+    # async def fake_stream_event(self, data):
+    #     data = json.loads(data.decode())
+    #
+    #     dt = datetime.utcnow().replace(microsecond=0)
+    #     self.dt_last = dt
+    #
+    #     symbol = data["symbolId"]
+    #
+    #     price = float(data["price"])
+    #     volume = int(float(data["size"]))
+    #
+    #     quote = BidAsk(bid=price - 0.02, ask=price + 0.02)
+    #     self.on_event("quote", dt, symbol, quote)
+    #
+    #     trade = Trade(price=price, volume=volume)
+    #     self.on_event("trade", dt, symbol, trade)
+    #
+    #     bar = Bar.from_fake_trade(
+    #         ticker=symbol,
+    #         date=dt,
+    #         price=price,
+    #         volume=volume,
+    #     )
+    #     self.on_event("bar", dt, symbol, bar)

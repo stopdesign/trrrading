@@ -41,7 +41,7 @@ class Trader:
         if exchange_class.backtest:
             self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
         else:
-            self.dt_start = datetime.utcnow().replace(microsecond=0)
+            self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
 
         self.exchange = exchange_class(advisors, dt_start=self.dt_start)
         self.exchange.on_event = self.on_event
@@ -80,7 +80,7 @@ class Trader:
         """
         В стриме биржи возникло новое событие.
         """
-        # if dt >= self.dt_start and event not in ["quote", "minute"]:
+        # if dt >= self.dt_start and event not in ["minute"]:
         #     cprint(f"{dt}: EVENT {event} {symbol} {payload}", "white")
 
         if event == "bar":
@@ -277,4 +277,4 @@ class Trader:
             )
         cprint(f"Net Value:   {self.exchange.net_value:9.2f}", "blue")
         cprint(f"Margin Used: {total_margin_used:9.2f}", "blue")
-        print()
+        # print()

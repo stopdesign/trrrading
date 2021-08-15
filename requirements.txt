@@ -9,3 +9,4 @@ talipp==1.6.0
 orjson
 scipy
 ib-insync==0.9.66
+pytz

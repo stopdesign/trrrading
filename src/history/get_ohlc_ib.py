@@ -23,6 +23,9 @@ from pathlib import Path
 from time import sleep
 from termcolor import cprint
 
+import sys
+sys.path.append(os.path.abspath(".."))
+
 from strategy import ChannelBreakout3, Signal
 
 BASE_DIR = "."
@@ -110,7 +113,6 @@ def get_splits(ticker):
 
 
 def download_and_save(ticker="COPX.ARCA", start=None, data_types=None):
-
     data_types = data_types or ["BID_ASK", "TRADES"]
 
     symbol, exchange = ticker.split(".")
@@ -246,7 +248,6 @@ def load_as_df(ticker="COPX.ARCA", start=None, end=None, data_type="TRADES"):
 
 
 def test_strat_speed(df):
-
     strategy = ChannelBreakout3(length=350)
 
     cur_state = Signal.PASS
@@ -276,8 +277,8 @@ def test_strat_speed(df):
 if __name__ == "__main__":
     dt = datetime.now()
 
-    start_dt = datetime(2021, 7, 1, tzinfo=timezone.utc).date()
-    download_and_save("URA.ARCA", start=start_dt)
+    start_dt = datetime(2021, 8, 1, tzinfo=timezone.utc).date()
+    download_and_save("SPY.ARCA", start=start_dt)
 
     # start_dt = datetime(2021, 1, 1, tzinfo=timezone.utc).date()
     # df = load_as_df("COPX.ARCA", start=start_dt)
