@@ -13,6 +13,11 @@ class BaseExchange:
 
     backtest = False
 
+    margin_rule = {
+        "short": 1.0,
+        "long": 1.0,
+    }
+
     def __init__(self, advisors: list, **kwargs):
         self.advisors = advisors
         self.on_event = None
@@ -24,6 +29,7 @@ class BaseExchange:
         self.last_event = {}
         self.finished = False
         self.dt_start = None
+        self.dt_from = None
         self.dt_last = None
 
     def get_price(self, symbol: str, side: str) -> Optional[float]:
@@ -82,4 +88,4 @@ class BaseExchange:
         return
 
     def get_margin_level(self, short=False):
-        return 1
+        return self.margin_rule["short"] if short else self.margin_rule["long"]

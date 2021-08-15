@@ -12,6 +12,9 @@ class ChannelBreakout3(BaseStrategy):
     def on_bar(self, pandas_ohlc):
         bar = Bar.from_pandas(pandas_ohlc)
 
+        if bar.volume == 0:
+            return None
+
         self.don.add_input_value(pandas_ohlc)
 
         if self.don:

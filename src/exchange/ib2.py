@@ -34,6 +34,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     rel_price_cap = 0.02  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
 
+    margin_rule = {
+        "short": 0.3,
+        "long": 0.25,
+    }
+
     def __init__(self, advisors: list, **kwargs):
         super().__init__(advisors)
 
@@ -71,7 +76,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         self.quotes = {}
         self.dt_start = kwargs.pop("dt_start")
-        dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
+        dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=10))
         self.dt_from = dt_from.replace(hour=0, minute=0, second=0)
         # self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash_initial = self._net_value
@@ -224,7 +229,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         def is_main_session(dt):
             t0, t1 = by_days.get(dt.date(), (None, None))
-            return str(int(t0 and t1 and t0 < dt < t1))
+            return str(int(t0 and t1 and t0 <= dt < t1))
 
         df["rth"] = df.index.map(is_main_session)
 

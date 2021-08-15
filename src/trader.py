@@ -50,7 +50,7 @@ class Trader:
         self.trade_stats = TradeStats()
 
     def warm_up(self):
-        cprint("\nHistorical data", "white")
+        cprint(f"\nHistorical data from {self.exchange.dt_from}", "white")
         self.exchange.warm_up()
         self.portfolio_info()
 
@@ -222,7 +222,8 @@ class Trader:
         all_adv_len = len(self.advisors)
 
         for advisor in self.get_advisors(instrument):
-            assert advisor.state is not None, f"Empty state: {advisor}"
+            cur_data_len = len(advisor.strategy.data)
+            assert advisor.state is not None, f"Empty state: {advisor}, {cur_data_len}"
 
             current_state = advisor.state.numeric
             signal = advisor.test_price(dt, price)

@@ -49,7 +49,7 @@ def load_as_df(ticker, data_type, start=None, end=None):
     # Отфильтровать данные по времени
     df = df.loc[start:end]
 
-    # Добавляю фейковые записи в минутрых промежутках
+    # Добавляю фейковые записи в минутных промежутках
     # (только в основную сессию)
     # OHLC и average равны последнему известному close
     if data_type == "TRADES":

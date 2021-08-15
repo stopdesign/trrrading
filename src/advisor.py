@@ -69,43 +69,55 @@ class Advisor:
 
     def is_main_session(self, dt):
         t0, t1 = self.schedule.get(dt.date(), (None, None))
-        return t0 and t1 and t0 < dt < t1
+        return t0 and t1 and t0 <= dt < t1
 
     def on_bar(self, dt, bar):
         if not (self.is_main_session(dt) or self.use_extra_data):
             return
         # Проверить, что bar идет без отрыва от предыдущего
         if self.last_bar_dt and self.is_main_session(dt):
-            diff = dt - self.last_bar_dt
-            if diff != timedelta(minutes=1) and dt != self.schedule.get(dt.date()):
-                cprint(
-                    f" GAP {self.instrument} — {diff} — {self.last_bar_dt} — {dt} ",
-                    color="red",
-                    attrs=["reverse"],
-                )
+            # Разрыв между барами в пределах одной торговой сессии недопустим.
+            if dt.date() == self.last_bar_dt.date():
+                diff = dt - self.last_bar_dt
+                if diff != timedelta(minutes=1) and dt != self.schedule.get(dt.date()):
+                    cprint(
+                        f" Bar gap {self.instrument},"
+                        f" new: {dt},"
+                        f" old: {self.last_bar_dt} ",
+                        color="red",
+                        attrs=["reverse"],
+                    )
         self.last_bar_dt = dt
         # Обновить набор исторических данных
         self.strategy.on_bar(bar)
 
     def test_price(self, dt, price):
-        if not self.last_bar_dt:
-            cprint(
-                f" Test price with no bar {dt} ",
-                color="yellow",
-                attrs=["reverse"],
-            )
-            return Signal.PASS
-        else:
-            if self.is_main_session(dt):
-                diff = dt - self.last_bar_dt
-                if diff > timedelta(seconds=150):
-                    cprint(
-                        f" TEST PRICE with old bar — {dt} — {diff} ",
-                        color="magenta",
-                        attrs=["reverse"],
-                   )
         if not (self.is_main_session(dt) or self.trade_in_extra_hours):
             return Signal.PASS
+        if not self.last_bar_dt:
+            return Signal.PASS
+        diff = dt - self.last_bar_dt
+        if self.is_main_session(dt) and diff > timedelta(seconds=150):
+            # Старый бар допустим, если одновременно выполняется:
+            # — self.use_extra_data == false
+            # — мы смотрим первый бар за торговую сессию
+            # — старый бар является последним за предыдущую сессию
+            # В остальных случаях это ошибка.
+            if (
+                self.use_extra_data is False and
+                (dt.hour == 13 and dt.minute == 30) and
+                (self.last_bar_dt.hour == 19 and self.last_bar_dt.minute == 59)
+            ):
+                pass
+            else:
+                cprint(
+                    f" Test price old bar {self.instrument},"
+                    f" now: {dt},"
+                    f" bar: {self.last_bar_dt} ",
+                    color="magenta",
+                    attrs=["reverse"],
+                )
+                return Signal.PASS
         signal = self.strategy.test_price(price)
         if signal in [Signal.SHORT, Signal.LONG, Signal.CLOSE]:
             self.state = signal

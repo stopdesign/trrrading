@@ -60,10 +60,16 @@ class AccountStats:
             r2 = 0
             self.max_drawdown = 0
 
+        ml = self.exchange.margin_rule['long'] * 100
+        ms = self.exchange.margin_rule['short'] * 100
+
         txt = (
             "\n"
             f"{self.exchange.dt_start}\n"
             f"{self.exchange.dt_last}\n"
+            "\n"
+            f"Margin long:  {ml:0.0f}%\n"
+            f"Margin short: {ms:0.0f}%\n"
             "\n"
             f"ROI: {roi:+7.1f}%\n"
             f"Max DD: {self.max_drawdown:4.1f}%\n"
