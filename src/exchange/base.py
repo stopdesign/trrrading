@@ -1,7 +1,6 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from termcolor import cprint
-from util import parse_quote
 
 
 class BaseExchange:
@@ -12,103 +11,75 @@ class BaseExchange:
     # FIXME: заменить price на None
     empty_position = {"amount": Decimal("0"), "price": Decimal("0")}
 
-    def __init__(self, symbols: list, **kwargs):
-        self.symbols = symbols
+    backtest = False
+
+    def __init__(self, advisors: list, **kwargs):
+        self.advisors = advisors
+        self.on_event = None
         self.quotes = {}
         self.positions = {}
         self.cash = Decimal(0)
+        self.cash_initial = self.cash
         self.fee_rate = Decimal(0)
         self.last_event = {}
         self.finished = False
+        self.dt_start = None
+        self.dt_last = None
 
-    def get_price(self, symbol: str, side: str) -> Optional[Decimal]:
+    def get_price(self, symbol: str, side: str) -> Optional[float]:
         if quotes := self.quotes.get(symbol):
             if side == "sell":
-                return quotes["bid"][0]["price"]
+                return quotes["bid"]
             if side == "buy":
-                return quotes["ask"][0]["price"]
+                return quotes["ask"]
+            if side == "mid":
+                return (quotes["ask"] + quotes["bid"]) / 2
 
-    def add_quote(self, dt, symbol, event):
+    def add_quote(self, dt, symbol, payload):
+        """
+        Сохранить BID и ASK как актуальное состояние стакана на бирже.
+        """
         current_quote = self.quotes.get(symbol)
         if current_quote and current_quote["dt"] > dt:
             return
         if symbol not in self.quotes:
             self.quotes[symbol] = {}
         # ask и bid могут приходить независимо
-        if event["ask"]:
-            self.quotes[symbol]["ask"] = list(map(parse_quote, event["ask"]))
+        if payload.ask:
+            self.quotes[symbol]["ask"] = payload.ask
             self.quotes[symbol]["dt"] = dt
-        if event["bid"]:
-            self.quotes[symbol]["bid"] = list(map(parse_quote, event["bid"]))
+        if payload.bid:
+            self.quotes[symbol]["bid"] = payload.bid
             self.quotes[symbol]["dt"] = dt
 
-    def get_past_data(self, symbol, start_at, minutes):
-        pass
-
-    def trade(self, side: str, amount: int, symbol: str):
+    def trade(self, side: str, amount: float, symbol: str, dt: datetime):
         raise NotImplementedError()
 
-    def start_listen(self, on_event, loop=None):
+    def warm_up(self):
         pass
 
-    def stop_listen(self, loop=None):
-        self.finished = True
+    def start_listen(self):
+        pass
+
+    def stop_listen(self):
+        pass
 
     def print_final_info(self):
         pass
 
-    def load_last_orders(self):
-        return []
-
     def get_positions(self):
-        pass
+        return self.positions
 
     def get_cash_value(self):
         pass
 
     @property
     def net_value(self):
-        """
-        Суммарное количество бабла депозита: кэш плюс стоимость активов.
-        """
-        total_value = self.cash
-        for symbol, position in self.positions.items():
-            if position["amount"] > 0:
-                price = self.get_price(symbol, "sell")
-                if price is None:
-                    # FIXME:
-                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
-                    continue
-                total_value += position["amount"] * (price - position["price"])
-                total_value -= self.fee_rate * position["amount"]
-            if position["amount"] < 0:
-                price = self.get_price(symbol, "buy")
-                if price is None:
-                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
-                    continue
-                total_value += position["amount"] * (price - position["price"])
-                total_value -= self.fee_rate * position["amount"]
-        return total_value
+        return
 
     @property
     def equity_value(self):
-        """
-        Количество бабла в позициях
-        # TODO: учесть margin
-        """
-        total_value = 0
-        for symbol, position in self.positions.items():
-            if position["amount"] > 0:
-                price = self.get_price(symbol, "sell")
-                if price is None:
-                    # FIXME:
-                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
-                    continue
-                total_value += position["amount"] * price
-            if position["amount"] < 0:
-                price = self.get_price(symbol, "buy")
-                if price is None:
-                    cprint(f"WARNING: {symbol} price is {price}", "yellow")
-                    continue
-                total_value -= position["amount"] * price
-        return total_value
+        return
+
+    def get_margin_level(self, short=False):
+        return 1

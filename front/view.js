@@ -1,6 +1,6 @@
 const margin = {top: 0, right: 50, bottom: 0, left: 50};
-const width = 2020 - margin.left - margin.right;
-const height = 720 - margin.top - margin.bottom;
+const width = 1650 - margin.left - margin.right;
+const height = 620 - margin.top - margin.bottom;
 
 const parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
 const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M');
@@ -8,7 +8,7 @@ const valueFormat = d3.format('+.2f');
 const valueFormat2 = d3.format('+.2f');
 
 const dim = {
-  width: width + margin.left + margin.right, height: 1000,
+  width: width + margin.left + margin.right, height: 900,
   margin: {top: 10, right: 50, bottom: 30, left: 50},
   ohlc: {height: height + 50},
   indicator: {height: 100, padding: 0}
@@ -43,7 +43,7 @@ const ohlc = techan.plot.ohlc()
 const tradearrow = techan.plot.tradearrow()
   .xScale(x)
   .yScale(y)
-  .orient((d) => d.type.startsWith("buy") ? "up" : "down")
+  .orient((d) => d.side.startsWith("buy") ? "up" : "down")
   .on("mouseenter", enter)
   .on("mouseout", out);
 
@@ -215,22 +215,23 @@ async function run() {
   let data = await d3.csv('data.csv');
   let trades = await d3.csv('trades.csv');
   let stats = await d3.csv('stats.csv');
-  let indicator = await d3.csv('indicator.csv');
+  let indicator = await d3.csv('data.csv');
 
   data = data.map((d) => ({
-    date: parseDate(d.Date),
-    open: +d.Open,
-    high: +d.High,
-    low: +d.Low,
-    close: +d.Close,
+    date: parseDate(d.date),
+    open: +d.open,
+    high: +d.high,
+    low: +d.low,
+    close: +d.close,
     volume: 10
   }));
 
   trades = trades.map((d) => ({
-    date: parseDate(d.Date),
-    type: d.Direction,
-    price: d.Price,
-    profit: d.Profit,
+    date: parseDate(d.date),
+    side: d.side,
+    type: d.side,
+    price: d.price,
+    profit: d.profit,
   }));
 
   let max_value = 0
@@ -246,7 +247,7 @@ async function run() {
     }
   });
 
-  indicator = indicator.map((d) => { d.date = parseDate(d.Date); return d });
+  indicator = indicator.map((d) => { d.date = parseDate(d.date); return d });
 
   draw(data, trades, stats, indicator);
 }
@@ -259,9 +260,9 @@ function draw(data, trades, stats, indicator) {
   ));
 
   console.log("data length:", data.length);
-  const bgn = 0;
-  const len = 450;
-  data = data.slice(bgn, bgn + len);
+  // const bgn = 0;
+  // const len = 450;
+  // data = data.slice(bgn, bgn + len);
 
   x.domain(data.map(accessor.d));
   let dom = techan.scale.plot.ohlc(data, accessor).domain();
@@ -291,8 +292,8 @@ function draw(data, trades, stats, indicator) {
 
   svg.select('g.candlestick')
     .datum(data)
-    .call(ohlc)
-    // .call(candlestick)
+    // .call(ohlc)
+    .call(candlestick)
 
   // Net Value gridlines
   svg.select("g.macd-grid")
@@ -553,7 +554,7 @@ function refreshText(d) {
   valueText.html(
     "<tspan x='0' dy='1.5em'>" + dateFormat(d.date) + "</tspan>" +
     "<tspan x='0' dy='1.5em'>" +
-    d.type + " " + valueFormat(d.price) + " " + valueFormat2(d.profit) +
+    d.side + " " + valueFormat(d.price) + " " + valueFormat2(d.profit) +
     "</tspan>"
   );
   // valueText.attr("transform", "translate(" + x(d.date) + ")");

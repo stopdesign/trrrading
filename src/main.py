@@ -1,56 +1,61 @@
-import asyncio
-import signal
+import os
+import sys
+import logging
 from datetime import datetime
 from termcolor import cprint
+from advisor import Advisor
 from trader import Trader
 
-import sys, os
+
 sys.path.append(os.path.abspath("."))
 
-import settings
+template = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+root = logging.getLogger()
+root.setLevel(logging.INFO)
+h = logging.StreamHandler(sys.stdout)
+# h.setFormatter(logging.Formatter(f"\033[0;35m{template}\033[0m"))
+root.addHandler(h)
+h = logging.StreamHandler(sys.stdout)
+h.setFormatter(logging.Formatter(f"\033[0;35m{template}\033[0m"))
 
+l1 = logging.getLogger('ib_insync.ib')
+l1.setLevel(logging.WARNING)
+l1.addHandler(h)
+l1.propagate = False
 
-async def stop(signal, loop):
-    """
-    Хуй знает, что тут происходит.
-    """
-    print()
-    cprint(f"Received exit signal {signal.name}...", "red")
+l2 = logging.getLogger('ib_insync.client')
+l2.setLevel(logging.WARNING)
+l2.addHandler(h)
+l2.propagate = False
 
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    for task in tasks:
-        cprint(f"Cancel task: {task.get_coro()}", "yellow")
-        task.cancel()
-
-    cprint("Gathering tasks...", "red")
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    loop.stop()
+l3 = logging.getLogger('ib_insync.wrapper')
+l3.setLevel(logging.WARNING)
+l3.addHandler(h)
+l3.propagate = False
 
 
 def main() -> None:
     dt = datetime.now()
-    loop = asyncio.get_event_loop()
 
-    # Убиватор тасков
-    for s in [signal.SIGHUP, signal.SIGTERM, signal.SIGINT]:
-        loop.add_signal_handler(s, lambda: asyncio.create_task(stop(s, loop)))
+    advisors = [
+        # Advisor("ChannelBreakout3", "SPY.ARCA", length=5, extra_trade=True),
+        # Advisor("ChannelBreakout3", "URA.ARCA", length=5, extra_trade=False),
+        # Advisor("ChannelBreakout3", "COPX.ARCA", length=10, extra_trade=False),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, extra_data=False),
+    ]
 
-    trader = Trader()
-
-    trader.start(loop)
+    trader = Trader("BacktestExchange", advisors, 10000, "2021-01-01")
+    # trader = Trader("IBFakeExchange", advisors, 5000)
 
     try:
-        loop.run_forever()
+        trader.warm_up()
+        trader.start()
     except KeyboardInterrupt:
-        print("Process interrupted")
+        trader.stop()
     finally:
-        trader.stop(loop)
         trader.final_info()
-        loop.close()
 
-    total_time = (datetime.now() - dt).total_seconds()
-    cprint(f"\nDone in {total_time:0.2f} s", attrs=['bold'])
+    cprint(f"\nDone in {str(datetime.now() - dt)[:-7]}", attrs=["bold"])
 
 
 if __name__ == "__main__":
