@@ -1,6 +1,6 @@
 const margin = {top: 0, right: 50, bottom: 0, left: 50};
-const width = 2020 - margin.left - margin.right;
-const height = 720 - margin.top - margin.bottom;
+const width = 1650 - margin.left - margin.right;
+const height = 620 - margin.top - margin.bottom;
 
 const parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
 const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M');
@@ -8,7 +8,7 @@ const valueFormat = d3.format('+.2f');
 const valueFormat2 = d3.format('+.2f');
 
 const dim = {
-  width: width + margin.left + margin.right, height: 1000,
+  width: width + margin.left + margin.right, height: 900,
   margin: {top: 10, right: 50, bottom: 30, left: 50},
   ohlc: {height: height + 50},
   indicator: {height: 100, padding: 0}

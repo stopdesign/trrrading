@@ -30,7 +30,7 @@ class Trader:
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
-        self.dt_start = dt_start or datetime(2021, 3, 1)
+        self.dt_start = dt_start or datetime(2021, 1, 1)
         self.dt_chart_start = self.dt_start  # + timedelta(days=2)
 
         # Как торговать
@@ -385,7 +385,7 @@ class Trader:
 
         price_diff = abs(trade_price - price) / price * 100
         txt = (
-            f"{dt:%Y-%m-d %H:%M:%S}  {symbol_str}    "
+            f"{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}    "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}    "
             f"signal: {total_buy:+5.0f} {-total_sell:+5.0f}    "
             f"do: {action}    𝝙: {price_diff:0.2f}"
@@ -406,7 +406,7 @@ class Trader:
             # Подсчет gross profit/loss после каждой сделки
             profit_loss = self.update_profit_loss()
 
-            txt = f"{dt:%Y-%m-d %H:%M:%S},{side},{price:0.4f},{profit_loss:0.4f}\n"
+            txt = f"{dt:%Y-%m-%d %H:%M:%S},{side},{price:0.4f},{profit_loss:0.4f}\n"
             self.log_trades += txt
             # cprint(txt)
 
