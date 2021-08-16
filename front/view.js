@@ -236,14 +236,14 @@ async function run() {
 
   let max_value = 0
   stats = stats.map(d => {
-    const value = +d.Value;
+    const value = +d.net_value;
     max_value = Math.max(max_value, value);
     const drawdown = max_value - value;
     return {
-      date: parseDate(d.Date),
-      value: +d.Value,
+      date: parseDate(d.date),
+      value: +d.net_value,
       drawdown: drawdown,
-      load: +d.RelEquity,
+      load: +d.margin_used,
     }
   });
 

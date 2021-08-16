@@ -1,3 +1,4 @@
+import pandas as pd
 import numpy as np
 import scipy.stats
 from decimal import Decimal
@@ -17,6 +18,7 @@ class AccountStats:
         self.prev_net_value = self.exchange.net_value
         self.deposits = [self.exchange.cash_initial]
         self.target_margin = target_margin
+        self.stats = []
 
     def on_trade(self, symbol, payload):
         self.trades_count[payload["side"]] += 1
@@ -35,9 +37,31 @@ class AccountStats:
         self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
         self.deposits.append(net)
 
+        def get_margin_for_position(position):
+            amount = position["amount"]
+            price = position["price"]
+            margin_level = self.exchange.get_margin_level(amount < 0)
+            return abs(float(amount)) * float(price) * margin_level if price else None
+
+        margin_used = 0
+        for symbol, position in self.exchange.get_positions().items():
+            margin_used += get_margin_for_position(position)
+
+        if self.exchange.dt_last and net:
+            self.stats.append({
+                "date": self.exchange.dt_last,
+                "net_value": net,
+                "drawdown": self.cur_drawdown,
+                "margin_used": margin_used,
+            })
+
     def to_csv(self, file_name):
-        # Date, Value, Drawdown, Equity, RelEquity
-        open(file_name, "w").close()
+        if self.stats:
+            df = pd.DataFrame(self.stats)
+            df = df.set_index("date")
+            df.to_csv(file_name)
+        else:
+            open(file_name, "w").close()
 
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]))
