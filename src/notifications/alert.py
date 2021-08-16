@@ -1,7 +1,7 @@
+import re
 import json
-from datetime import datetime, timedelta
-
 import requests
+from datetime import datetime, timedelta
 
 from settings import (
     TELEGRAM_CHANNEL_ID,
@@ -26,6 +26,9 @@ from settings import (
 #     )
 
 
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
 def send_telegram(text: str):
     """
     send_telegram("message text")
@@ -36,6 +39,8 @@ def send_telegram(text: str):
     channel_id = TELEGRAM_CHANNEL_ID
     url += token
     method = url + "/sendMessage"
+
+    text = ansi_escape.sub("", text)
 
     r = requests.post(method, data={"chat_id": channel_id, "text": text})
 
