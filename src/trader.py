@@ -15,9 +15,6 @@ from strategy import Signal
 from settings import CAN_SHORT
 from util import log_trade, log_trade_result
 
-CURSOR_UP_ONE = "\x1b[1A"
-ERASE_LINE = "\x1b[2K"
-
 
 log = logging.getLogger("trader")
 
@@ -26,7 +23,7 @@ class Trader:
     exchange: BaseExchange = None
 
     def __init__(self, exchange, advisors, target_margin, dt_start=None):
-        cprint("Init trader", "white")
+        cprint(f"Init trader at {datetime.utcnow().replace(microsecond=0)}", "white")
 
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
@@ -55,13 +52,13 @@ class Trader:
         self.portfolio_info()
 
     def start(self):
-        cprint("\nStart stream", "white")
+        cprint("Start stream", "white")
         self.account_stats.snapshot()
         self.exchange.start_listen()
         self.stop()
 
     def stop(self):
-        cprint("\nStop stream", "white")
+        cprint("Stop stream", "white")
         self.exchange.stop_listen()
         self.account_stats.snapshot()
         self.portfolio_info()
@@ -125,7 +122,8 @@ class Trader:
             self.account_stats.on_trade(symbol, payload)
             self.account_stats.update_pl()
             log_trade_result(log, self.exchange, payload)
-            # self.portfolio_info()
+            if dt >= self.dt_start and not self.exchange.backtest:
+                self.portfolio_info()
 
         return True
 
@@ -168,7 +166,7 @@ class Trader:
         price = self.exchange.get_price(instrument, "mid")
         return int(math.floor(self.target_margin * state / margin / price))
 
-    def get_margin_for_position(self, instrument, position):
+    def get_margin_for_position(self, _, position):
         amount = position["amount"]
         price = position["price"]
         # price = self.exchange.get_price(instrument, "mid")
@@ -293,4 +291,4 @@ class Trader:
             )
         cprint(f"Net Value:   {self.exchange.net_value:9.2f}", "blue")
         cprint(f"Margin Used: {total_margin_used:9.2f}", "blue")
-        # print()
+        print()

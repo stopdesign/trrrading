@@ -53,18 +53,11 @@ class Advisor:
         Добыть расписание биржи, закешировать по дням.
         """
         by_days = {}
-        if self.exchange_symbol == "E":
-            cal = mcal.get_calendar("NYSE").schedule(start, end)
-            for day, t in sorted(cal.T.to_dict("list").items()):
-                t0 = t[0].to_pydatetime().replace(hour=0, minute=0)
-                t1 = t[0].to_pydatetime().replace(hour=23, minute=59, second=59)
-                by_days[day.date()] = [t0.replace(tzinfo=None), t1.replace(tzinfo=None)]
-        else:
-            cal = mcal.get_calendar(self.exchange_symbol).schedule(start, end)
-            for day, t in sorted(cal.T.to_dict("list").items()):
-                t0 = t[0].to_pydatetime()
-                t1 = t[1].to_pydatetime()
-                by_days[day.date()] = [t0.replace(tzinfo=None), t1.replace(tzinfo=None)]
+        cal = mcal.get_calendar(self.exchange_symbol).schedule(start, end)
+        for day, t in sorted(cal.T.to_dict("list").items()):
+            t0 = t[0].to_pydatetime()
+            t1 = t[1].to_pydatetime()
+            by_days[day.date()] = [t0.replace(tzinfo=None), t1.replace(tzinfo=None)]
         return by_days
 
     def is_main_session(self, dt):
@@ -79,7 +72,8 @@ class Advisor:
             # Разрыв между барами в пределах одной торговой сессии недопустим.
             if dt.date() == self.last_bar_dt.date():
                 diff = dt - self.last_bar_dt
-                if diff != timedelta(minutes=1) and dt != self.schedule.get(dt.date()):
+                t0 = self.schedule.get(dt.date())[0]
+                if diff != timedelta(minutes=1) and dt != t0:
                     cprint(
                         f" Bar gap {self.instrument},"
                         f" new: {dt},"
@@ -97,27 +91,18 @@ class Advisor:
         if not self.last_bar_dt:
             return Signal.PASS
         diff = dt - self.last_bar_dt
-        if self.is_main_session(dt) and diff > timedelta(seconds=150):
-            # Старый бар допустим, если одновременно выполняется:
-            # — self.use_extra_data == false
-            # — мы смотрим первый бар за торговую сессию
-            # — старый бар является последним за предыдущую сессию
-            # В остальных случаях это ошибка.
-            if (
-                self.use_extra_data is False and
-                ((dt.hour == 13 or dt.hour == 14) and dt.minute == 30) and
-                (self.last_bar_dt.hour == 19 and self.last_bar_dt.minute == 59)
-            ):
-                pass
-            else:
-                cprint(
-                    f" Test price old bar {self.instrument},"
-                    f" now: {dt},"
-                    f" bar: {self.last_bar_dt} ",
-                    color="magenta",
-                    attrs=["reverse"],
-                )
-                return Signal.PASS
+        t0 = self.schedule.get(dt.date())[0]
+        if self.is_main_session(dt) and diff > timedelta(seconds=150) and dt != t0:
+            # Старый бар допустим, если это первый бар основной сессии.
+            # Вне основной сессии непрерывность не проверяется.
+            cprint(
+                f" Test price old bar {self.instrument},"
+                f" now: {dt},"
+                f" bar: {self.last_bar_dt} ",
+                color="magenta",
+                attrs=["reverse"],
+            )
+            return Signal.PASS
         signal = self.strategy.test_price(price)
         if signal in [Signal.SHORT, Signal.LONG, Signal.CLOSE]:
             self.state = signal

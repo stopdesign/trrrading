@@ -10,7 +10,7 @@ from termcolor import cprint, colored
 from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
 from exchange import BaseExchange
-from exchange.mixin import FakeStream, Healthcheck
+from exchange.mixin import Healthcheck
 from exchange.data_types import BidAsk, Trade, Bar
 from ib_insync.ticker import TickerUpdateEvent  # noqa
 
@@ -29,8 +29,7 @@ BID_ASK_COLUMNS_MAP = {
 
 
 class IBFakeExchange(BaseExchange, Healthcheck):
-    fake_stream_url = "http://127.0.0.1:8080/trades/"
-    healthcheck_interval = 10
+    healthcheck_interval = 60
     rel_price_cap = 0.02  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
 
@@ -136,7 +135,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         dt = datetime.utcnow().replace(microsecond=0)
         if not trading_session(dt):
             return
-        txt = colored(f" do_healthcheck ", "white", attrs=["reverse"])
+        txt = colored(f" healthcheck ", "white", attrs=["reverse"])
         print(f"{dt}: {txt}")
         for contract in self.contracts:
             if contract.last_bar:
@@ -184,22 +183,16 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         future = asyncio.wait({self.initial_update()})
         done, _ = self.loop.run_until_complete(future)
 
-        bars = []
-        for i in range(10):
-            bars = self.ib.reqHistoricalData(
-                contract,
-                endDateTime="",
-                durationStr="3 D",
-                barSizeSetting="1 min",
-                whatToShow=data_type.replace("BIDASK", "BID_ASK"),
-                useRTH=False,
-                formatDate=2,
-                timeout=30,
-            )
-            if len(bars):
-                break
-        if len(bars) == 0:
-            raise ValueError("Empty response")
+        bars = self.ib.reqHistoricalData(
+            contract,
+            endDateTime="",
+            durationStr="3 D",
+            barSizeSetting="1 min",
+            whatToShow=data_type.replace("BIDASK", "BID_ASK"),
+            useRTH=False,
+            formatDate=2,
+            timeout=30,
+        )
 
         # Если после последнего бара прошло больше 100 секунд, то считаем его закрытым.
         # Это происходит при запросе данных за пределами торговой сессии.
@@ -264,6 +257,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Прогнать события по историческим данным.
         """
+
+        # Инициализировать IB-контракты для всех инструментов
         contracts = []
         for symbol in self.symbols:
             sym, pe = symbol.split(".")
@@ -275,9 +270,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             contracts.append(contract)
         self.contracts = contracts
 
+        # Загрузить исторические данные из файлов
         self.all_data = self.load_historical_data()
 
-        cprint("\nGet real-time data", "white")
+        cprint("Real-time data", "white")
         current_data = []
         try:
             self.ib.connect(**self.ib_params)
@@ -308,18 +304,18 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             symbol = f"{contract.symbol}.{contract.primaryExchange}"
             query = f"ticker == '{symbol}' & data_type == 'TRADES'"
             last_dt = stream.query(query).tail(1).index.item().to_pydatetime()
-            # cprint(f"last_dt: {symbol} — {last_dt}", "blue")
             contract.last_bar = last_dt
+            cprint(f"{symbol:<10} last bar: {contract.last_bar}", color="white")
 
         # TODO: вынести отсюда куда-нибудь еще
-        # Для каждого символа последние исторические данные должны быть
-        # не позднее, чем 5 минут назад.
+        # Для каждого символа последние данные
+        # о цене должны быть не старше 5 минут
         now = datetime.utcnow().replace(microsecond=0)
         for symbol in self.symbols:
             quote_dt = self.quotes.get(symbol, {}).get("dt")
             if not quote_dt or now - quote_dt > timedelta(minutes=5):
                 cprint(
-                    f" DATA IS TOO OLD: {quote_dt} ",
+                    f" {symbol} outdated quotes: {quote_dt} ",
                     color="red",
                     attrs=["reverse"],
                 )
@@ -348,6 +344,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         if self.ib.isConnected():
             self.ib.disconnect()
+
+        self.loop.stop()
 
     async def connection_keeper(self):
         """
@@ -404,7 +402,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         for contract in self.contracts:
             if contract.bars is not None and contract.last_bar:
                 dt = datetime.utcnow()
-                if not trading_session(dt):
+                if trading_session(dt) != "main":
+                    # Не проверять непрерывность данных вне основной сессии.
                     continue
                 bar_age = dt - contract.last_bar
                 if bar_age > timedelta(minutes=3):
@@ -416,14 +415,14 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         for contract in self.contracts:
             if contract.bars is None:
                 cprint(f"Subscribe BAR: {contract.symbol}", "blue")
-                # Интервальные данные
+                # Подписка на интервальные данные.
+                # С настройкой "2 D" ответ никогда не должен быть пустым
                 contract.bars = self.ib.reqHistoricalData(
                     contract,
                     endDateTime="",
                     # Достаточно, чтобы заполнить пробел между
                     # историческими данными и real-time данными.
-                    # TODO: учесть возможность восстановления соединения после паузы
-                    durationStr="600 S",
+                    durationStr="2 D",  # два торговых дня, даже после выходных
                     barSizeSetting="1 min",
                     whatToShow="TRADES",
                     useRTH=False,
@@ -495,18 +494,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             await asyncio.sleep(0.1)
             prev_dt = dt
 
-    async def on_bar_update(self, bars, has_new_bar, contract):
+    async def on_bar_update(self, bars, _, contract):
         """
         После появления нового бара отправить событие.
         """
         symbol = str(f"{contract.symbol}.{contract.primaryExchange}")
         # Посмотреть, какой бар был последним, и добавить все новые бары
-        for bar in bars[-100:-1]:  # последние 100, кроме самого последнего
+        for bar in bars[-1000:-1]:  # последние 1000, кроме самого последнего
             bar_dt = bar.date.replace(tzinfo=None)
             if bar_dt > contract.last_bar:
                 payload = Bar.from_bar_data(bar, symbol)
                 self.on_event("bar", bar_dt, symbol, payload)
                 contract.last_bar = bar_dt
+                await asyncio.sleep(0)
 
     def trade(self, side, amount, symbol, dt):
         """
@@ -529,10 +529,28 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         trade = self.ib.placeOrder(contract, order)
 
         # Жду исполнения ордера
+        prev_state = ""
+        last_dt = datetime(1900, 1, 1)
         while not trade.isDone():
-            cprint(f"orderStatus: {trade.orderStatus.status}", "white")
-            self.ib.sleep(1)  # чтобы не вываливало 100500 строк сразу
-            self.ib.waitOnUpdate(timeout=30)
+            dt = datetime.utcnow().replace(microsecond=0)
+            cur_state = f"{trade.orderStatus.status} {trade.orderStatus.filled}"
+            # Вывожу только изменения или обновления после долгой паузы
+            if prev_state != cur_state or (dt - last_dt) > timedelta(seconds=10):
+                if dt - last_dt > timedelta(seconds=1):
+                    cprint(
+                        f"{dt} {symbol} "
+                        f"{trade.orderStatus.status:<13} "
+                        f"{trade.orderStatus.remaining:8.0f} to fill",
+                        "white"
+                    )
+                    last_dt = dt
+            prev_state = cur_state
+            try:
+                self.ib.waitOnUpdate(timeout=30)
+            except KeyboardInterrupt:
+                cprint("waitOnUpdate has been interrupted", "red")
+                self.stop_listen()
+                return None, None
 
         cprint(
             f" DONE TRADE: "
@@ -543,7 +561,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             color="green",
             attrs=["reverse"],
         )
-        print()
 
         price = trade.orderStatus.avgFillPrice
 

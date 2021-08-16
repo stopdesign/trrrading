@@ -44,9 +44,11 @@ class AccountStats:
             return abs(float(amount)) * float(price) * margin_level if price else None
 
         margin_used = 0
+        # TODO: вынести margin_used в self.exchange
         for symbol, position in self.exchange.get_positions().items():
             margin_used += get_margin_for_position(position)
 
+        # TODO: добавить проверку на main session
         if self.exchange.dt_last and net:
             self.stats.append({
                 "date": self.exchange.dt_last,
