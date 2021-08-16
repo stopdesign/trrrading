@@ -20,7 +20,6 @@ import pandas_market_calendars as mcal
 from datetime import datetime, timezone, timedelta
 from ib_insync import *
 from pathlib import Path
-from time import sleep
 from termcolor import cprint
 
 import sys
@@ -28,7 +27,7 @@ sys.path.append(os.path.abspath(".."))
 
 from strategy import ChannelBreakout3, Signal
 
-BASE_DIR = "."
+BASE_DIR = "../../data"
 
 BID_ASK_COLUMNS_MAP = {
     "open": "av_bid",
@@ -278,7 +277,7 @@ if __name__ == "__main__":
     dt = datetime.now()
 
     start_dt = datetime(2021, 8, 1, tzinfo=timezone.utc).date()
-    download_and_save("SPY.ARCA", start=start_dt)
+    download_and_save("URA.ARCA", start=start_dt)
 
     # start_dt = datetime(2021, 1, 1, tzinfo=timezone.utc).date()
     # df = load_as_df("COPX.ARCA", start=start_dt)

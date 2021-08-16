@@ -276,7 +276,10 @@ class Trader:
                 m_used = self.get_margin_for_position(symbol, position)
                 total_margin_used += m_used
                 m_used = "{0:0.0f}".format(m_used)
-                color = "cyan"
+                cur = float(position['amount'])
+                adv = float(position['advised'])
+                rel_diff = abs(cur - adv) / abs(cur + adv)
+                color = "cyan" if rel_diff < 0.05 else "yellow"
             else:
                 advised = "-"
                 m_used = "-"

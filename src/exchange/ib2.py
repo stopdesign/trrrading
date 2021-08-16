@@ -30,7 +30,7 @@ BID_ASK_COLUMNS_MAP = {
 
 class IBFakeExchange(BaseExchange, Healthcheck):
     healthcheck_interval = 60
-    rel_price_cap = 0.02  # на столько limit price будет хуже mid_price
+    rel_price_cap = 0.005  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
 
     margin_rule = {
@@ -531,16 +531,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # Жду исполнения ордера
         prev_state = ""
         last_dt = datetime(1900, 1, 1)
+        start_dt = datetime.utcnow().replace(microsecond=0)
         while not trade.isDone():
             dt = datetime.utcnow().replace(microsecond=0)
             cur_state = f"{trade.orderStatus.status} {trade.orderStatus.filled}"
             # Вывожу только изменения или обновления после долгой паузы
             if prev_state != cur_state or (dt - last_dt) > timedelta(seconds=10):
                 if dt - last_dt > timedelta(seconds=1):
+                    rem = float(amount) - trade.orderStatus.filled
+                    sec = (dt - start_dt).total_seconds()
                     cprint(
-                        f"{dt} {symbol} "
-                        f"{trade.orderStatus.status:<13} "
-                        f"{trade.orderStatus.remaining:8.0f} to fill",
+                        f"{dt}  {symbol}  {trade.orderStatus.status:<13} "
+                        f"{rem:5.0f} to fill, "
+                        f"{sec:0.0f} sec",
                         "white"
                     )
                     last_dt = dt
@@ -552,12 +555,15 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 self.stop_listen()
                 return None, None
 
+        dt = datetime.utcnow().replace(microsecond=0)
+        sec = (dt - start_dt).total_seconds()
         cprint(
             f" DONE TRADE: "
             f"{trade.orderStatus.status}, "
             f"{trade.orderStatus.avgFillPrice:0.2f}, "
             f"mid: {mid_price:0.2f}, "
-            f"amnt: {amount:0.0f} ",
+            f"amnt: {amount:0.0f}, "
+            f"time: {sec:0.0f} ",
             color="green",
             attrs=["reverse"],
         )
@@ -585,10 +591,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         return lmt_price
 
     def check_margin(self, contract, order):
-        what_if = self.ib.whatIfOrder(contract, order)
-        margin_after = max(
-            float(what_if.initMarginAfter), float(what_if.maintMarginAfter)
-        )
+        pass
+        # what_if = self.ib.whatIfOrder(contract, order)
+        # margin_after = max(
+        #     float(what_if.initMarginAfter), float(what_if.maintMarginAfter)
+        # )
         # cprint(
         #     f"commissionCurrency: {what_if.commissionCurrency}\n"
         #     f"minCommission: {float(what_if.minCommission):0.2f}\n"

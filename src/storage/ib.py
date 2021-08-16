@@ -5,7 +5,7 @@ from io import StringIO
 from settings import BASE_DIR
 
 
-DATA_BASE_DIR = BASE_DIR / "src" / "history"
+DATA_BASE_DIR = BASE_DIR / "data"
 
 TRADES_NUM_COL = ["open", "high", "low", "close", "volume", "average", "barCount"]
 BIDASK_NUM_COL = ["av_bid", "max_ask", "min_bid", "av_ask"]
