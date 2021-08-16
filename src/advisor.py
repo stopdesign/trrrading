@@ -105,7 +105,7 @@ class Advisor:
             # В остальных случаях это ошибка.
             if (
                 self.use_extra_data is False and
-                (dt.hour == 13 and dt.minute == 30) and
+                ((dt.hour == 13 or dt.hour == 14) and dt.minute == 30) and
                 (self.last_bar_dt.hour == 19 and self.last_bar_dt.minute == 59)
             ):
                 pass

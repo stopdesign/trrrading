@@ -71,10 +71,25 @@ class Trader:
         if not df.empty:
             df.set_index("date", inplace=True)
             df = df[df.index > self.dt_start]
+            df = df.resample("3H").apply({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+                "average": "mean",
+                "barCount": "sum",
+                "rth": "first",
+                "ticker": "last",
+                "up": "max",
+                "dn": "min",
+            })
+            df.dropna(inplace=True)
             df.to_csv("../front/data.csv")
         self.trade_stats.to_csv("../front/trades.csv")
         self.account_stats.to_csv("../front/stats.csv")
-        self.account_stats.print_summary()  # RESULTS
+        if self.exchange.backtest:
+            self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """
