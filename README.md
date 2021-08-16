@@ -19,7 +19,7 @@ apt install python3 virtualenv python3-virtualenv
 ```
 #### Mac
 ```bash
---- TODO ---
+brew install ta-lib
 ```
 
 
