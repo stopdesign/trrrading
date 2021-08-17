@@ -7,6 +7,7 @@ from time import sleep
 from datetime import datetime, timedelta
 from decimal import Decimal
 from termcolor import cprint, colored
+from notifications.alert import send_telegram
 from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
 from exchange import BaseExchange
@@ -90,9 +91,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
     def on_connect(self):
         cprint(f"ON_CONNECT, finished: {self.finished}", "green")
+        send_telegram("ON_CONNECT")
 
     def on_disconnect(self):
         cprint(f"ON_DISCONNECT, finished: {self.finished}", "red")
+        send_telegram("ON_DISCONNECT")
         self.subscribed = False
         for contract in self.contracts:
             if contract.mkt_ticker:
@@ -512,7 +515,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Открыть позицию/ордер на бирже.
         """
-        cprint(f" TRADE: {side} {symbol} {amount} ", color="cyan", attrs=["reverse"])
+        txt = f" TRADE: {side} {symbol} {amount} "
+        cprint(txt, color="cyan", attrs=["reverse"])
+        send_telegram(txt)
 
         sym, pe = symbol.split(".")
         contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
@@ -557,16 +562,16 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         dt = datetime.utcnow().replace(microsecond=0)
         sec = (dt - start_dt).total_seconds()
-        cprint(
+        txt = (
             f" DONE TRADE: "
             f"{trade.orderStatus.status}, "
             f"{trade.orderStatus.avgFillPrice:0.2f}, "
             f"mid: {mid_price:0.2f}, "
             f"amnt: {amount:0.0f}, "
-            f"time: {sec:0.0f} ",
-            color="green",
-            attrs=["reverse"],
+            f"time: {sec:0.0f} "
         )
+        cprint(txt, color="green", attrs=["reverse"])
+        send_telegram(txt)
 
         price = trade.orderStatus.avgFillPrice
 
