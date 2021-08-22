@@ -4,6 +4,7 @@ import scipy.stats
 from decimal import Decimal
 from exchange import BaseExchange
 from termcolor import cprint, colored
+from nyse_cal import trading_session
 
 
 class AccountStats:
@@ -31,6 +32,13 @@ class AccountStats:
 
     def snapshot(self):
         net = self.exchange.net_value
+
+        if not (self.exchange.dt_last and net):
+            return
+
+        if trading_session(self.exchange.dt_last) != "main":
+            return
+
         drawdown = max(Decimal(0), self.max_net_value - net)
         self.max_net_value = max(self.max_net_value, net)
         self.cur_drawdown = drawdown / self.max_net_value * 100
@@ -48,20 +56,20 @@ class AccountStats:
         for symbol, position in self.exchange.get_positions().items():
             margin_used += get_margin_for_position(position)
 
-        # TODO: добавить проверку на main session
-        if self.exchange.dt_last and net:
-            self.stats.append({
-                "date": self.exchange.dt_last,
-                "net_value": net,
-                "drawdown": self.cur_drawdown,
-                "margin_used": margin_used,
-            })
+        self.stats.append({
+            "date": self.exchange.dt_last,
+            "net_value": net,
+            "drawdown": self.cur_drawdown,
+            "margin_used": margin_used,
+        })
 
     def to_csv(self, file_name):
         if self.stats:
             df = pd.DataFrame(self.stats)
             df = df.set_index("date")
-            df.to_csv(file_name)
+            df["net_value"] = df["net_value"].astype(float)
+            df["drawdown"] = df["drawdown"].astype(float)
+            df.to_csv(file_name, float_format="%.2f")
         else:
             open(file_name, "w").close()
 

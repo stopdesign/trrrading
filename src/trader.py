@@ -82,10 +82,11 @@ class Trader:
                 "dn": "min",
             })
             df.dropna(inplace=True)
-            df.to_csv("../front/data.csv")
+            df.to_csv("../front/data.csv", float_format="%.2f")
         self.trade_stats.to_csv("../front/trades.csv")
         self.account_stats.to_csv("../front/stats.csv")
         if self.exchange.backtest:
+            self.advisors_info()
             self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
@@ -252,6 +253,12 @@ class Trader:
                 total_sell += abs(state_diff / all_adv_len)
 
         return total_buy, total_sell
+
+    def advisors_info(self):
+        cprint(" ADVISORS ", attrs=["reverse"])
+        print()
+        for advisor in self.get_advisors():
+            print(advisor.info)
 
     def portfolio_info(self):
         positions = defaultdict(dict)

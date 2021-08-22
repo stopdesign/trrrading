@@ -42,7 +42,7 @@ def send_telegram(text: str):
 
     text = ansi_escape.sub("", text)
 
-    r = requests.post(method, data={"chat_id": channel_id, "text": text})
+    r = requests.post(method, data={"chat_id": channel_id, "text": text}, timeout=3)
 
     if r.status_code != 200:
         raise requests.exceptions.HTTPError("post_text error")

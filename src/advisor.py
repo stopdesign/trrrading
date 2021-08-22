@@ -44,9 +44,21 @@ class Advisor:
         return f"<Advisor symbol={self.instrument} strategy={self.strategy}>"
 
     @property
+    def info(self):
+        return (
+            f"symbol={self.instrument:<9}  "
+            f"strategy={self.strategy_name}  "
+            f"length={self.strategy.length:<4}  "
+            f"extra_data={self.use_extra_data:<1}  "
+            f"extra_trade={self.trade_in_extra_hours:<1}  "
+        )
+
+    @property
     def exchange_symbol(self):
         exchange_symbol = self.instrument.split(".")[1]
-        return exchange_symbol.replace("ARCA", "NYSE")
+        exchange_symbol = exchange_symbol.replace("ARCA", "NYSE")
+        exchange_symbol = exchange_symbol.replace("NYMEX", "CMES")
+        return exchange_symbol
 
     def init_schedule(self, start, end):
         """

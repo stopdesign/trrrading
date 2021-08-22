@@ -21,6 +21,6 @@ class TradeStats:
         if self.trades:
             df = pd.DataFrame(self.trades)
             df = df.set_index("date")
-            df.to_csv(file_name)
+            df.to_csv(file_name, float_format="%.2f")
         else:
             open(file_name, "w").close()
