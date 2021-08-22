@@ -1,19 +1,9 @@
 """
-Получение исторических данных из IB.
-
-1. Узнать дату создания данной бумаги.
-
-2. Получить расписание биржи, на которой оно торгуется.
-
-3. Загрузить сплиты.
-
-4. Загрузить минутные данные по дням.
-
+Получение исторических данных из IB, созранение в виде файлов.
 """
-import json
+
 import os
-from collections import Counter
-from io import StringIO
+import pytz
 import pandas as pd
 import requests
 import pandas_market_calendars as mcal
@@ -22,10 +12,6 @@ from ib_insync import *
 from pathlib import Path
 from termcolor import cprint
 
-import sys
-sys.path.append(os.path.abspath(".."))
-
-from strategy import ChannelBreakout3, Signal
 
 BASE_DIR = "../../data"
 
@@ -36,10 +22,13 @@ BID_ASK_COLUMNS_MAP = {
     "close": "av_ask",
 }
 
+# Можно пробросить порт с удаленной машины:
+# ssh -L 4001:127.0.0.1:4001 root@51.15.62.103
+
 ib_params = {
     "host": "127.0.0.1",
     "port": 4001,  # 7497
-    "clientId": 0,
+    "clientId": 15,
     "timeout": 10,
 }
 
@@ -56,8 +45,7 @@ def get_splits_file_name(exchange, symbol):
     return f"{BASE_DIR}/{exchange}/{symbol}/splits.txt"
 
 
-def get_first_day(symbol):
-    contract = Stock(symbol, "SMART", "USD", primaryExchange="ARCA")
+def get_first_day(contract):
     date = None
     for i in range(10):
         date = ib.reqHeadTimeStamp(
@@ -70,26 +58,39 @@ def get_first_day(symbol):
     return date.date()
 
 
-def get_data(symbol, day, data_type="TRADES", timeframe="1 min"):
-    contract = Stock(symbol, "SMART", "USD", primaryExchange="ARCA")
+def get_data(contract, day, data_type, timeframe="1 min"):
     day_utc = datetime.combine(day, datetime.min.time()).replace(tzinfo=timezone.utc)
     day_utc = day_utc + timedelta(hours=27)  # +27H — чтобы закрыть весь торговый день
-    bars = []
-    for i in range(10):
-        bars = ib.reqHistoricalData(
-            contract,
-            endDateTime=day_utc,
-            durationStr="1 D",
-            barSizeSetting=timeframe,
-            whatToShow=data_type,
-            useRTH=False,
-            formatDate=2,
-            timeout=120,
-        )
-        if len(bars):
-            break
+
+    # day_end = f"{day:%Y%m%d 23:59:59} UTC"
+    # print(day, " | ", day_end, " | ", day_utc)
+
+    bars = ib.reqHistoricalData(
+        contract,
+        endDateTime=day_utc,
+        durationStr="2 D",
+        barSizeSetting=timeframe,
+        whatToShow=data_type,
+        useRTH=False,
+        formatDate=2,
+        timeout=120,
+    )
     if len(bars) == 0:
         raise ValueError("Empty response")
+
+    if contract.exchange == "NYMEX":
+        ex_tz = pytz.timezone('America/New_York')
+        t = datetime.combine(day, datetime.min.time()).astimezone(ex_tz)
+        t0 = t - timedelta(days=1) + timedelta(hours=18)
+        t1 = t + timedelta(hours=17)
+        only_one_day = []
+        for bar in bars:
+            dt = bar.date
+            if t0 <= dt < t1:
+                only_one_day.append(bar)
+        bars = only_one_day
+        # print(util.df(bars))
+
     return util.df(bars)
 
 
@@ -97,7 +98,7 @@ def get_splits(ticker):
     ticker = ticker.split(".")[0]
     params = "interval=3mo&events=split&period1=1400000000&period2=1800000000"
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?{params}"
-    res = requests.get(url, headers={"User-Agent": "Godzilla"})
+    res = requests.get(url, headers={"User-Agent": "Godzilla"}, timeout=5)
     splits = None
     for i in range(10):
         try:
@@ -111,13 +112,16 @@ def get_splits(ticker):
     return splits
 
 
-def download_and_save(ticker="COPX.ARCA", start=None, data_types=None):
+def download_and_save(contract, start=None, data_types=None):
     data_types = data_types or ["BID_ASK", "TRADES"]
 
-    symbol, exchange = ticker.split(".")
+    symbol = contract.symbol
+    exchange = contract.primaryExchange or contract.exchange
+
+    ticker = f"{symbol}.{exchange}"
 
     try:
-        first_day = get_first_day(symbol)
+        first_day = get_first_day(contract)
     except ValueError:
         cprint(f"Can't get the first day for {symbol}", "red")
         return False
@@ -129,7 +133,11 @@ def download_and_save(ticker="COPX.ARCA", start=None, data_types=None):
 
     cprint(f"{ticker}, fd: {first_day}, [{start}, {end}], {data_types}", "blue")
 
-    cal_exchange = exchange.replace("ARCA", "NYSE")
+    cal_exchange = exchange
+    cal_exchange = cal_exchange.replace("ARCA", "NYSE")
+    cal_exchange = cal_exchange.replace("NYMEX", "CMES")
+    cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
+
     cal = mcal.get_calendar(cal_exchange).schedule(start, end)
 
     try:
@@ -172,7 +180,7 @@ def download_and_save(ticker="COPX.ARCA", start=None, data_types=None):
 
             # Получить данные за день
             try:
-                df = get_data(symbol=symbol, day=d0, data_type=data_type)
+                df = get_data(contract, day=d0, data_type=data_type)
             except ValueError:
                 cprint(f"Empty response: {symbol}, {day}, {data_type}", "red")
                 continue
@@ -182,8 +190,11 @@ def download_and_save(ticker="COPX.ARCA", start=None, data_types=None):
                 continue
 
             # Пометить рабочие часы
-            df["rth"] = (df["date"] >= t0) & (df["date"] < t1)
-            df["rth"] = df["rth"].astype(int)
+            if contract.secType == "STK":
+                df["rth"] = (df["date"] >= t0) & (df["date"] < t1)
+                df["rth"] = df["rth"].astype(int)
+            else:
+                df["rth"] = 1
 
             df["date"] = df["date"].dt.tz_localize(None)
             df = df.set_index("date")
@@ -216,71 +227,15 @@ def daterange(start_date, end_date):
         yield start_date + timedelta(n)
 
 
-def load_as_df(ticker="COPX.ARCA", start=None, end=None, data_type="TRADES"):
-    """
-    Загрузка исторических данных из файловой системы.
-    """
-    symbol, exchange = ticker.split(".")
-
-    if not end:
-        end = datetime.now().astimezone(timezone.utc).date()
-
-    # Загрузить нужные дни
-    data = ""
-    for date in daterange(start, end):
-        path = get_file_name(exchange, symbol, data_type, date)
-        if os.path.isfile(path):
-            data += open(path).read()
-
-    df = pd.read_csv(StringIO(data), sep="\t", index_col="date", dtype=str)
-    df = df[df["rth"] != "rth"]  # убрать заголовочные строки
-    df.index = pd.to_datetime(df.index, utc=False)
-    df.sort_index(inplace=True)
-
-    # Отфильтровать данные по времени
-    df = df.loc[start:end]
-
-    # print(len(df))
-    # print(df.index)
-
-    return df
-
-
-def test_strat_speed(df):
-    strategy = ChannelBreakout3(length=350)
-
-    cur_state = Signal.PASS
-
-    stat = Counter()
-
-    # Convert some columns to numeric type
-    ohlc = ["open", "high", "low", "close"]
-    df[ohlc] = df[ohlc].apply(pd.to_numeric)
-
-    for row in df.itertuples():
-        stat["bar"] += 1
-        if row.rth == "1":
-            stat["bar_rth"] += 1
-            for price in [row.open, row.high, row.low, row.close]:
-                signal = strategy.test_price(price)
-                if signal.value and signal != cur_state:
-                    cur_state = signal
-                    stat["trade"] += 1
-                    print(row.Index, signal)
-                    break
-            strategy.on_bar(row)
-
-    print(json.dumps(stat, indent=2, default=str))
-
-
 if __name__ == "__main__":
     dt = datetime.now()
 
-    start_dt = datetime(2021, 8, 1, tzinfo=timezone.utc).date()
-    download_and_save("URA.ARCA", start=start_dt)
+    start_dt = datetime(2020, 12, 10, tzinfo=timezone.utc).date()
 
-    # start_dt = datetime(2021, 1, 1, tzinfo=timezone.utc).date()
-    # df = load_as_df("COPX.ARCA", start=start_dt)
-    # test_strat_speed(df)
+    contract = Stock("SPY", "SMART", "USD", primaryExchange="ARCA")
+    # contract = Future("HG", exchange="NYMEX", localSymbol="HGU1")
+    # contract = Future("ES", exchange="GLOBEX", localSymbol="ESU1")
+
+    download_and_save(contract, start=start_dt, data_types=["TRADES", "BID_ASK"])
 
     cprint(f"\nDone in {(datetime.now() - dt).total_seconds():0.2f} s", attrs=["bold"])
