@@ -35,6 +35,10 @@ def send_telegram(text: str):
     """
 
     token = TELEGRAM_TOKEN
+
+    if not token:
+        return
+
     url = "https://api.telegram.org/bot"
     channel_id = TELEGRAM_CHANNEL_ID
     url += token

@@ -6,7 +6,7 @@ import pandas_market_calendars as mcal
 from time import sleep
 from datetime import datetime, timedelta
 from decimal import Decimal
-from termcolor import cprint, colored
+from termcolor import cprint
 from notifications.alert import send_telegram
 from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
@@ -133,10 +133,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         if self.finished:
             return
         dt = datetime.utcnow().replace(microsecond=0)
-        if not trading_session(dt):
+        if trading_session(dt) != "main":
             return
-        txt = colored(f" healthcheck ", "white", attrs=["reverse"])
-        print(f"{dt}: {txt}")
+        # txt = colored(f" healthcheck ", "white", attrs=["reverse"])
+        # print(f"{dt}: {txt}")
         for contract in self.contracts:
             if contract.last_bar:
                 bar_age = (datetime.utcnow() - contract.last_bar)
@@ -354,8 +354,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         while not self.finished:
             dt = datetime.utcnow().replace(microsecond=0)
 
-            time_to_next = time_to_next_session(dt, main=False)
-            wake_up_in_advance = 60
+            time_to_next = time_to_next_session(dt, main=True)
+            wake_up_in_advance = 300
             if time_to_next > timedelta(seconds=wake_up_in_advance):
                 print()
                 cprint(

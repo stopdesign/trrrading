@@ -65,10 +65,15 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # day_end = f"{day:%Y%m%d 23:59:59} UTC"
     # print(day, " | ", day_end, " | ", day_utc)
 
+    if contract.exchange == "NYMEX":
+        duration = "2 D"
+    else:
+        duration = "1 D"
+
     bars = ib.reqHistoricalData(
         contract,
         endDateTime=day_utc,
-        durationStr="2 D",
+        durationStr=duration,
         barSizeSetting=timeframe,
         whatToShow=data_type,
         useRTH=False,
@@ -230,9 +235,9 @@ def daterange(start_date, end_date):
 if __name__ == "__main__":
     dt = datetime.now()
 
-    start_dt = datetime(2020, 12, 10, tzinfo=timezone.utc).date()
+    start_dt = datetime(2021, 8, 1, tzinfo=timezone.utc).date()
 
-    contract = Stock("SPY", "SMART", "USD", primaryExchange="ARCA")
+    contract = Stock("COPX", "SMART", "USD", primaryExchange="ARCA")
     # contract = Future("HG", exchange="NYMEX", localSymbol="HGU1")
     # contract = Future("ES", exchange="GLOBEX", localSymbol="ESU1")
 

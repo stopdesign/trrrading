@@ -38,14 +38,17 @@ def main() -> None:
     dt = datetime.now()
 
     advisors = [
-        # Advisor("ChannelBreakout3", "SPY.ARCA", length=5, extra_trade=True),
-        # Advisor("ChannelBreakout3", "URA.ARCA", length=5, extra_trade=False),
-        # Advisor("ChannelBreakout3", "COPX.ARCA", length=10, extra_trade=False),
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, extra_data=False),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=350, padding=0.1),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, padding=0.05),
+        Advisor("ChannelBreakout3", "COPX.ARCA", length=550, padding=0.01),
+
+        Advisor("ChannelBreakout3", "URA.ARCA", length=450, padding=0.01),
+        Advisor("ChannelBreakout3", "URA.ARCA", length=520, padding=0.01),
+        Advisor("ChannelBreakout3", "URA.ARCA", length=600, padding=0.02),
     ]
 
     trader = Trader("BacktestExchange", advisors, 10000, "2021-01-01")
-    # trader = Trader("IBFakeExchange", advisors, 5000)
+    # trader = Trader("IBFakeExchange", advisors, 10000)
 
     try:
         trader.warm_up()
