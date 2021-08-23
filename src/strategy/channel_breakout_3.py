@@ -5,8 +5,10 @@ from exchange.data_types import Bar
 
 class ChannelBreakout3(BaseStrategy):
     don = None
+    padding = 0
 
     def on_start(self):
+        self.padding = self.params.get("padding", 0)
         self.don = DonchianChannels(self.length)
 
     def on_bar(self, pandas_ohlc):
@@ -37,10 +39,10 @@ class ChannelBreakout3(BaseStrategy):
         if not bar or not bar.dn:
             return Signal.PASS
 
-        if price < bar.dn:
-            return Signal.SHORT
-
-        if price > bar.up:
+        if price > bar.up - self.padding:
             return Signal.LONG
+
+        if price < bar.dn + self.padding:
+            return Signal.SHORT
 
         return Signal.PASS

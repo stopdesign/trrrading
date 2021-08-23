@@ -8,7 +8,7 @@ from nyse_cal import trading_session
 
 
 class AccountStats:
-    def __init__(self, exchange: BaseExchange, target_margin):
+    def __init__(self, trader, exchange: BaseExchange):
         self.exchange = exchange
         self.max_net_value = Decimal("-Infinity")
         self.max_drawdown = Decimal("-Infinity")
@@ -18,11 +18,15 @@ class AccountStats:
         self.trades_count = {"buy": 0, "sell": 0, "close": 0}
         self.prev_net_value = self.exchange.net_value
         self.deposits = [self.exchange.cash_initial]
-        self.target_margin = target_margin
+        self.trader = trader
         self.stats = []
+        self.slippage = 0
+        self.fee = 0
 
-    def on_trade(self, symbol, payload):
+    def on_trade(self, _, payload):
         self.trades_count[payload["side"]] += 1
+        self.slippage += payload["slippage"]
+        self.fee += payload["fee"]
 
     def update_pl(self):
         diff_value = self.exchange.net_value - self.prev_net_value
@@ -82,7 +86,7 @@ class AccountStats:
 
         # Не уверен, что это можно считать ROI, но это профит
         # на единицу задействованных в торговле денег.
-        roi = p / self.target_margin * 100
+        roi = p / self.trader.target_margin * 100
 
         # R2
         if self.deposits and len(self.deposits) > 1:
@@ -90,27 +94,26 @@ class AccountStats:
             y = np.array(self.deposits, dtype=float)
             slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
             r2 = r_value ** 2
+            gp = float(self.gross_profit)
+            rel_slpg = self.slippage / (gp + self.slippage) * 100 if gp else 0
         else:
             r2 = 0
             self.max_drawdown = 0
-
-        ml = self.exchange.margin_rule['long'] * 100
-        ms = self.exchange.margin_rule['short'] * 100
+            rel_slpg = 0
 
         txt = (
             "\n"
             f"{self.exchange.dt_start}\n"
             f"{self.exchange.dt_last}\n"
             "\n"
-            f"Margin long:  {ml:0.0f}%\n"
-            f"Margin short: {ms:0.0f}%\n"
-            "\n"
-            f"ROI: {roi:+7.1f}%\n"
-            f"Max DD: {self.max_drawdown:4.1f}%\n"
-            f"PF: {pf:9.2f}\n"
-            f"R²: {r2:9.2f}\n"
-            f"Trades: {trades:5.0f}\n"
-            f"GP: {self.gross_profit:+9.0f}\n"
-            f"GL: {self.gross_loss:+9.0f}"
+            f"ROI: {roi:+10.1f}%\n"
+            f"Max DD: {self.max_drawdown:7.1f}%\n"
+            f"PF: {pf:12.2f}\n"
+            f"R²: {r2:12.2f}\n"
+            f"Trades: {trades:8.0f}\n"
+            f"Fee: {-self.fee:+11.0f}\n"
+            f"GP: {self.gross_profit:+12.0f}\n"
+            f"GL: {self.gross_loss:+12.0f}\n"
+            f"Slippage: {rel_slpg:5.1f}%"
         )
         cprint(txt)

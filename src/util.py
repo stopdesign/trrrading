@@ -36,12 +36,12 @@ def log_trade(
     if amount_diff < 0:
         color, sign = "red", "-"
     action = colored(f"{(sign + str(abs(amount_diff))):>5}", color)
-    price_diff = abs(trigger_price - market_price) / market_price * 100
+    rel_slippage = abs(trigger_price - market_price) / market_price * 100
     txt = (
         f"\n{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}   "
         f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}   "
         f"sig: {total_buy:+5.0f} {-total_sell:+5.0f}   "
-        f"do: {action}    𝝙: {price_diff:0.2f}%"
+        f"do: {action}    𝝙: {rel_slippage:0.2f}%"
     )
     txt = txt.replace("+0", colored(" 0", "white"))
     log.info(txt)

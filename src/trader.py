@@ -43,7 +43,7 @@ class Trader:
         self.exchange = exchange_class(advisors, dt_start=self.dt_start)
         self.exchange.on_event = self.on_event
 
-        self.account_stats = AccountStats(self.exchange, target_margin)
+        self.account_stats = AccountStats(self, self.exchange)
         self.trade_stats = TradeStats()
 
     def warm_up(self):
@@ -86,6 +86,7 @@ class Trader:
         self.trade_stats.to_csv("../front/trades.csv")
         self.account_stats.to_csv("../front/stats.csv")
         if self.exchange.backtest:
+            self.settings_info()
             self.advisors_info()
             self.account_stats.print_summary()  # RESULTS
 
@@ -147,6 +148,9 @@ class Trader:
         """
         state = 0
         for advisor in self.get_advisors(instrument):
+            if not advisor.state:
+                cprint(f"NO STATE: {advisor}", "red")
+                return None
             state += advisor.state.numeric / len(self.advisors)
 
         if not self.can_short:
@@ -217,7 +221,7 @@ class Trader:
 
         # Если есть все параметры — запустить сделку
         if price and amount:
-            self.exchange.trade(side, abs(amount), symbol, dt)
+            self.exchange.trade(side, abs(amount), symbol, dt, tr_price)
 
     def get_min_tradable_amount(self, price):
         """
@@ -260,6 +264,18 @@ class Trader:
         for advisor in self.get_advisors():
             print(advisor.info)
 
+    def settings_info(self):
+        cprint(" SETTINGS ", attrs=["reverse"])
+        txt = (
+            f"Target margin: {self.target_margin}\n"
+            f"Reuse profit: {self.reinvest_profit}\n"
+            f"Can short: {self.can_short}\n"
+            f"{self.exchange.margin!r}\n"
+            f"{self.exchange.fee!s}\n"
+        )
+        print()
+        print(txt)
+
     def portfolio_info(self):
         positions = defaultdict(dict)
 
@@ -291,10 +307,12 @@ class Trader:
                 advised = "-"
                 m_used = "-"
                 color = "white"
+            price = position.get('price') or 0
+            amount = position.get('amount') or 0
             cprint(
                 f"{symbol:<12}"
-                f"{position['price']:10.2f}"
-                f"{position['amount']:+10.0f}"
+                f"{price:10.2f}"
+                f"{amount:+10.0f}"
                 f"{m_used:>10}"
                 f"{advised:>10}",
                 color,

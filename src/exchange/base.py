@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from exchange.data_types import Margin, Fee
 
 
 class BaseExchange:
@@ -12,11 +13,8 @@ class BaseExchange:
     empty_position = {"amount": Decimal("0"), "price": Decimal("0")}
 
     backtest = False
-
-    margin_rule = {
-        "short": 1.0,
-        "long": 1.0,
-    }
+    margin = Margin()
+    fee = Fee()
 
     def __init__(self, advisors: list, **kwargs):
         self.advisors = advisors
@@ -25,7 +23,6 @@ class BaseExchange:
         self.positions = {}
         self.cash = Decimal(0)
         self.cash_initial = self.cash
-        self.fee_rate = Decimal(0)
         self.last_event = {}
         self.finished = False
         self.dt_start = None
@@ -58,7 +55,7 @@ class BaseExchange:
             self.quotes[symbol]["bid"] = payload.bid
             self.quotes[symbol]["dt"] = dt
 
-    def trade(self, side: str, amount: float, symbol: str, dt: datetime):
+    def trade(self, side: str, amount: float, symbol: str, dt: datetime, tr_price):
         raise NotImplementedError()
 
     def warm_up(self):
@@ -88,4 +85,4 @@ class BaseExchange:
         return
 
     def get_margin_level(self, short=False):
-        return self.margin_rule["short"] if short else self.margin_rule["long"]
+        return self.margin.short if short else self.margin.long

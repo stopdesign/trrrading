@@ -21,11 +21,12 @@ class Advisor:
         instrument,
         length=10,
         extra_trade=False,
-        extra_data=True,
+        extra_data=False,
         interval=None,
+        **params,
     ):
         strategy_class = all_strategies[strategy]
-        self.strategy = strategy_class(interval=interval, length=length)
+        self.strategy = strategy_class(interval=interval, length=length, **params)
         self.instrument = instrument
         self.state = None
         self.strategy_name = strategy
@@ -46,9 +47,10 @@ class Advisor:
     @property
     def info(self):
         return (
-            f"symbol={self.instrument:<9}  "
-            f"strategy={self.strategy_name}  "
-            f"length={self.strategy.length:<4}  "
+            f"{self.instrument:<9}  "
+            f"{self.strategy_name}  "
+            f"length={self.strategy.length}  "
+            f"padding={self.strategy.padding}  "
             f"extra_data={self.use_extra_data:<1}  "
             f"extra_trade={self.trade_in_extra_hours:<1}  "
         )

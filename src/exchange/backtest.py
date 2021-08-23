@@ -3,17 +3,14 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from termcolor import cprint
 from exchange import BaseExchange
-from exchange.data_types import BidAsk, Trade
+from exchange.data_types import BidAsk, Trade, Margin, Fee
 from storage.ib import load_many
 
 
 class BacktestExchange(BaseExchange):
     backtest = True
-
-    margin_rule = {
-        "short": 1,
-        "long": 1,
-    }
+    margin = Margin()
+    fee = Fee(fixed_rate=0.002)
 
     def __init__(self, advisors: list, **kwargs):
         super().__init__(advisors)
@@ -22,7 +19,6 @@ class BacktestExchange(BaseExchange):
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=60))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
-        self.fee_rate = Decimal("0.001")
         self.symbols = list(set([a.instrument for a in self.advisors]))
         self.all_data = pd.DataFrame()
         self.dt_last = None
@@ -93,7 +89,7 @@ class BacktestExchange(BaseExchange):
             if amount < 0:
                 self.trade("buy", abs(amount), symbol, self.dt_last)
 
-    def trade(self, side: str, amount: Decimal, symbol: str, dt: datetime):
+    def trade(self, side: str, amount: Decimal, symbol, dt: datetime, tr_price=None):
         """
         Создать ордер на бирже, скорректировать позицию.
 
@@ -113,7 +109,13 @@ class BacktestExchange(BaseExchange):
             cprint(" SKIP TRADE: No price data ", "red", attrs=["reverse"])
             return None, None
 
-        self.cash -= self.fee_rate * amount
+        # Trigger price — цена, на которой принято решение о сделке.
+        # Используется для подсчета slippage.
+        if not tr_price:
+            tr_price = Decimal(self.get_price(symbol, "mid"))
+
+        fee = self.fee.for_amount(float(amount))
+        self.cash -= Decimal(fee)
 
         if side == "sell":
             amount = -amount
@@ -151,12 +153,16 @@ class BacktestExchange(BaseExchange):
                 "price": av_price,
             }
 
+        slippage = abs(float(tr_price) - float(price)) * float(start_amount)
+
         # Событие «успешное завершение сделки»
         payload = {
             "side": side,
             "amount": start_amount,
             "price": price,
             "profit": trade_profit,
+            "slippage": slippage,
+            "fee": fee,
         }
         self.on_event("after_trade", dt, symbol, payload)
 
@@ -169,6 +175,6 @@ class BacktestExchange(BaseExchange):
         """
         total_value = self.cash
         for symbol, position in self.positions.items():
-            mid = Decimal(self.get_price(symbol, "mid")) - self.fee_rate
+            mid = Decimal(self.get_price(symbol, "mid"))
             total_value += position["amount"] * (mid - position["price"])
         return total_value

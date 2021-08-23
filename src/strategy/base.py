@@ -5,6 +5,7 @@ class BaseStrategy:
     def __init__(self, **params):
         super().__init__()
         self.length = params.pop("length")
+        self.params = params
         self.data = []
         self.historical = []
         self.on_start()

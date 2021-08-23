@@ -13,6 +13,8 @@ class TradeStats:
                 "side": payload["side"],
                 "amount": payload["amount"],
                 "price": float(payload["price"]),
+                "slippage": float(payload["slippage"]),
+                "fee": float(payload["fee"]),
                 "profit": float(payload["profit"]) if payload["profit"] else None,
             }
         )
