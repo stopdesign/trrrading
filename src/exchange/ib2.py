@@ -12,7 +12,7 @@ from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
 from exchange import BaseExchange
 from exchange.mixin import Healthcheck
-from exchange.data_types import BidAsk, Trade, Bar
+from exchange.data_types import BidAsk, Trade, Bar, Margin, Fee
 from ib_insync.ticker import TickerUpdateEvent  # noqa
 
 
@@ -34,10 +34,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     rel_price_cap = 0.005  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
 
-    margin_rule = {
-        "short": 0.3,
-        "long": 0.25,
-    }
+    margin = Margin(long=0.25, short=0.3)
+    fee = Fee(fixed_price=1)
 
     def __init__(self, advisors: list, **kwargs):
         super().__init__(advisors)
@@ -81,7 +79,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash_initial = self._net_value
         self.cash = self.cash_initial
-        self.fee_rate = Decimal("0.02")
         self.symbols = list(set([a.instrument for a in self.advisors]))
         self.all_data = pd.DataFrame()
         self.dt_last = None
@@ -511,7 +508,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 contract.last_bar = bar_dt
                 await asyncio.sleep(0)
 
-    def trade(self, side, amount, symbol, dt):
+    def trade(self, side, amount, symbol, dt, tr_price):
         """
         Открыть позицию/ордер на бирже.
         """
@@ -581,6 +578,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             "amount": amount,
             "price": price,
             "profit": None,
+            "slippage": 0,  # TODO
+            "fee": 0,  # TODO
         }
         self.on_event("after_trade", dt, symbol, payload)
 
@@ -626,6 +625,3 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             }
         self.positions = positions
         return self.positions
-
-    def get_margin_level(self, short=False):
-        return 0.3 if short else 0.25
