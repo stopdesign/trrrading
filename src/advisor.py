@@ -106,7 +106,8 @@ class Advisor:
             return Signal.PASS
         diff = dt - self.last_bar_dt
         t0 = self.schedule.get(dt.date())[0]
-        if self.is_main_session(dt) and diff > timedelta(seconds=150) and dt != t0:
+        dt_min = dt.replace(second=0, microsecond=0)
+        if self.is_main_session(dt) and diff > timedelta(seconds=150) and dt_min != t0:
             # Старый бар допустим, если это первый бар основной сессии.
             # Вне основной сессии непрерывность не проверяется.
             cprint(
