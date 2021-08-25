@@ -116,18 +116,19 @@ path.highlight {
 }
 
 path.deposit {
-    stroke: #6796a2;
+    stroke: #94ddef;
     fill: #94ddef;
     stroke-width: 0;
 }
 path.drawdown {
-    stroke: #cb816a;
-    fill: #ffc2b0;
-    stroke-width: 0;
+    stroke: #fff;
+    fill: #f9c0b0;
+    stroke-width: 1;
 }
 path.load {
-    stroke: none;
-    fill: #ccc;
+    fill: none;
+    stroke: #666;
+    stroke-width: 1;
 }
 
 path.zero {
@@ -148,16 +149,15 @@ path.difference {
 .main-grid .domain,
 .macd-grid .domain {
     stroke: #000;
-    stroke-opacity: 0.5;
-    stroke-width: 0.5;
+    stroke-width: 1;
 }
 .main-grid .tick line {
-    stroke: #999;
+    stroke: #666;
     stroke-dasharray: 3 10;
-    stroke-width: 0.5;
+    stroke-width: 0.75;
 }
 .macd-grid .tick line {
-    stroke: #666;
+    stroke: #999;
     stroke-dasharray: 1 3;
     stroke-width: 0.5;
 }
@@ -205,3 +205,8 @@ path.difference {
     stroke: #cdeac8;
 }
 
+
+rect.selection {
+    stroke: none;
+    fill-opacity: 0.2;
+}
