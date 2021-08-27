@@ -53,17 +53,18 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.ib.disconnectedEvent += self.on_disconnect
         self.ib.pendingTickersEvent += self.market_stream_event
         self.ib.errorEvent += self.on_ib_error
-        self.ib.positionEvent += self.on_ib_position_event
         self.ib.accountValueEvent += self.on_ib_value_event
-        self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
-        self.ib.timeoutEvent += lambda *args: cprint(f"on timeout: {args}", "yellow")
+        # self.ib.positionEvent += self.on_ib_position_event
+        # self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
+        self.ib.timeoutEvent += lambda *args: cprint(f"on timeout: {args}", "red")
 
         self.ib_params = {
             "host": "127.0.0.1",
             "port": 4001,  # 7497
-            "clientId": 1,
+            "clientId": 0,
             "timeout": 10,
         }
+        # При clientId > 0 positionEvent приходят только для позиций бота
 
         self._real_margin = 0
         self._net_value = 0
@@ -86,12 +87,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     async def on_ib_value_event(self, event):
         if event.tag == "NetLiquidation":
             self._net_value = Decimal(event.value)
-            self._net_value_dt = datetime.utcnow().replace(microsecond=0)
-            cprint(
-                f"NET VALUE UPDATED: {self._net_value_dt}, "
-                f"{self._net_value}",
-                "blue"
-            )
+            dt = datetime.utcnow().replace(microsecond=0)
+            if dt != self._net_value_dt:
+                cprint(f"{self._net_value_dt}: net value, {self._net_value}", "blue")
+            self._net_value_dt = dt
         if event.tag == "MaintMarginReq":
             self._real_margin = Decimal(event.value)
 
@@ -559,17 +558,15 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         mid_price = self.get_price(symbol, "mid")
         lmt_price = self.get_limit_price(mid_price, side)
 
-        # order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
+        order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
 
         # Midprice orders are not supported outside of regular trading hours
-        order = ib.Order(
-            orderType="MIDPRICE",
-            action=side.upper(),
-            totalQuantity=amount,
-            lmtPrice=lmt_price
-        )
-
-        self.check_margin(contract, order)
+        # order = ib.Order(
+        #     orderType="MIDPRICE",
+        #     action=side.upper(),
+        #     totalQuantity=amount,
+        #     lmtPrice=lmt_price
+        # )
 
         # Размещаю ордер
         trade = self.ib.placeOrder(contract, order)
@@ -604,15 +601,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         dt = datetime.utcnow().replace(microsecond=0)
         sec = (dt - start_dt).total_seconds()
         color = "red"
+        commission = "—"
         if trade.orderStatus.status == "Filled":
             color = "green"
+            com_raw = sum(f.commissionReport.commission for f in trade.fills)
+            commission = f"{com_raw:0.2f}"
         txt = (
             f" TRADE: {side} {symbol} {amount} — "
             f"{trade.orderStatus.status}, "
             f"{trade.orderStatus.avgFillPrice:0.2f}, "
             f"sig: {tr_price:0.2f}, "
             f"mid: {mid_price:0.2f}, "
-            f"time: {sec:0.0f} sec"
+            f"fee: {commission}, "
+            f"time: {sec:0.1f} sec"
         )
         cprint(txt, color=color, attrs=["reverse"])
         send_telegram(txt)
@@ -644,18 +645,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             lmt_price += lmt_price * self.rel_price_cap
         lmt_price = float(Decimal(lmt_price).quantize(self.price_precision))
         return lmt_price
-
-    def check_margin(self, contract, order):
-        what_if = self.ib.whatIfOrder(contract, order)
-        margin_after = max(
-            float(what_if.initMarginAfter), float(what_if.maintMarginAfter)
-        )
-        cprint(
-            f"commission: [{float(what_if.minCommission):0.2f}, "
-            f"{float(what_if.maxCommission):0.2f}]\n"
-            f"margin_after: {margin_after:0.2f}",
-            "white",
-        )
 
     @property
     def net_value(self):
