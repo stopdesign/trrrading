@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
-from termcolor import colored, cprint
+from termcolor import colored
 
 
 def interval_dt(interval):
@@ -15,6 +15,7 @@ def parse_quote(quote):
 
 
 DT_ZERO = datetime(1970, 1, 1)
+DT_ZERO_UTC = datetime(1970, 1, 1).astimezone(timezone.utc)
 
 
 def log_trade(

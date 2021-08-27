@@ -163,6 +163,7 @@ class BacktestExchange(BaseExchange):
             "profit": trade_profit,
             "slippage": slippage,
             "fee": fee,
+            "net_value": self.net_value,
         }
         self.on_event("after_trade", dt, symbol, payload)
 

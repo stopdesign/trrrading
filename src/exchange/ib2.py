@@ -14,6 +14,7 @@ from exchange import BaseExchange
 from exchange.mixin import Healthcheck
 from exchange.data_types import BidAsk, Trade, Bar, Margin, Fee
 from ib_insync.ticker import TickerUpdateEvent  # noqa
+from util import DT_ZERO
 
 
 # https://interactivebrokers.github.io/tws-api/tick_types.html
@@ -52,25 +53,21 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.ib.disconnectedEvent += self.on_disconnect
         self.ib.pendingTickersEvent += self.market_stream_event
         self.ib.errorEvent += self.on_ib_error
-        self.ib.timeoutEvent += lambda *args: cprint(f"timeoutEvent: {args}", "yellow")
+        self.ib.positionEvent += self.on_ib_position_event
+        self.ib.accountValueEvent += self.on_ib_value_event
+        self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
+        self.ib.timeoutEvent += lambda *args: cprint(f"on timeout: {args}", "yellow")
 
         self.ib_params = {
             "host": "127.0.0.1",
             "port": 4001,  # 7497
-            "clientId": 0,
+            "clientId": 1,
             "timeout": 10,
         }
 
+        self._real_margin = 0
         self._net_value = 0
-
-        # # Синхронно добыть параметры аккаунта:
-        # # баланс депозита, позиции, стоимость активов...
-        # try:
-        #     self.ib.connect(**self.ib_params)
-        #     future = asyncio.wait({self.initial_update()})
-        #     done, _ = self.loop.run_until_complete(future)
-        # finally:
-        #     self.ib.disconnect()
+        self._net_value_dt = DT_ZERO
 
         self.quotes = {}
         self.dt_start = kwargs.pop("dt_start")
@@ -85,6 +82,45 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         self.finished = False
         self.subscribed = False
+
+    async def on_ib_value_event(self, event):
+        if event.tag == "NetLiquidation":
+            self._net_value = Decimal(event.value)
+            self._net_value_dt = datetime.utcnow().replace(microsecond=0)
+            cprint(
+                f"NET VALUE UPDATED: {self._net_value_dt}, "
+                f"{self._net_value}",
+                "blue"
+            )
+        if event.tag == "MaintMarginReq":
+            self._real_margin = Decimal(event.value)
+
+    async def on_ib_position_event(self, position):
+        """
+        Меняется размер позиции.
+        Или раз в три минуты по расписанию, вроде бы.
+        """
+        dt = datetime.utcnow().replace(microsecond=0)
+        cprint(
+            f"{dt}: on position, "
+            f"{position.contract.symbol}, "
+            f"{position.position}, "
+            f"{position.avgCost} ",
+            "yellow"
+        )
+
+    async def on_ib_update_portfolio(self, item):
+        """
+        Меняется размер или стоимость позиции в портфолио.
+        """
+        dt = datetime.utcnow().replace(microsecond=0)
+        cprint(
+            f"{dt}: on update portfolio, "
+            f"{item.contract.symbol}, "
+            f"{item.position}, "
+            f"{item.marketValue} ",
+            "yellow"
+        )
 
     def on_connect(self):
         cprint(f"ON_CONNECT, finished: {self.finished}", "green")
@@ -133,8 +169,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         if self.finished:
             return
         dt = datetime.utcnow().replace(microsecond=0)
+
         if trading_session(dt) != "main":
             return
+
+        # Возраст Net Value
+        if dt - self._net_value_dt > timedelta(minutes=5):
+            cprint(
+                f"HEALTH: old net_value: "
+                f"{self._net_value_dt}, {self._net_value}",
+                color="red",
+                attrs=["reverse"],
+            )
+
         # txt = colored(f" healthcheck ", "white", attrs=["reverse"])
         # print(f"{dt}: {txt}")
         for contract in self.contracts:
@@ -151,17 +198,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 cprint(mkt_age, "cyan")
 
     async def initial_update(self):
-        summary = await self.ib.accountSummaryAsync()
-        values = [v for v in summary if v.tag == "NetLiquidation"]
-
-        self._net_value = Decimal(values[0].value)
-
         # Открытые ордеры
         if ot := self.ib.openTrades():
             print()
             for t in ot:
-                symbol = f"{t.contract.symbol}.{t.contract.exchange}"
-                symbol = symbol.replace(".SMART", ".ARCA")
+                symbol = f"{t.contract.symbol}.{t.contract.primaryExchange}"
                 cprint(
                     f"{symbol:<12}"
                     f"{t.order.action:<5}"
@@ -178,10 +219,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         return df.sort_values(["date", "ticker", "data_type"])
 
     def load_current_data(self, contract, data_type):
-
-        # Узнать баланс депозита и всё такое
-        future = asyncio.wait({self.initial_update()})
-        done, _ = self.loop.run_until_complete(future)
 
         bars = self.ib.reqHistoricalData(
             contract,
@@ -246,8 +283,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             df1 = df1[(df1["barCount"] != "0") | (df1["rth"] == "1")]
             df = df1
 
-        symbol = f"{contract.symbol}.{contract.exchange}"
-        symbol = symbol.replace(".SMART", ".ARCA")
+        symbol = f"{contract.symbol}.{contract.primaryExchange}"
         df["ticker"] = symbol
         df["data_type"] = data_type
 
@@ -377,7 +413,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                     cprint("reConnect ConnectionRefusedError", "red")
             if self.ib.isConnected():
                 await self.ib_resubscribe()
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
 
     def create_on_bar_handler(self, contract):
         async def func(a, b):
@@ -523,7 +559,15 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         mid_price = self.get_price(symbol, "mid")
         lmt_price = self.get_limit_price(mid_price, side)
 
-        order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
+        # order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
+
+        # Midprice orders are not supported outside of regular trading hours
+        order = ib.Order(
+            orderType="MIDPRICE",
+            action=side.upper(),
+            totalQuantity=amount,
+            lmtPrice=lmt_price
+        )
 
         self.check_margin(contract, order)
 
@@ -559,18 +603,24 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         dt = datetime.utcnow().replace(microsecond=0)
         sec = (dt - start_dt).total_seconds()
+        color = "red"
+        if trade.orderStatus.status == "Filled":
+            color = "green"
         txt = (
-            f" DONE TRADE: "
+            f" TRADE: {side} {symbol} {amount} — "
             f"{trade.orderStatus.status}, "
             f"{trade.orderStatus.avgFillPrice:0.2f}, "
+            f"sig: {tr_price:0.2f}, "
             f"mid: {mid_price:0.2f}, "
-            f"amnt: {amount:0.0f}, "
-            f"time: {sec:0.0f} "
+            f"time: {sec:0.0f} sec"
         )
-        cprint(txt, color="green", attrs=["reverse"])
+        cprint(txt, color=color, attrs=["reverse"])
         send_telegram(txt)
 
         price = trade.orderStatus.avgFillPrice
+
+        # Подождать, пока просрутся события
+        sleep(1)
 
         # Событие «успешное завершение сделки»
         payload = {
@@ -580,6 +630,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             "profit": None,
             "slippage": 0,  # TODO
             "fee": 0,  # TODO
+            "net_value": self.net_value,
         }
         self.on_event("after_trade", dt, symbol, payload)
 
@@ -615,13 +666,18 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         return self._net_value
 
+    @property
+    def real_margin(self):
+        return self._real_margin
+
     def get_positions(self):
         positions = {}
         for p in self.ib.positions():
-            symbol = f"{p.contract.symbol}.{p.contract.exchange}"
+            ex = p.contract.primaryExchange or p.contract.exchange
+            symbol = f"{p.contract.symbol}.{ex}"
             positions[symbol] = {
                 "amount": Decimal(p.position),
-                "price": Decimal(p.avgCost),
+                "price": Decimal(str(p.avgCost)),
             }
         self.positions = positions
         return self.positions

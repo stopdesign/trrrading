@@ -16,6 +16,7 @@ class TradeStats:
                 "slippage": float(payload["slippage"]),
                 "fee": float(payload["fee"]),
                 "profit": float(payload["profit"]) if payload["profit"] else None,
+                "net_value": float(payload["net_value"]),
             }
         )
 

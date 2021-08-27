@@ -319,4 +319,6 @@ class Trader:
             )
         cprint(f"Net Value:   {self.exchange.net_value:9.2f}", "blue")
         cprint(f"Margin Used: {total_margin_used:9.2f}", "blue")
+        if hasattr(self.exchange, "real_margin"):
+            cprint(f"Margin Real: {self.exchange.real_margin:9.2f}", "blue")
         print()
