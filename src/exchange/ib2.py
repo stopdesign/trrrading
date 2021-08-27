@@ -558,15 +558,15 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         mid_price = self.get_price(symbol, "mid")
         lmt_price = self.get_limit_price(mid_price, side)
 
-        order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
+        # order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
 
         # Midprice orders are not supported outside of regular trading hours
-        # order = ib.Order(
-        #     orderType="MIDPRICE",
-        #     action=side.upper(),
-        #     totalQuantity=amount,
-        #     lmtPrice=lmt_price
-        # )
+        order = ib.Order(
+            orderType="MIDPRICE",
+            action=side.upper(),
+            totalQuantity=amount,
+            lmtPrice=lmt_price
+        )
 
         # Размещаю ордер
         trade = self.ib.placeOrder(contract, order)
