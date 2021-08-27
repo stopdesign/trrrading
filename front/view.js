@@ -1,6 +1,6 @@
 const margin = {top: 0, right: 50, bottom: 0, left: 50};
-const width = 1650 - margin.left - margin.right;
-const height = 690 - margin.top - margin.bottom;
+const width = 1300 - margin.left - margin.right;
+const height = 700 - margin.top - margin.bottom;
 
 const parseDate = d3.timeParse('%Y-%m-%d %H:%M:%S');
 const dateFormat = d3.timeFormat('%Y-%m-%d %H:%M');
@@ -75,7 +75,7 @@ const timeAnnotation = techan.plot.axisannotation()
 const crosshair = techan.plot.crosshair()
   .xScale(x)
   .yScale(y2)
-  .xAnnotation(timeAnnotation)
+  .xAnnotation([timeAnnotation])
   .yAnnotation([tickAnnotation, profitAnnotation])
 
 
@@ -114,7 +114,7 @@ const yDepositAxis = d3.axisRight(yDepositScale)
   .tickFormat((v, i) => v);
 
 
-const svg = d3.select("body").append("svg")
+const svg = d3.select("#chart").append("svg")
   .attr("width", dim.width)
   .attr("height", dim.height)
   .append("g")
@@ -144,6 +144,7 @@ svg.append("clipPath")
 
 svg.append("g")
   .attr("class", "main-grid")
+  .attr("clip-path", "url(#clip)");
 
 const macd_svg = svg.append("g")
   .attr("class", "macd")
@@ -228,13 +229,7 @@ async function run() {
     volume: 10
   }));
 
-  trades = trades.map((d) => ({
-    date: parseDate(d.date),
-    side: d.side,
-    type: d.side,
-    price: d.price,
-    profit: d.profit,
-  }));
+  trades = trades.map((d) => { d.date = parseDate(d.date); d.type = d.side; return d });
 
   let max_value = 0
   stats = stats.map(d => {
@@ -545,7 +540,7 @@ function draw(data, trades, stats, indicator) {
   const defaultSelection = [x.range()[0], x.range()[1]];
 
   const zoom = d3.zoom()
-    .scaleExtent([1, 8])
+    .scaleExtent([1, 16])
     .translateExtent(extent)
     .extent(extent)
     .on("zoom", zoomed);
@@ -564,6 +559,32 @@ function draw(data, trades, stats, indicator) {
     }
   }
 
+  // Список всех сделок
+  const $trades = document.querySelector('#trades');
+  trades.slice(0).reverse().map(trade => {
+    const dt = trade.date.toISOString().slice(0, 16).replace("T", " ");
+    const $trade = document.createElement('tr');
+    let profit = "0";
+    if (trade.profit > 0) {
+      $trade.classList.add('gain');
+      profit = "+" + parseFloat(trade.profit).toFixed();
+    }
+    if (trade.profit < 0) {
+      $trade.classList.add('loss');
+      profit = "−" + Math.abs(parseFloat(trade.profit)).toFixed();
+    }
+    $trade.classList.add('trade');
+
+    const net_value = parseFloat(trade.net_value).toFixed();
+
+    $trade.innerHTML += `<td class="date">${dt}</td>\n`;
+    $trade.innerHTML += `<td class="side">${trade.side} ${trade.symbol}</td>\n`;
+    $trade.innerHTML += `<td class="profit">${profit}</td>\n`;
+    $trade.innerHTML += `<td class="net_value">${net_value}</td>\n`;
+
+    $trades.appendChild($trade);
+  });
+
   svg.call(brush)
     .call(brush.move, defaultSelection);
 
@@ -578,7 +599,7 @@ function draw(data, trades, stats, indicator) {
     // Двигаю brush в положение, соответствующее зуму
     svg.call(brush.move, x2.range().map(t.invertX, t));
 
-    // console.log("zoom", [0, width].map(x.invert, x))
+    console.log("zoom", [0, width].map(x.invert, x));
 
     svg.select('g.candlestick')
       .datum(data)
@@ -613,7 +634,7 @@ function draw(data, trades, stats, indicator) {
       .selectAll("circle")
         .attr("cx", d => x(d.date));
 
-    let din_cnt = x() / 100;
+    let din_cnt = (x.range()[1] - x.range()[0]) / 70;
     let xAxisZ = d3.axisBottom(x).ticks(din_cnt);
 
     svg.select("g.main-grid")
