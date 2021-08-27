@@ -646,18 +646,16 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         return lmt_price
 
     def check_margin(self, contract, order):
-        pass
-        # what_if = self.ib.whatIfOrder(contract, order)
-        # margin_after = max(
-        #     float(what_if.initMarginAfter), float(what_if.maintMarginAfter)
-        # )
-        # cprint(
-        #     f"commissionCurrency: {what_if.commissionCurrency}\n"
-        #     f"minCommission: {float(what_if.minCommission):0.2f}\n"
-        #     f"maxCommission: {float(what_if.maxCommission):0.2f}\n"
-        #     f"margin_after: {margin_after:0.2f}",
-        #     "white",
-        # )
+        what_if = self.ib.whatIfOrder(contract, order)
+        margin_after = max(
+            float(what_if.initMarginAfter), float(what_if.maintMarginAfter)
+        )
+        cprint(
+            f"commission: [{float(what_if.minCommission):0.2f}, "
+            f"{float(what_if.maxCommission):0.2f}]\n"
+            f"margin_after: {margin_after:0.2f}",
+            "white",
+        )
 
     @property
     def net_value(self):
