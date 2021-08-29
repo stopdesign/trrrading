@@ -2,11 +2,10 @@ aiohttp==3.7.4.post0
 PyJWT==2.1.0
 requests==2.25.1
 termcolor==1.1.0
-pandas_market_calendars
-aioconsole
+pandas_market_calendars==2.0
+aiogram==2.14.3
 TA-Lib==0.4.20
 talipp==1.6.0
-orjson
-scipy
+scipy==1.7.0
 ib-insync==0.9.66
-pytz
+pytz==2021.1

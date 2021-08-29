@@ -4,4 +4,3 @@ jupyter
 quantstats
 pyfolio
 plotly
-aiohttp

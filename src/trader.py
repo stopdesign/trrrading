@@ -1,22 +1,28 @@
 import json  # noqa
 import logging
 import math
+import asyncio
+import re
 from collections import defaultdict
 from typing import List
 import pandas as pd
 from datetime import datetime
 from decimal import Decimal
-from termcolor import cprint
+from termcolor import cprint, colored
 from advisor import Advisor
 from exchange import BaseExchange, all_exchanges
 from notifications.alert import send_telegram  # noqa
 from stats import AccountStats, TradeStats
 from strategy import Signal
-from settings import CAN_SHORT
+from settings import CAN_SHORT, TELEGRAM_TOKEN, TELEGRAM_USERNAME
 from util import log_trade, log_trade_result
-
+from aiogram import Bot, Dispatcher
+from aiogram.types import ParseMode
+from aiogram.utils.markdown import hpre
 
 log = logging.getLogger("trader")
+
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 
 class Trader:
@@ -46,22 +52,55 @@ class Trader:
         self.account_stats = AccountStats(self, self.exchange)
         self.trade_stats = TradeStats()
 
+        self.bot = None
+
+    async def tg_kill(self, message):
+        if message.chat.username != TELEGRAM_USERNAME:
+            return
+        cprint(f"STOP", color="red")
+        await message.answer(f"STOP")
+        await asyncio.sleep(2)  # чтобы сообщение отметилось как обработанное
+        self.exchange.stop_listen()
+        cprint(f"stop done", color="red")
+
+    async def tg_info(self, message):
+        if message.chat.username != TELEGRAM_USERNAME:
+            return
+        txt = self.portfolio_info()
+        txt = ansi_escape.sub("", txt)
+        txt = txt.replace("Net Value", "\nNet Value")
+        await message.answer(f"{hpre(txt)}", parse_mode=ParseMode.HTML)
+
+    def start_tg_bot(self):
+        cprint("Start bot", "white")
+        self.bot = Dispatcher(Bot(token=TELEGRAM_TOKEN))
+        self.bot.register_message_handler(self.tg_kill, commands=['kill'])
+        self.bot.register_message_handler(self.tg_info, commands=['info'])
+        # self.dp.register_errors_handler
+        asyncio.get_event_loop().create_task(self.bot.start_polling())
+
     def warm_up(self):
         cprint(f"\nHistorical data from {self.exchange.dt_from}", "white")
         self.exchange.warm_up()
-        self.portfolio_info()
+        print("\n" + self.portfolio_info() + "\n")
 
     def start(self):
+        if TELEGRAM_TOKEN:
+            self.start_tg_bot()
+
         cprint("Start stream", "white")
         self.account_stats.snapshot()
         self.exchange.start_listen()
-        self.stop()
+
+        cprint("Stop stream", "white")
+        self.account_stats.snapshot()
+        print("\n" + self.portfolio_info() + "\n")
+
+        if self.bot:
+            self.bot.stop_polling()
 
     def stop(self):
-        cprint("Stop stream", "white")
         self.exchange.stop_listen()
-        self.account_stats.snapshot()
-        self.portfolio_info()
 
     def final_info(self):
         df = pd.DataFrame(self.get_advisors()[0].strategy.data)
@@ -117,7 +156,6 @@ class Trader:
 
         if event in ["minute"]:
             pass
-            # self.portfolio_info()
 
         if event == "after_trade":
             self.trade_stats.on_trade(dt, symbol, payload)
@@ -125,7 +163,7 @@ class Trader:
             self.account_stats.update_pl()
             log_trade_result(log, self.exchange, payload)
             if dt >= self.dt_start and not self.exchange.backtest:
-                self.portfolio_info()
+                print("\n" + self.portfolio_info() + "\n")
 
         return True
 
@@ -292,33 +330,28 @@ class Trader:
                     "amount": 0,
                 }
         total_margin_used = 0
-        print()
+        txt = ""
         for symbol, position in sorted(positions.items()):
             if position["advised"] is not None:
                 advised = "{0:+0.0f}".format(position["advised"])
-                m_used = self.get_margin_for_position(symbol, position)
-                total_margin_used += m_used
-                m_used = "{0:0.0f}".format(m_used)
+                total_margin_used += self.get_margin_for_position(symbol, position)
                 cur = float(position['amount'])
                 adv = float(position['advised'])
                 rel_diff = abs(cur - adv) / abs(cur + adv)
                 color = "cyan" if rel_diff < 0.05 else "yellow"
             else:
                 advised = "-"
-                m_used = "-"
                 color = "white"
-            price = position.get('price') or 0
             amount = position.get('amount') or 0
-            cprint(
+            txt += colored(
                 f"{symbol:<12}"
-                f"{price:10.2f}"
-                f"{amount:+10.0f}"
-                f"{m_used:>10}"
-                f"{advised:>10}",
+                f"{amount:+7.0f}"
+                f"{advised:>7}"
+                "\n",
                 color,
             )
-        cprint(f"Net Value:   {self.exchange.net_value:9.2f}", "blue")
-        cprint(f"Margin Used: {total_margin_used:9.2f}", "blue")
+        txt += colored(f"Net Value:   {self.exchange.net_value:6.0f}\n", "blue")
+        txt += colored(f"Margin Used: {total_margin_used:6.0f}\n", "blue")
         if hasattr(self.exchange, "real_margin"):
-            cprint(f"Margin Real: {self.exchange.real_margin:9.2f}", "blue")
-        print()
+            txt += colored(f"Margin Real: {self.exchange.real_margin:6.0f}\n", "blue")
+        return txt.strip()
