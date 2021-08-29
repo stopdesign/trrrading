@@ -89,7 +89,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             self._net_value = Decimal(event.value)
             dt = datetime.utcnow().replace(microsecond=0)
             if dt != self._net_value_dt:
-                cprint(f"{self._net_value_dt}: net value, {self._net_value}", "blue")
+                cprint(f"{dt}: net value, {self._net_value}", "blue")
             self._net_value_dt = dt
         if event.tag == "MaintMarginReq":
             self._real_margin = Decimal(event.value)
@@ -412,7 +412,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                     cprint("reConnect ConnectionRefusedError", "red")
             if self.ib.isConnected():
                 await self.ib_resubscribe()
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
 
     def create_on_bar_handler(self, contract):
         async def func(a, b):
