@@ -51,6 +51,7 @@ class Advisor:
             f"{self.strategy_name}  "
             f"length={self.strategy.length}  "
             f"padding={self.strategy.padding}  "
+            f"count_bars={self.strategy.count_bars:<1}  "
             f"extra_data={self.use_extra_data:<1}  "
             f"extra_trade={self.trade_in_extra_hours:<1}  "
         )

@@ -107,7 +107,7 @@ class Trader:
         if not df.empty:
             df.set_index("date", inplace=True)
             df = df[df.index > self.dt_start]
-            df = df.resample("3H").apply({
+            df = df.resample("15T").apply({
                 "open": "first",
                 "high": "max",
                 "low": "min",
@@ -337,7 +337,7 @@ class Trader:
                 total_margin_used += self.get_margin_for_position(symbol, position)
                 cur = float(position['amount'])
                 adv = float(position['advised'])
-                rel_diff = abs(cur - adv) / abs(cur + adv)
+                rel_diff = abs(cur - adv) / abs(cur + adv) if cur + adv else 0
                 color = "cyan" if rel_diff < 0.05 else "yellow"
             else:
                 advised = "-"
