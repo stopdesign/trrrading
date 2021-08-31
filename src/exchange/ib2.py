@@ -72,7 +72,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         self.quotes = {}
         self.dt_start = kwargs.pop("dt_start")
-        dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=10))
+        dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
         self.dt_from = dt_from.replace(hour=0, minute=0, second=0)
         # self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash_initial = self._net_value
