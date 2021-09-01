@@ -47,3 +47,6 @@ yarn-error.log*
 /front/.npm/
 /tmp/
 /src/front/static/
+
+# local config
+/src/*.yaml
