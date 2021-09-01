@@ -28,7 +28,7 @@ ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 class Trader:
     exchange: BaseExchange = None
 
-    def __init__(self, exchange, advisors, target_margin, dt_start=None):
+    def __init__(self, exchange, instruments, target_margin, dt_start=None):
         cprint(f"Init trader at {datetime.utcnow().replace(microsecond=0)}", "white")
 
         self.can_short = CAN_SHORT
@@ -37,16 +37,22 @@ class Trader:
         # Значение used margin, к которому должен стремиться депозит
         self.target_margin = target_margin
 
-        self.advisors = advisors
+        self.instruments = instruments
+        self.advisors = []
+
+        for instrument, config in instruments.items():
+            for advisor in config["advisors"]:
+                advisor["instrument"] = instrument
+                self.advisors.append(Advisor(**advisor))
 
         exchange_class = all_exchanges[exchange]
 
         if exchange_class.backtest:
-            self.dt_start = datetime.strptime(dt_start, "%Y-%m-%d")
+            self.dt_start = datetime(dt_start.year, dt_start.month, dt_start.day)
         else:
             self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
 
-        self.exchange = exchange_class(advisors, dt_start=self.dt_start)
+        self.exchange = exchange_class(instruments, dt_start=self.dt_start)
         self.exchange.on_event = self.on_event
 
         self.account_stats = AccountStats(self, self.exchange)
@@ -191,7 +197,9 @@ class Trader:
                 return None
             state += advisor.state.numeric / len(self.advisors)
 
-        if not self.can_short:
+        # Шорт должен быть разрешен на уровне бота и инструмента
+        instrument_config = self.instruments.get(instrument, {})
+        if not (self.can_short and instrument_config.get("short")):
             state = max(0, state)
 
         try:

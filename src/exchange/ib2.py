@@ -12,7 +12,7 @@ from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
 from exchange import BaseExchange
 from exchange.mixin import Healthcheck
-from exchange.data_types import BidAsk, Trade, Bar, Margin, Fee
+from data_types import BidAsk, Trade, Bar, Margin, Fee
 from ib_insync.ticker import TickerUpdateEvent  # noqa
 from util import DT_ZERO
 
@@ -38,8 +38,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     margin = Margin(long=0.25, short=0.3)
     fee = Fee(fixed_price=1)
 
-    def __init__(self, advisors: list, **kwargs):
-        super().__init__(advisors)
+    def __init__(self, instruments: dict, **kwargs):
+        super().__init__(instruments)
 
         self.contracts = []
 
@@ -77,7 +77,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash_initial = self._net_value
         self.cash = self.cash_initial
-        self.symbols = list(set([a.instrument for a in self.advisors]))
         self.all_data = pd.DataFrame()
         self.dt_last = None
 

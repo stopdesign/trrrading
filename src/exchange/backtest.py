@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from termcolor import cprint
 from exchange import BaseExchange
-from exchange.data_types import BidAsk, Trade, Margin, Fee
+from data_types import BidAsk, Trade, Margin, Fee
 from storage.ib import load_many
 
 
@@ -12,14 +12,12 @@ class BacktestExchange(BaseExchange):
     margin = Margin()
     fee = Fee(fixed_rate=0.002)
 
-    def __init__(self, advisors: list, **kwargs):
-        super().__init__(advisors)
-        self.quotes = {}
+    def __init__(self, instruments: dict, **kwargs):
+        super().__init__(instruments)
         self.dt_start = kwargs.pop("dt_start")
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=60))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
-        self.symbols = list(set([a.instrument for a in self.advisors]))
         self.all_data = pd.DataFrame()
         self.dt_last = None
 

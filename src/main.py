@@ -1,9 +1,9 @@
 import os
 import sys
+import yaml
 import logging
 from datetime import datetime
 from termcolor import cprint
-from advisor import Advisor
 from trader import Trader
 
 
@@ -37,18 +37,15 @@ l3.propagate = False
 def main() -> None:
     dt = datetime.now()
 
-    advisors = [
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=350, padding=0.1),
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=450, padding=0.05),
-        Advisor("ChannelBreakout3", "COPX.ARCA", length=550, padding=0.01),
+    instruments = yaml.full_load(open("instruments.yaml"))
+    broker = yaml.full_load(open("broker.yaml"))
 
-        Advisor("ChannelBreakout3", "URA.ARCA", length=450, padding=0.01),
-        Advisor("ChannelBreakout3", "URA.ARCA", length=520, padding=0.01),
-        Advisor("ChannelBreakout3", "URA.ARCA", length=600, padding=0.02),
-    ]
-
-    trader = Trader("BacktestExchange", advisors, 10000, "2021-01-01")
-    # trader = Trader("IBFakeExchange", advisors, 10000)
+    trader = Trader(
+        exchange=broker["driver"],
+        instruments=instruments,
+        target_margin=broker.get("target_margin"),
+        dt_start=broker.get("dt_start"),
+    )
 
     try:
         trader.warm_up()

@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from exchange.data_types import Margin, Fee
+from data_types import Margin, Fee
 
 
 class BaseExchange:
@@ -16,8 +16,9 @@ class BaseExchange:
     margin = Margin()
     fee = Fee()
 
-    def __init__(self, advisors: list, **kwargs):
-        self.advisors = advisors
+    def __init__(self, instruments: dict, **kwargs):
+        self.instruments = instruments
+        self.symbols = self.instruments.keys()
         self.on_event = None
         self.quotes = {}
         self.positions = {}
