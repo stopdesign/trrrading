@@ -1,6 +1,7 @@
 import os
 import sys
 import yaml
+import click
 import logging
 from datetime import datetime
 from termcolor import cprint
@@ -34,11 +35,17 @@ l3.addHandler(h)
 l3.propagate = False
 
 
-def main() -> None:
+@click.command()
+@click.argument("broker")
+@click.argument("instruments")
+def main(**kwargs) -> None:
     dt = datetime.now()
 
-    instruments = yaml.full_load(open("instruments.yaml"))
-    broker = yaml.full_load(open("broker.yaml"))
+    broker_conf_path = kwargs.get("broker")
+    instruments_conf_path = kwargs.get("instruments")
+
+    broker = yaml.full_load(open(broker_conf_path))
+    instruments = yaml.full_load(open(instruments_conf_path))
 
     trader = Trader(
         exchange=broker["driver"],

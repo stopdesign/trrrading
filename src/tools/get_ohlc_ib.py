@@ -235,9 +235,14 @@ def daterange(start_date, end_date):
 if __name__ == "__main__":
     dt = datetime.now()
 
-    start_dt = datetime(2021, 8, 1, tzinfo=timezone.utc).date()
+    start_dt = datetime(2018, 12, 1, tzinfo=timezone.utc).date()
 
-    contract = Stock("COPX", "SMART", "USD", primaryExchange="ARCA")
+#    contract = Stock("COPX", "SMART", "USD", primaryExchange="ARCA")
+#    contract = Stock("URA", "SMART", "USD", primaryExchange="ARCA")
+#    contract = Stock("FCX", "SMART", "USD", primaryExchange="NYSE")
+
+    contract = Stock("SPY", "SMART", "USD", primaryExchange="ARCA")
+
     # contract = Future("HG", exchange="NYMEX", localSymbol="HGU1")
     # contract = Future("ES", exchange="GLOBEX", localSymbol="ESU1")
 

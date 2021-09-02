@@ -15,7 +15,7 @@ class BacktestExchange(BaseExchange):
     def __init__(self, instruments: dict, **kwargs):
         super().__init__(instruments)
         self.dt_start = kwargs.pop("dt_start")
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=60))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.all_data = pd.DataFrame()
