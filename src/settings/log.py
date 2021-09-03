@@ -80,3 +80,6 @@ root.addHandler(h_file)
 logging.getLogger("ib_insync.ib").setLevel(logging.WARNING)
 logging.getLogger("ib_insync.client").setLevel(logging.WARNING)
 logging.getLogger("ib_insync.wrapper").setLevel(logging.WARNING)
+
+logging.getLogger("aiogram").setLevel(logging.INFO)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
