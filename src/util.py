@@ -30,7 +30,7 @@ def log_trade(
     total_sell,
     total_buy,
 ):
-    symbol_str = colored(f"{symbol:>10}", attrs=["bold"])
+    symbol_str = colored(f"{symbol:<10}", attrs=["bold"])
     color, sign = "cyan", "*** "
     if amount_diff > 0:
         color, sign = "green", "+"
@@ -39,7 +39,7 @@ def log_trade(
     action = colored(f"{(sign + str(abs(amount_diff))):>5}", color)
     rel_slippage = abs(trigger_price - market_price) / market_price * 100
     txt = (
-        f"\n{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}   "
+        f"{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}   "
         f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}   "
         f"sig: {total_buy:+5.0f} {-total_sell:+5.0f}   "
         f"do: {action}    𝝙: {rel_slippage:0.2f}%"
@@ -62,5 +62,5 @@ def log_trade_result(log, exchange, payload):
     rel_profit = (profit / exchange.cash) * 100
     txt += colored(f"Σ {exchange.cash:0.0f}  ", "grey")
     txt += colored(f"{profit:+0.2f}  ", color)
-    txt += colored(f"{rel_profit:+0.2f}%  ", color)
+    txt += colored(f"{rel_profit:+0.2f}%", color)
     log.info(txt)

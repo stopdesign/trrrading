@@ -1,4 +1,4 @@
-
+from .log import *
 from .settings import *
 try:
     from .settings_local import *

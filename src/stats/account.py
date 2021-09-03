@@ -114,6 +114,6 @@ class AccountStats:
             f"Fee: {-self.fee:+11.0f}\n"
             f"GP: {self.gross_profit:+12.0f}\n"
             f"GL: {self.gross_loss:+12.0f}\n"
-            f"Slippage: {rel_slpg:5.1f}%"
+            f"Slippage: {rel_slpg:5.1f}%\n"
         )
         cprint(txt)

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import nest_asyncio
 import pandas as pd
 import ib_insync as ib
@@ -6,7 +7,7 @@ import pandas_market_calendars as mcal
 from time import sleep
 from datetime import datetime, timedelta
 from decimal import Decimal
-from termcolor import cprint
+from termcolor import cprint, colored
 from notifications.alert import send_telegram
 from nyse_cal import time_to_next_session, trading_session
 from storage.ib import load_many
@@ -15,6 +16,8 @@ from exchange.mixin import Healthcheck
 from data_types import BidAsk, Trade, Bar, Margin, Fee
 from ib_insync.ticker import TickerUpdateEvent  # noqa
 from util import DT_ZERO
+
+log = logging.getLogger("broker")
 
 
 # https://interactivebrokers.github.io/tws-api/tick_types.html
@@ -56,7 +59,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.ib.accountValueEvent += self.on_ib_value_event
         # self.ib.positionEvent += self.on_ib_position_event
         # self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
-        self.ib.timeoutEvent += lambda *args: cprint(f"on timeout: {args}", "red")
+        self.ib.timeoutEvent += lambda *args: log.error(f"Timeout: {args}")
 
         self.ib_params = {
             "host": "127.0.0.1",
@@ -84,14 +87,15 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.subscribed = False
 
     async def on_ib_value_event(self, event):
+        if event.tag == "MaintMarginReq":
+            self._real_margin = Decimal(event.value)
         if event.tag == "NetLiquidation":
             self._net_value = Decimal(event.value)
             dt = datetime.utcnow().replace(microsecond=0)
             if dt != self._net_value_dt:
-                cprint(f"{dt}: net value, {self._net_value}", "blue")
+                txt = f"Net value: {self._net_value}, margin: {self._real_margin}"
+                log.info(colored(txt, "blue"))
             self._net_value_dt = dt
-        if event.tag == "MaintMarginReq":
-            self._real_margin = Decimal(event.value)
 
     async def on_ib_position_event(self, position):
         """
@@ -104,7 +108,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             f"{position.contract.symbol}, "
             f"{position.position}, "
             f"{position.avgCost} ",
-            "yellow"
+            "yellow",
         )
 
     async def on_ib_update_portfolio(self, item):
@@ -117,34 +121,34 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             f"{item.contract.symbol}, "
             f"{item.position}, "
             f"{item.marketValue} ",
-            "yellow"
+            "yellow",
         )
 
     def on_connect(self):
-        cprint(f"ON_CONNECT, finished: {self.finished}", "green")
-        send_telegram("ON_CONNECT")
+        log.warning(colored(f"ON_CONNECT", "green"))
+        send_telegram("Connected")
 
     def on_disconnect(self):
-        cprint(f"ON_DISCONNECT, finished: {self.finished}", "red")
-        send_telegram("ON_DISCONNECT")
+        log.warning(colored(f"ON_DISCONNECT", "red"))
+        send_telegram("Disconnected")
         self.subscribed = False
         for contract in self.contracts:
             if contract.mkt_ticker:
-                cprint(f"Failed MKT: {contract.symbol}", "red")
+                log.warning(f"Failed MKT: {contract.symbol}")
                 contract.mkt_ticker = None
             if contract.bars is not None:
-                cprint(f"Failed BAR: {contract.symbol}", "red")
+                log.warning(f"Failed BAR: {contract.symbol}")
                 contract.bars = None
 
     async def on_ib_error(self, req_id, error_code, error_string, contract):
         if req_id and req_id < 0 and "connection is OK" not in error_string:
-            cprint(f"ON_ERROR: {req_id} {error_code} {error_string} {contract}", "red")
+            log.error(f"ON_ERROR: {req_id} {error_code} {error_string} {contract}")
 
         # Отвалилась market data, MKT
         # No market data during competing live session.
         if error_code == 10197:
             for contract in self.contracts:
-                cprint(f"Failed MKT: {contract.symbol}", "red")
+                log.warning(f"Failed MKT: {contract.symbol}")
                 contract.mkt_ticker = None
             self.subscribed = False
 
@@ -157,7 +161,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 n -= 1
                 for contract in self.contracts:
                     if contract.bars is not None and contract.bars.reqId == req_id:
-                        cprint(f"Failed BAR: {contract.symbol}", "red")
+                        log.warning(f"Failed BAR: {contract.symbol}")
                         contract.bars = None
                         n = 0
                         break
@@ -173,43 +177,43 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         # Возраст Net Value
         if dt - self._net_value_dt > timedelta(minutes=5):
-            cprint(
-                f"HEALTH: old net_value: "
-                f"{self._net_value_dt}, {self._net_value}",
-                color="red",
-                attrs=["reverse"],
+            log.error(
+                colored(
+                    f"HEALTH: old net_value: "
+                    f"{self._net_value_dt}, {self._net_value}",
+                    color="red",
+                    attrs=["reverse"],
+                )
             )
 
-        # txt = colored(f" healthcheck ", "white", attrs=["reverse"])
-        # print(f"{dt}: {txt}")
         for contract in self.contracts:
             if contract.last_bar:
-                bar_age = (datetime.utcnow() - contract.last_bar)
+                bar_age = datetime.utcnow() - contract.last_bar
                 if bar_age > timedelta(minutes=3):
-                    cprint(
-                        f"HEALTH: old bar {contract.symbol}, {bar_age}",
-                        color="red",
-                        attrs=["reverse"],
+                    log.error(
+                        colored(
+                            f"HEALTH: old bar {contract.symbol}, {bar_age}",
+                            color="red",
+                            attrs=["reverse"],
+                        )
                     )
             if contract.last_mkt:
-                mkt_age = (datetime.utcnow() - contract.last_mkt)
-                cprint(mkt_age, "cyan")
+                mkt_age = datetime.utcnow() - contract.last_mkt
+                log.warning(f"mkt_age: {mkt_age}")
 
     async def initial_update(self):
         # Открытые ордеры
         if ot := self.ib.openTrades():
-            print()
+            log.error("Open orders on bot init")
             for t in ot:
                 symbol = f"{t.contract.symbol}.{t.contract.primaryExchange}"
-                cprint(
+                log.error(
                     f"{symbol:<12}"
                     f"{t.order.action:<5}"
                     f"{t.order.totalQuantity:>8} "
                     f"{t.orderStatus.status:<10}"
-                    f"{t.order.outsideRth}",
-                    "red",
+                    f"{t.order.outsideRth}"
                 )
-            print()
 
     def load_historical_data(self):
         df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
@@ -264,10 +268,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # В режиме BID_ASK данные имеют другой смысл. Переименовать.
         if data_type == "BIDASK":
             df.rename(columns=BID_ASK_COLUMNS_MAP, inplace=True)
-            df = df.resample('1T').pad()
+            df = df.resample("1T").pad()
 
         if data_type == "TRADES":
-            df1 = df.resample('1T').pad()
+            df1 = df.resample("1T").pad()
 
             df1["volume"] = df["volume"]
             df1["volume"].fillna("0", inplace=True)
@@ -276,7 +280,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             df1["barCount"].fillna("0", inplace=True)
 
             cols = ["open", "high", "low", "average"]
-            df1.loc[df1['volume'] == "0", cols] = df1["close"]
+            df1.loc[df1["volume"] == "0", cols] = df1["close"]
 
             df1 = df1[(df1["barCount"] != "0") | (df1["rth"] == "1")]
             df = df1
@@ -307,7 +311,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # Загрузить исторические данные из файлов
         self.all_data = self.load_historical_data()
 
-        cprint("Real-time data", "white")
+        log.info(colored("Real-time data", "white"))
         current_data = []
         try:
             self.ib.connect(**self.ib_params)
@@ -339,7 +343,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             query = f"ticker == '{symbol}' & data_type == 'TRADES'"
             last_dt = stream.query(query).tail(1).index.item().to_pydatetime()
             contract.last_bar = last_dt
-            cprint(f"{symbol:<10} last bar: {contract.last_bar}", color="white")
+            txt = f"{symbol:<10} last bar: {contract.last_bar}"
+            log.info(colored(txt, color="white"))
 
         # TODO: вынести отсюда куда-нибудь еще
         # Для каждого символа последние данные
@@ -348,11 +353,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         for symbol in self.symbols:
             quote_dt = self.quotes.get(symbol, {}).get("dt")
             if not quote_dt or now - quote_dt > timedelta(minutes=5):
-                cprint(
-                    f" {symbol} outdated quotes: {quote_dt} ",
-                    color="red",
-                    attrs=["reverse"],
-                )
+                txt = f" {symbol} outdated quotes: {quote_dt} "
+                log.error(colored(txt, color="red", attrs=["reverse"]))
 
     def start_listen(self):
         # Healthcheck в отдельном потоке
@@ -391,24 +393,20 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             time_to_next = time_to_next_session(dt, main=True)
             wake_up_in_advance = 300
             if time_to_next > timedelta(seconds=wake_up_in_advance):
-                print()
-                cprint(
-                    f" Next trading session in {time_to_next}, sleep. ",
-                    color="red",
-                    attrs=["reverse"],
-                )
+                txt = f" Next trading session in {time_to_next}, sleep "
+                log.warning(colored(txt, color="red", attrs=["reverse"]))
                 await asyncio.sleep(time_to_next.total_seconds() - wake_up_in_advance)
                 continue
 
             if not self.ib.isConnected():
                 self.subscribed = False
                 try:
-                    cprint(" reConnect ", "blue", attrs=["reverse"])
+                    log.info("Reconnect")
                     await self.ib.connectAsync(**self.ib_params)
                 except asyncio.exceptions.TimeoutError:
-                    cprint("reConnect TimeoutError", "red")
+                    log.error("Reconnect TimeoutError")
                 except ConnectionRefusedError:
-                    cprint("reConnect ConnectionRefusedError", "red")
+                    log.error("Reconnect ConnectionRefusedError")
             if self.ib.isConnected():
                 await self.ib_resubscribe()
             await asyncio.sleep(5)
@@ -427,9 +425,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             for contract in self.contracts:
                 # Тиковые данные
                 if contract.mkt_ticker:
-                    cprint(f"Cancel MKT: {contract.symbol}", "red")
+                    log.warning(colored(f"Cancel MKT: {contract.symbol}", "red"))
                     self.ib.cancelMktData(contract)
-                cprint(f"Subscribe MKT: {contract.symbol}", "blue")
+                log.info(colored(f"Subscribe MKT: {contract.symbol}", "blue"))
                 contract.mkt_ticker = self.ib.reqMktData(contract)
             self.subscribed = True
 
@@ -441,14 +439,14 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                     continue
                 bar_age = dt - contract.last_bar
                 if bar_age > timedelta(minutes=3):
-                    cprint(f"Cancel BAR (old): {contract.symbol}", "red")
+                    log.warning(colored(f"Cancel BAR (old): {contract.symbol}", "red"))
                     self.ib.cancelHistoricalData(contract.bars)
                     contract.bars = None
                 await asyncio.sleep(0)
 
         for contract in self.contracts:
             if contract.bars is None:
-                cprint(f"Subscribe BAR: {contract.symbol}", "blue")
+                log.info(colored(f"Subscribe BAR: {contract.symbol}", "blue"))
                 # Подписка на интервальные данные.
                 # С настройкой "2 D" ответ никогда не должен быть пустым
                 contract.bars = self.ib.reqHistoricalData(
@@ -494,7 +492,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 try:
                     self.on_event("quote", dt, symbol, payload)
                 except Exception as e:
-                    cprint(f"Exception [on_event quote]: {e}", "red")
+                    log.error(f"Exception [on_event quote]: {e}")
             await asyncio.sleep(0)
 
         # Обработать trades
@@ -507,7 +505,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                     try:
                         self.on_event("trade", dt, symbol, payload)
                     except Exception as e:
-                        cprint(f"Exception [on_event trade]: {e}", "red")
+                        log.error(f"Exception [on_event trade]: {e}")
                 await asyncio.sleep(0)
             await asyncio.sleep(0)
 
@@ -547,7 +545,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         Открыть позицию/ордер на бирже.
         """
         txt = f" TRADE: {side} {symbol} {amount} "
-        cprint(txt, color="cyan", attrs=["reverse"])
+        log.warning(colored(txt, color="cyan", attrs=["reverse"]))
         send_telegram(txt)
 
         sym, pe = symbol.split(".")
@@ -564,7 +562,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             orderType="MIDPRICE",
             action=side.upper(),
             totalQuantity=amount,
-            lmtPrice=lmt_price
+            lmtPrice=lmt_price,
         )
 
         # Размещаю ордер
@@ -582,18 +580,20 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 if dt - last_dt > timedelta(seconds=1):
                     rem = float(amount) - trade.orderStatus.filled
                     sec = (dt - start_dt).total_seconds()
-                    cprint(
-                        f"{dt}  {symbol}  {trade.orderStatus.status:<13} "
-                        f"{rem:5.0f} to fill, "
-                        f"{sec:0.0f} sec",
-                        "white"
+                    log.info(
+                        colored(
+                            f"{dt}  {symbol}  {trade.orderStatus.status:<13} "
+                            f"{rem:5.0f} to fill, "
+                            f"{sec:0.0f} sec",
+                            "white",
+                        )
                     )
                     last_dt = dt
             prev_state = cur_state
             try:
                 self.ib.waitOnUpdate(timeout=30)
             except KeyboardInterrupt:
-                cprint("waitOnUpdate has been interrupted", "red")
+                log.error("waitOnUpdate has been interrupted")
                 self.stop_listen()
                 return None, None
 
@@ -614,7 +614,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             f"fee: {commission}, "
             f"time: {sec:0.1f} sec"
         )
-        cprint(txt, color=color, attrs=["reverse"])
+        log.warning(colored(txt, color=color, attrs=["reverse"]))
         send_telegram(txt)
 
         price = trade.orderStatus.avgFillPrice

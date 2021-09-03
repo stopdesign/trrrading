@@ -28,9 +28,11 @@ ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 class Trader:
     exchange: BaseExchange = None
 
-    def __init__(self, exchange, instruments, target_margin, dt_start=None):
-        cprint(f"Init trader at {datetime.utcnow().replace(microsecond=0)}", "white")
+    def __init__(self, driver, instruments, target_margin, base_dir, dt_start=None):
+        txt = f"Init trader at {datetime.utcnow().replace(microsecond=0)} UTC"
+        log.info(colored(txt, "white"))
 
+        self.base_dir = base_dir
         self.can_short = CAN_SHORT
         self.reinvest_profit = False
 
@@ -45,7 +47,7 @@ class Trader:
                 advisor["instrument"] = instrument
                 self.advisors.append(Advisor(**advisor))
 
-        exchange_class = all_exchanges[exchange]
+        exchange_class = all_exchanges[driver]
 
         if exchange_class.backtest:
             self.dt_start = datetime(dt_start.year, dt_start.month, dt_start.day)
@@ -63,13 +65,13 @@ class Trader:
     async def tg_kill(self, message):
         if message.chat.username != TELEGRAM_USERNAME:
             return
-        cprint(f"STOP", color="red")
+        log.warning(f"TG kill signal")
         await message.answer(f"STOP")
         await asyncio.sleep(2)  # чтобы сообщение отметилось как обработанное
         self.exchange.stop_listen()
-        cprint(f"stop done", color="red")
 
     async def tg_info(self, message):
+        log.info(f"TG info")
         if message.chat.username != TELEGRAM_USERNAME:
             return
         txt = self.portfolio_info()
@@ -78,7 +80,7 @@ class Trader:
         await message.answer(f"{hpre(txt)}", parse_mode=ParseMode.HTML)
 
     def start_tg_bot(self):
-        cprint("Start bot", "white")
+        log.info("Start bot")
         self.bot = Dispatcher(Bot(token=TELEGRAM_TOKEN))
         self.bot.register_message_handler(self.tg_kill, commands=['kill'])
         self.bot.register_message_handler(self.tg_info, commands=['info'])
@@ -86,21 +88,21 @@ class Trader:
         asyncio.get_event_loop().create_task(self.bot.start_polling())
 
     def warm_up(self):
-        cprint(f"\nHistorical data from {self.exchange.dt_from}", "white")
+        log.info(colored(f"Historical data from {self.exchange.dt_from}", "white"))
         self.exchange.warm_up()
-        print("\n" + self.portfolio_info() + "\n")
+        log.info(self.portfolio_info())
 
     def start(self):
         if TELEGRAM_TOKEN:
             self.start_tg_bot()
 
-        cprint("Start stream", "white")
+        log.info("Start stream")
         self.account_stats.snapshot()
         self.exchange.start_listen()
 
-        cprint("Stop stream", "white")
+        log.info("Stop stream")
         self.account_stats.snapshot()
-        print("\n" + self.portfolio_info() + "\n")
+        log.info(self.portfolio_info())
 
         if self.bot:
             self.bot.stop_polling()
@@ -127,9 +129,9 @@ class Trader:
                 "dn": "min",
             })
             df.dropna(inplace=True)
-            df.to_csv("../front/data.csv", float_format="%.2f")
-        self.trade_stats.to_csv("../front/trades.csv")
-        self.account_stats.to_csv("../front/stats.csv")
+            df.to_csv(f"{self.base_dir}/../front/data.csv", float_format="%.2f")
+        self.trade_stats.to_csv(f"{self.base_dir}/../front/trades.csv")
+        self.account_stats.to_csv(f"{self.base_dir}/../front/stats.csv")
         if self.exchange.backtest:
             self.settings_info()
             self.advisors_info()
@@ -139,8 +141,8 @@ class Trader:
         """
         В стриме биржи возникло новое событие.
         """
-        # if dt >= self.dt_start and event not in ["minute"]:
-        #     cprint(f"{dt}: EVENT {event} {symbol} {payload}", "white")
+        if dt >= self.dt_start and not self.exchange.backtest:
+            log.debug(f"EVENT {event} {symbol} {payload}")
 
         if event == "bar":
             for advisor in self.get_advisors(symbol):
@@ -169,7 +171,7 @@ class Trader:
             self.account_stats.update_pl()
             log_trade_result(log, self.exchange, payload)
             if dt >= self.dt_start and not self.exchange.backtest:
-                print("\n" + self.portfolio_info() + "\n")
+                log.info(self.portfolio_info())
 
         return True
 
@@ -193,7 +195,7 @@ class Trader:
         state = 0
         for advisor in self.get_advisors(instrument):
             if not advisor.state:
-                cprint(f"NO STATE: {advisor}", "red")
+                log.warning(f"NO STATE: {advisor}")
                 return None
             state += advisor.state.numeric / len(self.advisors)
 
@@ -228,7 +230,8 @@ class Trader:
         """
         Тут торговля, если стратегия дала сигнал.
         """
-        # cprint(f"\nON_TRADE {dt} {symbol} {tr_price}", "cyan")
+        if not self.exchange.backtest:
+            log.debug(f"ON_TRADE {dt} {symbol} {tr_price}")
 
         # Протестировать новую цену (не добавляя в историю).
         # Получить сигналы во все стороны.
@@ -245,7 +248,8 @@ class Trader:
 
         # Всё равно ничего сделать нельзя
         if not (diff and (can_buy or can_sell)):
-            # cprint(f"SKIP: diff: {diff}, buy: {can_buy}, sell: {can_sell}")
+            if not self.exchange.backtest:
+                log.debug(f"SKIP: diff: {diff}, buy: {can_buy}, sell: {can_sell}")
             return
 
         # Посчитать, куда нужно торговать.
@@ -305,12 +309,14 @@ class Trader:
         return total_buy, total_sell
 
     def advisors_info(self):
+        # Только для тестов
         cprint(" ADVISORS ", attrs=["reverse"])
         print()
         for advisor in self.get_advisors():
             print(advisor.info)
 
     def settings_info(self):
+        # Только для тестов
         cprint(" SETTINGS ", attrs=["reverse"])
         txt = (
             f"Target margin: {self.target_margin}\n"
@@ -338,7 +344,7 @@ class Trader:
                     "amount": 0,
                 }
         total_margin_used = 0
-        txt = ""
+        txt = "Positions:\n"
         for symbol, position in sorted(positions.items()):
             if position["advised"] is not None:
                 advised = "{0:+0.0f}".format(position["advised"])
@@ -358,8 +364,8 @@ class Trader:
                 "\n",
                 color,
             )
-        txt += colored(f"Net Value:   {self.exchange.net_value:6.0f}\n", "blue")
-        txt += colored(f"Margin Used: {total_margin_used:6.0f}\n", "blue")
+        txt += colored(f"Net Value:   {self.exchange.net_value:6.0f}", "blue") + "\n"
+        txt += colored(f"Margin Used: {total_margin_used:6.0f}", "blue") + "\n"
         if hasattr(self.exchange, "real_margin"):
-            txt += colored(f"Margin Real: {self.exchange.real_margin:6.0f}\n", "blue")
+            txt += colored(f"Margin Real: {self.exchange.real_margin:6.0f}", "blue")
         return txt.strip()
