@@ -250,6 +250,17 @@ async function run() {
 }
 
 
+// Линии индикатора
+const indicator_bottom = d3.line()
+  .x(d => x(d.date))
+  .y(d => y(+d.up))
+  .defined(d => +d.up && (d.trend === undefined || d.trend > 0));
+const indicator_top = d3.line()
+  .x(d => x(d.date))
+  .y(d => y(+d.dn))
+  .defined(d => +d.dn && (d.trend === undefined || d.trend < 0))
+
+
 function draw(data, trades, stats, indicator) {
   let accessor = ohlc.accessor();
 
@@ -264,55 +275,11 @@ function draw(data, trades, stats, indicator) {
 
   x.domain(data.map(accessor.d));
   let dom = techan.scale.plot.ohlc(data, accessor).domain();
-  y.domain([dom[0] - (dom[1] - dom[0]) / 5, dom[1]]).nice();
+  y.domain([dom[0], dom[1]]);
 
   const max_pl = d3.max(trades, (d) => Math.abs(+d.profit));
-  y_profit.domain([0, Math.max(160, max_pl)]).nice();
+  y_profit.domain([0, Math.max(100, max_pl) * 1.1]).nice();
 
-  // // Вертикальные линии дней
-  svg.select("g.main-grid")
-    .call(
-      d3.axisTop(x)
-        .ticks(0)
-        .tickFormat("")
-    )
-  // svg.select("g.main-grid")
-  //   .call(
-  //     d3.axisTop(x)
-  //       .ticks(width)
-  //       .tickSize(-height)
-  //       .tickFormat("")
-  //   )
-  // // Отметить начало новой недели
-  // const ticks = d3.selectAll(".tick line");
-  // const ticks_data = ticks.data();
-  // ticks.attr("class", function(d, i){
-  //   const prev_d = ticks_data[i > 0 ? i - 1 : 0];
-  //   if (d.getDay() < prev_d.getDay() || d.getMonth() !== prev_d.getMonth()) {
-  //     return "new_week";
-  //   }
-  // });
-
-
-  svg.select('g.candlestick')
-    .datum(data)
-    // .call(ohlc)
-    .call(candlestick)
-
-  // Net Value gridlines
-  svg.select("g.macd-grid")
-    .call(
-      d3.axisLeft(y).ticks(0).tickSize(-width).tickFormat("")
-    )
-
-  // ATR TRAILING STOP
-  // const atrtrailingstopData = techan.indicator.atrtrailingstop()(data);
-  // svg.selectAll("g.atrtrailingstop").datum(atrtrailingstopData).call(atrtrailingstop);
-
-  // СТРЕЛКИ
-  svg.select("g.tradearrow")
-    .datum(trades)
-    .call(tradearrow);
 
   // ФОН ГРИБОЧКОВ
   svg.select('g.profit_bg')
@@ -399,7 +366,6 @@ function draw(data, trades, stats, indicator) {
       .y0(yDrawdownScale(0))
       .y1(d => yDrawdownScale(d.drawdown))
     );
-
   yLoadScale.domain([0, d3.max(stats, d => +d.load)]).nice();
   macd_svg.append("path")
     .datum(stats)
@@ -409,54 +375,35 @@ function draw(data, trades, stats, indicator) {
       .x(d => x(d.date))
       .y(d => yLoadScale(d.load))
     );
+  // Margin usage gridlines
   macd_svg.append("g")
     .attr("class", "macd-grid")
     .call(d3.axisLeft(yLoadScale).ticks(5).tickSize(-width).tickFormat(""))
+  // Net Value gridlines
+  macd_svg.append("g")
+    .attr("class", "macd-grid")
+    .call(
+      d3.axisLeft(yDepositScale).ticks(5).tickSize(-width).tickFormat("")
+    )
 
 
+  // the_line = svg.select('g.candlestick').append("path")
+  //   .datum(data)
+  //   .attr("class", "line")
+  //   .attr("d", line);
 
   // Индикаторы на графике цены
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-bottom line")
-  //   .attr("clip-path", "url(#clip)")
-  //   .attr("d", d3.line()
-  //     .x(d => x(d.date))
-  //     .y(d => y(+d.up))
-  //     .defined(d => +d.up && (d.trend === undefined || d.trend > 0))
-  //   );
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-bottom line")
+    .attr("d", indicator_bottom);
 
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-mid line")
-  //   .attr("clip-path", "url(#clip)")
-  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(+d.trend + 21)));
-
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-top line")
-  //   .attr("clip-path", "url(#clip)")
-  //   .attr("d", d3.line()
-  //     .x(d => x(d.date))
-  //     .y(d => y(+d.dn))
-  //     .defined(d => +d.dn && (d.trend === undefined || d.trend < 0))
-  //   );
-
-  // // Линии стоп-сигнала
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-stop line")
-  //   .attr("clip-path", "url(#clip)")
-  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.min_win)));
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-stop line")
-  //   .attr("clip-path", "url(#clip)")
-  //   .attr("d", d3.line().x(d => x(d.date)).y(d => y(d.max_win)));
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-top line")
+    .attr("d", indicator_top);
 
 
-
-  //
   // // Индикатор, разрешающий торговлю
   // // масштаб
   // // atr, sar, kama
@@ -519,13 +466,6 @@ function draw(data, trades, stats, indicator) {
   //   .call(
   //     d3.axisLeft(yDrawdownScale).ticks(5).tickSize(-width).tickFormat("")
   //   )
-
-  // Net Value gridlines
-  macd_svg.append("g")
-    .attr("class", "macd-grid")
-    .call(
-      d3.axisLeft(yDepositScale).ticks(5).tickSize(-width).tickFormat("")
-    )
 
   svg.selectAll("g.x.axis").call(xAxis);
   svg.selectAll("g.x-axis-2").call(xAxis1);
@@ -595,16 +535,26 @@ function draw(data, trades, stats, indicator) {
 
     // Зум оси X
     x.range([0, width].map(d => t.applyX(d)));
+    // y.range([0, height].map(d => t.applyY(d)));
+
+    // x.domain(data.map(accessor.d));
+    let dom = techan.scale.plot.ohlc(data, accessor).domain();
+    // console.log(dom);
+    // console.log(x.domain()[0]);
+    // y.domain([dom[0] - (dom[1] - dom[0]) / 15, dom[1]]).nice();
+
 
     // Двигаю brush в положение, соответствующее зуму
     svg.call(brush.move, x2.range().map(t.invertX, t));
 
-    console.log("zoom", [0, width].map(x.invert, x));
+    // Новый диапазон
+    let new_range = [0, width].map(x.invert, x);
+    console.log("zoom", new_range[0], y_profit(1));
 
     svg.select('g.candlestick')
       .datum(data)
-      // .call(ohlc)
-      .call(candlestick)
+      .call(ohlc)
+      // .call(candlestick)
 
     // СТРЕЛКИ
     svg.select("g.tradearrow")
@@ -633,6 +583,12 @@ function draw(data, trades, stats, indicator) {
     svg.select('g.profit_line_cap')
       .selectAll("circle")
         .attr("cx", d => x(d.date));
+
+    // Линии индикатора
+    svg.select("g.candlestick .indicator-bottom")
+      .attr("d", indicator_bottom);
+    svg.select("g.candlestick .indicator-top")
+      .attr("d", indicator_top);
 
     let din_cnt = (x.range()[1] - x.range()[0]) / 70;
     let xAxisZ = d3.axisBottom(x).ticks(din_cnt);
