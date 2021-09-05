@@ -12,20 +12,32 @@ table {
 
 #content {
     display: flex;
-    gap: 1rem;
     height: 100vh;
+    position: relative;
+}
+
+#logo {
+    background-image: url("favicon.png");
+    background-size: contain;
+    width: 30px;
+    height: 30px;
+    position: absolute;
+    top: 10px;
+    left: 15px;
 }
 
 #chart {
     -webkit-user-select: none;
     user-select: none;
+    flex-grow: 1;
+    overflow: hidden;
 }
 
 #trades {
     width: 100%;
 }
 #trades .trade {
-    font: 11px Menlo, monospace, sans-serif;
+    font: 12px Menlo, monospace, sans-serif;
     border-bottom: 1px solid #f0f0f0;
     color: #888;
 }
@@ -66,28 +78,74 @@ table {
 
 
 #sidebar {
-    flex-basis: 20rem;
-    flex-grow: 1;
-    border-left: 4px solid #eee;
+    height: 100vh;
+    flex-grow: 0;
+    flex-basis: 300px;
+    border-left: 4px solid #e5e5e5;
+}
+#sidebar .header {
+    background: #f5f5f5;
+    padding: 15px 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+#sidebar .header:first-child {
+    margin-top: 0;
 }
 #sidebar .container {
-    height: 100vh;
     overflow-y: scroll;
     min-width: 200px;
+    height: 70vh;
+}
+#sidebar .results {
+    padding: 20px;
+    color: #444;
 }
 
 #buttons {
-    padding: 8px 0 3px 0;
+    padding: 15px 0 5px 0;
     font: 12px "PT Sans", sans-serif;
-    margin-left: 50px;
+    margin-left: 60px;
     -webkit-user-select: none;
+    display: flex;
+    flex-direction: row;
 }
-#buttons span {
+#buttons .left {
+    flex-grow: 1;
+}
+#buttons .right {
+    flex-grow: 1;
+    text-align: right;
+    margin-right: 60px;
+}
+#buttons .left span {
+    font-size: 15px;
+    cursor: pointer;
+    margin-right: 20px;
+    display: inline-block;
+    letter-spacing: 0.5px;
+}
+#buttons .button.active {
+    border-bottom: 3px solid #59f;
+}
+#buttons .right span {
+    font-size: 13px;
     color: #0e5a8a;
     cursor: pointer;
     border-bottom: dashed 1px;
     padding: 2px 0 1px 0;
+    margin-left: 20px;
     display: inline-block;
+}
+#buttons .left .logo {
+    font-size: 18px;
+    font-style: italic;
+    font-weight: normal;
+    margin-left: -2px;
+    margin-right: 30px;
 }
 
 text {
@@ -153,16 +211,18 @@ path.candle.equal {
 }
 
 path.ohlc {
-    stroke: #000000;
+    stroke: #999999;
 }
 
 path.ohlc.up {
-    stroke: #50b1b1;
+    stroke: #299fae;
 }
 
 path.ohlc.down {
     stroke: #ff6b97;
 }
+
+
 
 
 rect.pane {
@@ -216,6 +276,12 @@ path.difference {
     opacity: 0.5;
 }
 
+.tick text {
+    font: 11px Menlo, monospace, sans-serif;
+    font-weight: lighter;
+    fill: #444;
+}
+
 .y-axis-dd .tick text {
     fill: #d00;
 }
@@ -265,22 +331,7 @@ path.difference {
 }
 
 
-.atrtrailingstop path {
-    fill: none;
-    stroke-width: 4;
-    stroke: #000000;
-}
-
-.atrtrailingstop path.down {
-    stroke: #f6d1d1;
-}
-
-.atrtrailingstop path.up {
-    stroke: #cdeac8;
-}
-
-
 rect.selection {
     stroke: none;
-    fill-opacity: 0.2;
+    fill-opacity: 0.15;
 }

@@ -111,25 +111,34 @@ class Trader:
         self.exchange.stop_listen()
 
     def final_info(self):
-        df = pd.DataFrame(self.get_advisors()[0].strategy.data)
-        if not df.empty:
-            df.set_index("date", inplace=True)
-            df = df[df.index > self.dt_start]
-            df = df.resample("15T").apply({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-                "average": "mean",
-                "barCount": "sum",
-                "rth": "first",
-                "ticker": "last",
-                "up": "max",
-                "dn": "min",
-            })
-            df.dropna(inplace=True)
-            df.to_csv(f"{self.base_dir}/../front/data.csv", float_format="%.2f")
+        dfs = []
+        file_name = f"{self.base_dir}/../front/data.csv"
+        for advisor in self.get_advisors():
+            df = pd.DataFrame(advisor.strategy.data)
+            if not df.empty:
+                df.set_index("date", inplace=True)
+                df = df[df.index > self.dt_start]
+                df = df.resample("1H").apply({
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                    "average": "mean",
+                    "barCount": "sum",
+                    "rth": "first",
+                    "ticker": "last",
+                    "up": "max",
+                    "dn": "min",
+                })
+                df.dropna(inplace=True)
+                dfs.append(df)
+        if dfs:
+            all_data = pd.concat(dfs)
+            all_data.sort_index(inplace=True)
+            all_data.to_csv(file_name, float_format="%.2f")
+        else:
+            open(file_name, "w").close()
         self.trade_stats.to_csv(f"{self.base_dir}/../front/trades.csv")
         self.account_stats.to_csv(f"{self.base_dir}/../front/stats.csv")
         if self.exchange.backtest:
