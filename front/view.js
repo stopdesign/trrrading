@@ -78,7 +78,7 @@ const crosshair = techan.plot.crosshair()
   .yScale(y)
   .xAnnotation([timeAnnotation])
   .yAnnotation([tickAnnotation, profitAnnotation])
-
+  // .on("move", function (coords) { console.log(coords) });
 
 const yLoadScale = d3.scaleLinear()
   .range([
@@ -194,7 +194,7 @@ svg.select('g.profit')
   .append("g")
   .attr("class", "profit_line_cap");
 
-svg.append('g')
+const crosshair_svg = svg.append('g')
   .attr("class", "crosshair")
   .call(crosshair)
 
@@ -382,6 +382,10 @@ function draw(data, trades, indicator) {
   const max_pl = d3.max(trades, (d) => Math.abs(+d.profit));
   y_profit.domain([0, Math.max(100, max_pl) * 1.05]).nice();
 
+  svg.select('g.candlestick')
+    .datum(data)
+    .call(ohlc)
+    // .call(candlestick)
 
   // ФОН ГРИБОЧКОВ
   svg.select('g.profit_bg')
@@ -548,7 +552,8 @@ function draw(data, trades, indicator) {
     .scaleExtent([1, 16])
     .translateExtent(extent)
     .extent(extent)
-    .on("zoom", zoomed);
+    .on("zoom", zoomed)
+    .on("start", function () { svg.select(".scope-crosshair").attr("display", "none") })
 
   const brush = d3.brushX()
     .extent([[0, dim.indicator.top], [width, dim.indicator.top + dim.indicator.height]])
@@ -607,30 +612,20 @@ function draw(data, trades, indicator) {
     // console.log(x.domain()[0]);
     // y.domain([dom[0] - (dom[1] - dom[0]) / 15, dom[1]]).nice();
 
-
     // Двигаю brush в положение, соответствующее зуму
     macd_brush.call(brush.move, x2.range().map(t.invertX, t));
+
+    crosshair_svg.select(".scope-crosshair").attr("display", "none");
 
     // Новый диапазон
     // let new_range = [0, width].map(x.invert, x);
     // console.log("zoom", new_range[0], y_profit(1));
 
     svg.select('g.candlestick')
-      .datum(data)
-      .call(ohlc)
-      // .call(candlestick)
+      .call(ohlc.refresh)
+      // .call(candlestick.refresh)
 
-    // СТРЕЛКИ
-    // svg.select("g.tradearrow")
-    //   .datum(trades)
-    //   .call(tradearrow)
-
-    // svg.select('g.tradearrow')
-    //   .selectAll("circle")
-    //   .attr("cx", d => {
-    //     return x(d.date) - x.band() * 1.25;
-    //   });
-
+    // Стрелки торгов
     svg.selectAll("g.tradearrow")
       .selectAll("path")
       .attr("d", arrowOrient);
