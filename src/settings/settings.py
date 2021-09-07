@@ -15,7 +15,8 @@ SHARED_KEY = "JPrfr4vxhQc7DkpEe4mG+HhzLlR1yIf1"
 ACCOUNT_ID = "HUYHUY.001"
 
 # Alerts
-TELEGRAM_TOKEN = "*****:*****"
+TELEGRAM_TOKEN = None
 TELEGRAM_CHANNEL_ID = "*****"
+TELEGRAM_USERNAME = ""
 
 BASE_DIR = pathlib.Path(__file__).parents[2].absolute()
