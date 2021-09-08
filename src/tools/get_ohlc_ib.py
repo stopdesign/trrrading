@@ -1,8 +1,9 @@
 """
-Получение исторических данных из IB, созранение в виде файлов.
+Получение исторических данных из IB, сохранение в виде файлов.
 """
 
 import os
+import click
 import pytz
 import pandas as pd
 import requests
@@ -21,6 +22,8 @@ BID_ASK_COLUMNS_MAP = {
     "low": "min_bid",
     "close": "av_ask",
 }
+
+dt_format = click.DateTime(formats=["%Y-%m-%d"])
 
 # Можно пробросить порт с удаленной машины:
 # ssh -L 4001:127.0.0.1:4001 root@51.15.62.103
@@ -117,7 +120,7 @@ def get_splits(ticker):
     return splits
 
 
-def download_and_save(contract, start=None, data_types=None):
+def download_and_save(contract, data_types=None, start=None, end=None):
     data_types = data_types or ["BID_ASK", "TRADES"]
 
     symbol = contract.symbol
@@ -132,7 +135,9 @@ def download_and_save(contract, start=None, data_types=None):
         return False
 
     start = start or datetime(2021, 1, 1, tzinfo=timezone.utc).date()
-    end = datetime.now(tz=timezone.utc).date() - timedelta(days=1)
+
+    yesterday = datetime.now(tz=timezone.utc).date() - timedelta(days=1)
+    end = min(end or yesterday, yesterday)
 
     start = max(start, first_day)
 
@@ -232,20 +237,35 @@ def daterange(start_date, end_date):
         yield start_date + timedelta(n)
 
 
-if __name__ == "__main__":
+@click.command()
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--start", type=dt_format)
+@click.option("--end", type=dt_format)
+def main(**kwargs):
     dt = datetime.now()
 
-    start_dt = datetime(2018, 12, 1, tzinfo=timezone.utc).date()
+    last_week = datetime.now() - timedelta(7)
+    dt_start = (kwargs.get("start") or last_week).date()
+    dt_end = (kwargs.get("end") or datetime.now()).date()
 
-#    contract = Stock("COPX", "SMART", "USD", primaryExchange="ARCA")
-#    contract = Stock("URA", "SMART", "USD", primaryExchange="ARCA")
-#    contract = Stock("FCX", "SMART", "USD", primaryExchange="NYSE")
+    # Stock("COPX", "SMART", "USD", primaryExchange="ARCA")
+    # Future("HG", exchange="NYMEX", localSymbol="HGU1")
+    # Future("ES", exchange="GLOBEX", localSymbol="ESU1")
 
-    contract = Stock("SPY", "SMART", "USD", primaryExchange="ARCA")
+    data_types = ["TRADES", "BID_ASK"]
 
-    # contract = Future("HG", exchange="NYMEX", localSymbol="HGU1")
-    # contract = Future("ES", exchange="GLOBEX", localSymbol="ESU1")
+    for stock in kwargs.get("symbols"):
+        if "." in stock:
+            symbol, pe = stock.split(".")
+        else:
+            symbol = stock
+            pe = "ARCA"
+        contract = Stock(symbol, "SMART", "USD", primaryExchange=pe)
+        download_and_save(contract, data_types, dt_start, dt_end)
+        print()
 
-    download_and_save(contract, start=start_dt, data_types=["TRADES", "BID_ASK"])
+    print(f"Done in {str(datetime.now() - dt)[:-7]}")
 
-    cprint(f"\nDone in {(datetime.now() - dt).total_seconds():0.2f} s", attrs=["bold"])
+
+if __name__ == "__main__":
+    main()
