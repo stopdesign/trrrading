@@ -10,16 +10,14 @@ from storage.ib import load_many
 class BacktestExchange(BaseExchange):
     backtest = True
     margin = Margin()
-    fee = Fee(fixed_rate=0.002)
+    fee = Fee(fixed_rate=0.003)
 
     def __init__(self, instruments: dict, **kwargs):
-        super().__init__(instruments)
-        self.dt_start = kwargs.pop("dt_start")
+        super().__init__(instruments, **kwargs)
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.all_data = pd.DataFrame()
-        self.dt_last = None
 
     def load_data(self):
         df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
@@ -40,7 +38,7 @@ class BacktestExchange(BaseExchange):
         """
         Эмулировать события, приходящие с биржи.
         """
-        stream = self.all_data.loc[self.dt_start:]
+        stream = self.all_data.loc[self.dt_start:self.dt_end]
         for row in stream.itertuples():
             self.interval_event(row)
             self.stream_event(row)

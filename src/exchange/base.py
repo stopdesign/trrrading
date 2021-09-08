@@ -19,16 +19,17 @@ class BaseExchange:
     def __init__(self, instruments: dict, **kwargs):
         self.instruments = instruments
         self.symbols = self.instruments.keys()
-        self.on_event = None
+        self.on_event = kwargs.get("on_event")
         self.quotes = {}
         self.positions = {}
         self.cash = Decimal(0)
         self.cash_initial = self.cash
         self.last_event = {}
         self.finished = False
-        self.dt_start = None
-        self.dt_from = None
-        self.dt_last = None
+        self.dt_start = kwargs.get("dt_start")  # дата начала теста/торговли
+        self.dt_end = kwargs.get("dt_end")  # дата завершения теста
+        self.dt_from = None   # начало интервала для предзаполнения истории
+        self.dt_last = None   # фактический последний/текущий интервал
 
     def get_price(self, symbol: str, side: str) -> Optional[float]:
         if quotes := self.quotes.get(symbol):

@@ -28,16 +28,14 @@ ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 class Trader:
     exchange: BaseExchange = None
 
-    def __init__(self, driver, instruments, target_margin, base_dir, dt_start=None):
+    def __init__(self, broker_conf, instruments, base_dir):
         txt = f"Init trader at {datetime.utcnow().replace(microsecond=0)} UTC"
         log.info(colored(txt, "white"))
 
         self.base_dir = base_dir
-        self.can_short = CAN_SHORT
-        self.reinvest_profit = False
 
-        # Значение used margin, к которому должен стремиться депозит
-        self.target_margin = target_margin
+        self.target_margin = broker_conf.get("target_margin")
+        self.can_short = broker_conf.get("short", True)
 
         self.instruments = instruments
         self.advisors = []
@@ -47,15 +45,22 @@ class Trader:
                 advisor["instrument"] = instrument
                 self.advisors.append(Advisor(**advisor))
 
-        exchange_class = all_exchanges[driver]
+        exchange_class = all_exchanges[broker_conf.get("driver")]
 
         if exchange_class.backtest:
-            self.dt_start = datetime(dt_start.year, dt_start.month, dt_start.day)
+            dt = broker_conf.get("dt_start")
+            self.dt_start = datetime(dt.year, dt.month, dt.day)
+            self.dt_end = broker_conf.get("dt_end")
         else:
             self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
+            self.dt_end = None
 
-        self.exchange = exchange_class(instruments, dt_start=self.dt_start)
-        self.exchange.on_event = self.on_event
+        self.exchange = exchange_class(
+            instruments,
+            dt_start=self.dt_start,
+            dt_end=self.dt_end,
+            on_event=self.on_event,
+        )
 
         self.account_stats = AccountStats(self, self.exchange)
         self.trade_stats = TradeStats()
@@ -329,7 +334,6 @@ class Trader:
         cprint(" SETTINGS ", attrs=["reverse"])
         txt = (
             f"Target margin: {self.target_margin}\n"
-            f"Reuse profit: {self.reinvest_profit}\n"
             f"Can short: {self.can_short}\n"
             f"{self.exchange.margin!r}\n"
             f"{self.exchange.fee!s}\n"
