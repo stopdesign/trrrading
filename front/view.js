@@ -194,13 +194,13 @@ svg.select('g.profit')
   .append("g")
   .attr("class", "profit_line_cap");
 
-const crosshair_svg = svg.append('g')
-  .attr("class", "crosshair")
-  .call(crosshair)
-
 svg.append("g")
   .attr("class", "tradearrow")
   .attr("clip-path", "url(#clip)");
+
+const crosshair_svg = svg.append('g')
+  .attr("class", "crosshair")
+  .call(crosshair)
 
 const macd = svg.append("g")
   .attr("class", "macd")
@@ -360,6 +360,11 @@ function draw_stats(stats) {
     .call(
       d3.axisLeft(yDepositScale).ticks(5).tickSize(-width).tickFormat("")
     )
+
+  svg.selectAll("g.y-axis-right").call(yAxisProfit);
+  svg.selectAll("g.y-axis-deposit").call(yDepositAxis);
+  svg.selectAll("g.y-axis-load").call(yLoadAxis);
+
 }
 
 
@@ -449,16 +454,16 @@ function draw(data, trades, indicator) {
       .attr("stroke", "white")
 
 
-  // Индикаторы на графике цены
-  svg.select('g.candlestick').append("path")
-    .datum(indicator)
-    .attr("class", "indicator-bottom line")
-    .attr("d", indicator_bottom);
-
-  svg.select('g.candlestick').append("path")
-    .datum(indicator)
-    .attr("class", "indicator-top line")
-    .attr("d", indicator_top);
+  // // Индикаторы на графике цены
+  // svg.select('g.candlestick').append("path")
+  //   .datum(indicator)
+  //   .attr("class", "indicator-bottom line")
+  //   .attr("d", indicator_bottom);
+  //
+  // svg.select('g.candlestick').append("path")
+  //   .datum(indicator)
+  //   .attr("class", "indicator-top line")
+  //   .attr("d", indicator_top);
 
 
   // // Индикатор, разрешающий торговлю
@@ -541,9 +546,6 @@ function draw(data, trades, indicator) {
   svg.selectAll("g.x-axis-2").call(xAxis1);
 
   svg.selectAll("g.y-axis").call(yAxis);
-  svg.selectAll("g.y-axis-right").call(yAxisProfit);
-  svg.selectAll("g.y-axis-deposit").call(yDepositAxis);
-  svg.selectAll("g.y-axis-load").call(yLoadAxis);
 
   const extent = [[0, 0], [width, height]];
   const defaultSelection = [x.range()[0], x.range()[1]];
@@ -572,7 +574,9 @@ function draw(data, trades, indicator) {
   // Список всех сделок
   const $trades = document.querySelector('#trades');
   trades.slice(0).reverse().map(trade => {
-    const dt = trade.date.toISOString().slice(0, 16).replace("T", " ");
+    const tzoffset = (trade.date).getTimezoneOffset() * 60000;
+    const utc_iso = (new Date(trade.date - tzoffset)).toISOString();
+    const dt = utc_iso.slice(0, 16).replace("T", " ");
     const $trade = document.createElement('tr');
     let profit = "0";
     if (trade.profit > 0) {
