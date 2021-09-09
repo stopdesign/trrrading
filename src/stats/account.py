@@ -13,6 +13,7 @@ log = logging.getLogger("account")
 
 class AccountStats:
     def __init__(self, trader, exchange: BaseExchange):
+        self.trader = trader
         self.exchange = exchange
         self.max_net_value = Decimal("-Infinity")
         self.max_drawdown = Decimal("-Infinity")
@@ -22,7 +23,6 @@ class AccountStats:
         self.trades_count = {"buy": 0, "sell": 0, "close": 0}
         self.prev_net_value = self.exchange.net_value
         self.deposits = [self.exchange.cash_initial]
-        self.trader = trader
         self.stats = []
         self.slippage = 0
         self.fee = 0

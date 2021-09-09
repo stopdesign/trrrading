@@ -52,7 +52,7 @@ class Trader(TelegramBotMixin):
         )
 
         self.account_stats = AccountStats(self, self.exchange)
-        self.trade_stats = TradeStats()
+        self.trade_stats = TradeStats(self, self.exchange)
 
     def warm_up(self):
         log.info(colored(f"Historical data from {self.exchange.dt_from}", "white"))
@@ -186,6 +186,10 @@ class Trader(TelegramBotMixin):
         buy_signals, sell_signals = self.get_signals(symbol, dt, sig_price)
 
         # Пересчитать дискретные сигналы в количество акций
+        # FIXME: Считает оно неправильно, потому что закрытие
+        # FIXME: и открытие нужно считать по разным ценам.
+        # FIXME: Или даже менять систему подсчета margin.
+        # FIXME: Проблему видно при продаже после сильного роста.
         can_buy = self.state_to_position(symbol, buy_signals)
         can_sell = self.state_to_position(symbol, sell_signals)
 
@@ -221,7 +225,8 @@ class Trader(TelegramBotMixin):
         # TODO: передать это в self.exchange.trade (uid или сам объект),
         # TODO: оттуда уже выводить лог pre-trade и post-trade
         self.trade_stats.log_trade(
-            dt, symbol, sig_price, price, cp, ap, amount, can_sell, can_buy
+            dt, symbol, sig_price, price, cp, ap, amount, can_sell, can_buy,
+            self.exchange.net_value
         )
 
         # Если есть все параметры — запустить сделку

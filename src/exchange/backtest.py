@@ -99,16 +99,18 @@ class BacktestExchange(BaseExchange):
         start_amount = amount
         trade_profit = None
         position = self.positions.get(symbol, self.empty_position)
-        price = Decimal(self.get_price(symbol, side))
+        price = self.get_price(symbol, side)
 
         if not price:
             cprint(" SKIP TRADE: No price data ", "red", attrs=["reverse"])
             return None, None
 
+        price = Decimal(str(price))
+
         # Signal price — цена, на которой принято решение о сделке.
         # Используется для подсчета slippage.
         if not sig_price:
-            sig_price = Decimal(self.get_price(symbol, "mid"))
+            sig_price = Decimal(str(self.get_price(symbol, "mid")))
 
         fee = self.fee.for_amount(float(amount))
         self.cash -= Decimal(fee)
@@ -172,6 +174,6 @@ class BacktestExchange(BaseExchange):
         """
         total_value = self.cash
         for symbol, position in self.positions.items():
-            mid = Decimal(self.get_price(symbol, "mid"))
+            mid = Decimal(str(self.get_price(symbol, "mid")))
             total_value += position["amount"] * (mid - position["price"])
         return total_value

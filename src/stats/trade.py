@@ -1,12 +1,15 @@
 import logging
 import pandas as pd
 from termcolor import colored
+from exchange import BaseExchange
 
 log = logging.getLogger("trade")
 
 
 class TradeStats:
-    def __init__(self):
+    def __init__(self, trader, exchange: BaseExchange):
+        self.trader = trader
+        self.exchange = exchange
         self.trades = []
 
     def on_trade_done(self, dt, symbol, payload):
@@ -52,6 +55,7 @@ class TradeStats:
             amount_diff,
             total_sell,
             total_buy,
+            net_value,
     ):
         symbol_str = colored(f"{symbol:<10}", attrs=["bold"])
         color, sign = "cyan", "*** "
@@ -65,7 +69,8 @@ class TradeStats:
             f"{dt:%Y-%m-%d %H:%M:%S}  {symbol_str}   "
             f"cur/adv: {current_position:+6.0f} {advised_position:+6.0f}   "
             f"sig: {total_buy:+5.0f} {-total_sell:+5.0f}   "
-            f"do: {action}    𝝙: {rel_slippage:0.2f}%    price: {market_price:0.2f}"
+            f"do: {action}    𝝙: {rel_slippage:0.2f}%    "
+            f"price: {market_price:0.2f}    Σ: {net_value:0.0f}"
         )
         txt = txt.replace("+0", colored(" 0", "white"))
         log.info(txt)
