@@ -1,6 +1,6 @@
 import pandas_market_calendars as mcal
 from datetime import timedelta, datetime
-from strategy import Signal, all_strategies
+from strategy import Signal, BaseStrategy, all_strategies
 from termcolor import cprint
 
 
@@ -14,32 +14,22 @@ class Advisor:
     Знает, можно ли торговать в extra_hours,
     и нужно ли передавать такие данные в стратегию.
     """
+    strategy: BaseStrategy
 
-    def __init__(
-        self,
-        strategy,
-        instrument,
-        length=10,
-        extra_trade=False,
-        extra_data=False,
-        interval=None,
-        **params,
-    ):
-        strategy_class = all_strategies[strategy]
-        self.strategy = strategy_class(interval=interval, length=length, **params)
-        self.instrument = instrument
-        self.state = None
-        self.strategy_name = strategy
-        self.extra_trade = extra_trade
+    def __init__(self, symbol, extra_trade=False, extra_data=False, **kwargs):
+        self.instrument = symbol
+        self.strategy_name = kwargs.pop("strategy")
+        self.strategy = all_strategies[self.strategy_name](**kwargs)
 
-        self.use_extra_data = bool(extra_data)
-        self.trade_in_extra_hours = bool(extra_trade)
-
-        self.last_bar_dt = None
+        self.extra_trade = bool(extra_trade)
+        self.extra_data = bool(extra_data)
 
         start = datetime.utcnow() - timedelta(days=365 * 5)
         end = datetime.utcnow() + timedelta(days=10)
         self.schedule = self.init_schedule(start, end)
+
+        self.state = None
+        self.last_bar_dt = None
 
     def __str__(self):
         return f"<Advisor symbol={self.instrument} strategy={self.strategy}>"
@@ -47,13 +37,10 @@ class Advisor:
     @property
     def info(self):
         return (
-            f"{self.instrument:<9}  "
-            f"{self.strategy_name}  "
-            f"length={self.strategy.length}  "
-            f"padding={self.strategy.padding}  "
-            f"count_bars={self.strategy.count_bars:<1}  "
-            f"extra_data={self.use_extra_data:<1}  "
-            f"extra_trade={self.trade_in_extra_hours:<1}  "
+            f"{self.instrument} "
+            f"extra_data={self.extra_data:<1} "
+            f"extra_trade={self.extra_trade:<1} "
+            f"strategy={self.strategy!r}"
         )
 
     @property
@@ -80,7 +67,7 @@ class Advisor:
         return t0 and t1 and t0 <= dt < t1
 
     def on_bar(self, dt, bar):
-        if not (self.is_main_session(dt) or self.use_extra_data):
+        if not (self.is_main_session(dt) or self.extra_data):
             return
         # Проверить, что bar идет без отрыва от предыдущего
         if self.last_bar_dt and self.is_main_session(dt):
@@ -101,7 +88,7 @@ class Advisor:
         self.strategy.on_bar(bar)
 
     def test_price(self, dt, price):
-        if not (self.is_main_session(dt) or self.trade_in_extra_hours):
+        if not (self.is_main_session(dt) or self.extra_trade):
             return Signal.PASS
         if not self.last_bar_dt:
             return Signal.PASS

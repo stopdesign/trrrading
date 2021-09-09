@@ -49,9 +49,11 @@ class ColoredFormatter(logging.Formatter):
         return super().format(rec)
 
 
-template = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-console_formater = ColoredFormatter(template)
-file_formater = ColoredFormatter(template, color=False)
+console_template = "%(message)s"
+console_formater = ColoredFormatter(console_template)
+
+file_template = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+file_formater = ColoredFormatter(file_template, color=False)
 
 dt = datetime.now()  # server time
 day = dt.replace(hour=0, minute=0, second=0, microsecond=0)

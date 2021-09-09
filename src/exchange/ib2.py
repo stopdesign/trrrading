@@ -4,18 +4,16 @@ import nest_asyncio
 import pandas as pd
 import ib_insync as ib
 import pandas_market_calendars as mcal
-from time import sleep
 from datetime import datetime, timedelta
 from decimal import Decimal
 from termcolor import cprint, colored
 from notifications.alert import send_telegram
-from nyse_cal import time_to_next_session, trading_session
+from exchange.utils.nyse_cal import trading_session, time_to_next_session
 from storage.ib import load_many
 from exchange import BaseExchange
 from exchange.mixin import Healthcheck
 from data_types import BidAsk, Trade, Bar, Margin, Fee
 from ib_insync.ticker import TickerUpdateEvent  # noqa
-from util import DT_ZERO
 
 log = logging.getLogger("broker")
 
@@ -42,7 +40,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     fee = Fee(fixed_price=1)
 
     def __init__(self, instruments: dict, **kwargs):
-        super().__init__(instruments)
+        super().__init__(instruments, **kwargs)
 
         self.contracts = []
 
@@ -60,6 +58,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # self.ib.positionEvent += self.on_ib_position_event
         # self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
         self.ib.timeoutEvent += lambda *args: log.error(f"Timeout: {args}")
+        # self.ib.commissionReportEvent += lambda t, f, r: log.info(colored(
+        #     f"FEE: {t.contract.symbol} #{f.execution.orderId} - {f.time} - "
+        #     f"comm: {r.commission} — amnt: {int(f.execution.shares)}",
+        #     "red")
+        # )
 
         self.ib_params = {
             "host": "127.0.0.1",
@@ -71,10 +74,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         self._real_margin = 0
         self._net_value = 0
-        self._net_value_dt = DT_ZERO
+        self._net_value_dt = datetime(1900, 1, 1)
 
         self.quotes = {}
-        self.dt_start = kwargs.pop("dt_start")
         dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
         self.dt_from = dt_from.replace(hour=0, minute=0, second=0)
         # self.cash_initial = kwargs.get("cash", Decimal("10000"))
@@ -86,6 +88,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.finished = False
         self.subscribed = False
 
+        self._order_lock = {}
+
     async def on_ib_value_event(self, event):
         if event.tag == "MaintMarginReq":
             self._real_margin = Decimal(event.value)
@@ -93,7 +97,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             self._net_value = Decimal(event.value)
             dt = datetime.utcnow().replace(microsecond=0)
             if dt != self._net_value_dt:
-                txt = f"Net value: {self._net_value}, margin: {self._real_margin}"
+                txt = f"Net value: {self._net_value}, Margin: {self._real_margin}"
                 log.info(colored(txt, "blue"))
             self._net_value_dt = dt
 
@@ -353,7 +357,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         for symbol in self.symbols:
             quote_dt = self.quotes.get(symbol, {}).get("dt")
             if not quote_dt or now - quote_dt > timedelta(minutes=5):
-                txt = f" {symbol} outdated quotes: {quote_dt} "
+                txt = f"{symbol} outdated quotes: {quote_dt}"
                 log.error(colored(txt, color="red", attrs=["reverse"]))
 
     def start_listen(self):
@@ -376,7 +380,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         if self.ib.isConnected():
             self.ib.reqGlobalCancel()
 
-        sleep(0.5)
+        try:
+            self.ib.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
 
         if self.ib.isConnected():
             self.ib.disconnect()
@@ -393,7 +400,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             time_to_next = time_to_next_session(dt, main=True)
             wake_up_in_advance = 300
             if time_to_next > timedelta(seconds=wake_up_in_advance):
-                txt = f" Next trading session in {time_to_next}, sleep "
+                txt = f"Next trading session in {time_to_next}, sleep"
                 log.warning(colored(txt, color="red", attrs=["reverse"]))
                 await asyncio.sleep(time_to_next.total_seconds() - wake_up_in_advance)
                 continue
@@ -421,16 +428,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Подписка на обновления по контрактам.
         """
-        if not self.subscribed:
-            for contract in self.contracts:
-                # Тиковые данные
-                if contract.mkt_ticker:
-                    log.warning(colored(f"Cancel MKT: {contract.symbol}", "red"))
-                    self.ib.cancelMktData(contract)
-                log.info(colored(f"Subscribe MKT: {contract.symbol}", "blue"))
-                contract.mkt_ticker = self.ib.reqMktData(contract)
-            self.subscribed = True
-
         for contract in self.contracts:
             if contract.bars is not None and contract.last_bar:
                 dt = datetime.utcnow()
@@ -463,6 +460,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 )
                 contract.bars.updateEvent += self.create_on_bar_handler(contract)
                 await self.on_bar_update(contract.bars, False, contract)
+
+        await asyncio.sleep(1)
+
+        if not self.subscribed:
+            for contract in self.contracts:
+                # Тиковые данные
+                if contract.mkt_ticker:
+                    log.warning(colored(f"Cancel MKT: {contract.symbol}", "red"))
+                    self.ib.cancelMktData(contract)
+                log.info(colored(f"Subscribe MKT: {contract.symbol}", "blue"))
+                contract.mkt_ticker = self.ib.reqMktData(contract)
+                await asyncio.sleep(0)
+            self.subscribed = True
 
     def historical_stream_event(self, row):
         dt = row.Index.to_pydatetime()
@@ -517,7 +527,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Запускает регулярные задачи.
         """
-        prev_dt = datetime(2000, 1, 1)
+        prev_dt = datetime(1900, 1, 1)
         while not self.finished:
             dt = datetime.utcnow().replace(microsecond=0)
             if dt.minute != prev_dt.minute:
@@ -540,14 +550,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 contract.last_bar = bar_dt
                 await asyncio.sleep(0)
 
-    def trade(self, side, amount, symbol, dt, tr_price):
+    def trade(self, side, amount, symbol, dt, sig_price):
         """
         Открыть позицию/ордер на бирже.
         """
-        txt = f" TRADE: {side} {symbol} {amount} "
-        log.warning(colored(txt, color="cyan", attrs=["reverse"]))
-        send_telegram(txt)
-
         sym, pe = symbol.split(".")
         contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
 
@@ -565,8 +571,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             lmtPrice=lmt_price,
         )
 
+        if self._order_lock.get(symbol):
+            log.error(colored(f"{symbol} has orders", "red", attrs=["reverse"]))
+            return
+
+        # Заблокировать работу с этим символом
+        self._order_lock[symbol] = True
+
         # Размещаю ордер
         trade = self.ib.placeOrder(contract, order)
+
+        txt = f"TRADE #{order.orderId}: {side} {symbol} {amount}"
+        log.warning(colored(txt, color="cyan", attrs=["reverse"]))
+        send_telegram(txt)
 
         # Жду исполнения ордера
         prev_state = ""
@@ -582,34 +599,51 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                     sec = (dt - start_dt).total_seconds()
                     log.info(
                         colored(
-                            f"{dt}  {symbol}  {trade.orderStatus.status:<13} "
+                            f"TRADE #{order.orderId}: {side} {symbol}  "
+                            f"{trade.orderStatus.status:<13} "
                             f"{rem:5.0f} to fill, "
-                            f"{sec:0.0f} sec",
+                            f"{sec:0.1f} sec",
                             "white",
                         )
                     )
                     last_dt = dt
             prev_state = cur_state
             try:
-                self.ib.waitOnUpdate(timeout=30)
+                self.ib.waitOnUpdate(timeout=3)
+                self.ib.sleep(0.1)
             except KeyboardInterrupt:
                 log.error("waitOnUpdate has been interrupted")
+                self._order_lock[symbol] = True
                 self.stop_listen()
-                return None, None
+                return
 
         dt = datetime.utcnow().replace(microsecond=0)
         sec = (dt - start_dt).total_seconds()
+
+        # Жду последний commissionReport
+        try:
+            self.ib.sleep(1)
+        except KeyboardInterrupt:
+            pass
+
         color = "red"
-        commission = "—"
+        commission = None
+        amnt_sum = "—"
         if trade.orderStatus.status == "Filled":
             color = "green"
+            # commissionReport приходит отдельными событиями,
+            # поэтому сумма комиссии может быть неполной.
+            if any([f.commissionReport.commission == 0 for f in trade.fills]):
+                txt = f"TRADE #{order.orderId}: zero commission report"
+                log.warning(colored(txt, "red"))
             com_raw = sum(f.commissionReport.commission for f in trade.fills)
+            amnt_sum = sum(int(f.execution.shares) for f in trade.fills)
             commission = f"{com_raw:0.2f}"
         txt = (
-            f" TRADE: {side} {symbol} {amount} — "
+            f"TRADE #{order.orderId}: {side} {symbol} {amnt_sum} — "
             f"{trade.orderStatus.status}, "
             f"{trade.orderStatus.avgFillPrice:0.2f}, "
-            f"sig: {tr_price:0.2f}, "
+            f"sig: {sig_price:0.2f}, "
             f"mid: {mid_price:0.2f}, "
             f"fee: {commission}, "
             f"time: {sec:0.1f} sec"
@@ -618,9 +652,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         send_telegram(txt)
 
         price = trade.orderStatus.avgFillPrice
-
-        # Подождать, пока просрутся события
-        sleep(1)
 
         # Событие «успешное завершение сделки»
         payload = {
@@ -634,7 +665,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         }
         self.on_event("after_trade", dt, symbol, payload)
 
-        return price, amount
+        # Снимаю блокировку
+        self._order_lock[symbol] = False
 
     def get_limit_price(self, mid_price, side):
         lmt_price = mid_price

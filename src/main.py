@@ -4,10 +4,10 @@ import json
 import click
 import logging
 from os.path import abspath, join, dirname
-from datetime import datetime
+from datetime import datetime, timedelta
 from trader import Trader
 
-sys.path.append(abspath("."))
+sys.path.append(abspath(dirname(__file__)))
 
 log = logging.getLogger("main")
 
@@ -19,6 +19,7 @@ dt_format = click.DateTime(formats=["%Y-%m-%d"])
 @click.argument("instruments")
 @click.option("--dt-start", "--dt_start", "--start", type=dt_format)
 @click.option("--dt-end", "--dt_end", "--end", type=dt_format)
+@click.option("--debug", is_flag=True)
 def main(**kwargs) -> None:
     dt = datetime.now()
 
@@ -34,7 +35,7 @@ def main(**kwargs) -> None:
         broker_conf["dt_start"] = kwargs["dt_start"].date()
 
     if kwargs["dt_end"]:
-        broker_conf["dt_end"] = kwargs["dt_end"].date()
+        broker_conf["dt_end"] = kwargs["dt_end"].date() + timedelta(1)
 
     # Записать конфиг в логи
     log.debug(json.dumps(broker_conf, default=str))

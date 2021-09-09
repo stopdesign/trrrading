@@ -85,7 +85,7 @@ class BacktestExchange(BaseExchange):
             if amount < 0:
                 self.trade("buy", abs(amount), symbol, self.dt_last)
 
-    def trade(self, side: str, amount: Decimal, symbol, dt: datetime, tr_price=None):
+    def trade(self, side: str, amount: Decimal, symbol, dt: datetime, sig_price=None):
         """
         Создать ордер на бирже, скорректировать позицию.
 
@@ -105,10 +105,10 @@ class BacktestExchange(BaseExchange):
             cprint(" SKIP TRADE: No price data ", "red", attrs=["reverse"])
             return None, None
 
-        # Trigger price — цена, на которой принято решение о сделке.
+        # Signal price — цена, на которой принято решение о сделке.
         # Используется для подсчета slippage.
-        if not tr_price:
-            tr_price = Decimal(self.get_price(symbol, "mid"))
+        if not sig_price:
+            sig_price = Decimal(self.get_price(symbol, "mid"))
 
         fee = self.fee.for_amount(float(amount))
         self.cash -= Decimal(fee)
@@ -149,7 +149,7 @@ class BacktestExchange(BaseExchange):
                 "price": av_price,
             }
 
-        slippage = abs(float(tr_price) - float(price)) * float(start_amount)
+        slippage = abs(float(sig_price) - float(price)) * float(start_amount)
 
         # Событие «успешное завершение сделки»
         payload = {

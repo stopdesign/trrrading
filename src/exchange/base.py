@@ -57,7 +57,7 @@ class BaseExchange:
             self.quotes[symbol]["bid"] = payload.bid
             self.quotes[symbol]["dt"] = dt
 
-    def trade(self, side: str, amount: float, symbol: str, dt: datetime, tr_price):
+    def trade(self, side: str, amount: float, symbol: str, dt: datetime, sig_price):
         raise NotImplementedError()
 
     def warm_up(self):

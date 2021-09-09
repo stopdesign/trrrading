@@ -1,10 +1,14 @@
+import logging
 import pandas as pd
 import numpy as np
 import scipy.stats
+from collections import defaultdict
 from decimal import Decimal
 from exchange import BaseExchange
 from termcolor import cprint, colored
-from nyse_cal import trading_session
+from exchange.utils.nyse_cal import trading_session
+
+log = logging.getLogger("account")
 
 
 class AccountStats:
@@ -23,10 +27,11 @@ class AccountStats:
         self.slippage = 0
         self.fee = 0
 
-    def on_trade(self, _, payload):
+    def on_trade_done(self, _, payload):
         self.trades_count[payload["side"]] += 1
         self.slippage += payload["slippage"]
         self.fee += payload["fee"]
+        self.update_pl()
 
     def update_pl(self):
         diff_value = self.exchange.net_value - self.prev_net_value
@@ -68,14 +73,8 @@ class AccountStats:
         })
 
     def to_csv(self, file_name):
-        if self.stats:
-            df = pd.DataFrame(self.stats)
-            df = df.set_index("date")
-            df["net_value"] = df["net_value"].astype(float)
-            df["drawdown"] = df["drawdown"].astype(float)
-            df.to_csv(file_name, float_format="%.2f")
-        else:
-            open(file_name, "w").close()
+        df = pd.DataFrame.from_records(self.stats, index=["date"], coerce_float=True)
+        df.to_csv(file_name, float_format="%.2f")
 
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]))
@@ -117,3 +116,54 @@ class AccountStats:
             f"Slippage: {rel_slpg:5.1f}%\n"
         )
         cprint(txt)
+
+    def get_margin_for_position(self, _, position):
+        amount = position["amount"]
+        price = position["price"]
+        # price = self.exchange.get_price(instrument, "mid")
+        margin_level = self.exchange.get_margin_level(amount < 0)
+        return abs(float(amount)) * float(price) * margin_level if price else None
+
+    def portfolio_info(self):
+        positions = defaultdict(dict)
+
+        for symbol, value in self.exchange.get_positions().items():
+            positions[symbol] = value
+            positions[symbol]["advised"] = self.trader.get_advised_position(symbol)
+
+        for symbol in self.exchange.symbols:
+            if symbol not in positions:
+                positions[symbol] = {
+                    "advised": self.trader.get_advised_position(symbol),
+                    "price": self.exchange.get_price(symbol, "mid"),
+                    "amount": 0,
+                }
+
+        total_margin_used = 0
+
+        txt = colored("Positions:    ", "blue")
+        for symbol, position in sorted(positions.items()):
+            if position["advised"] is not None:
+                advised = "{0:+0.0f}".format(position["advised"])
+                total_margin_used += self.get_margin_for_position(symbol, position)
+                cur = float(position['amount'])
+                adv = float(position['advised'])
+                rel_diff = abs(cur - adv) / abs(cur + adv) if cur + adv else 0
+                color = "cyan" if rel_diff < 0.05 else "yellow"
+            else:
+                advised = "-"
+                color = "white"
+            amount = position.get('amount') or 0
+            txt += colored(
+                f"{symbol}  "
+                f"cur: {amount:+0.0f}, "
+                f"adv: {advised};  ",
+                color,
+            )
+        log.info(txt)
+
+        log.info(colored(f"Net Value:   {self.exchange.net_value:6.0f}", "blue"))
+        log.info(colored(f"Margin Used: {total_margin_used:6.0f}", "blue"))
+
+        if hasattr(self.exchange, "real_margin"):
+            log.info(colored(f"Margin Real: {self.exchange.real_margin:6.0f}", "blue"))

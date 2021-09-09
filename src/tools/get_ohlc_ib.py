@@ -8,13 +8,14 @@ import pytz
 import pandas as pd
 import requests
 import pandas_market_calendars as mcal
+from os.path import abspath, dirname
 from datetime import datetime, timezone, timedelta
 from ib_insync import *
 from pathlib import Path
 from termcolor import cprint
 
 
-BASE_DIR = "../../data"
+BASE_DIR = abspath(dirname(__file__) + "/../../data")
 
 BID_ASK_COLUMNS_MAP = {
     "open": "av_bid",
@@ -255,6 +256,7 @@ def main(**kwargs):
     data_types = ["TRADES", "BID_ASK"]
 
     for stock in kwargs.get("symbols"):
+        stock = stock.upper()
         if "." in stock:
             symbol, pe = stock.split(".")
         else:
