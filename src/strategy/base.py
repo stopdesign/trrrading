@@ -10,7 +10,6 @@ class BaseStrategy:
         self.length = kwargs.get("length")
         self.params = kwargs
         self.data = []
-        self.historical = []
         self.on_start()
 
     def __repr__(self):
@@ -18,9 +17,6 @@ class BaseStrategy:
         for key, value in self.params.items():
             params += f" {key}={value}"
         return f"<{type(self).__name__}{params}>"
-
-    def add_to_historical(self, data):
-        self.historical += data
 
     def on_start(self):
         pass
@@ -57,5 +53,5 @@ class BaseStrategy:
                     "up": "max",
                     "dn": "min",
                 })
-            df.dropna(inplace=True)
+                df.dropna(inplace=True)
         return df

@@ -293,8 +293,8 @@ path.difference {
 }
 .main-grid .tick line {
     stroke: #666;
-    stroke-dasharray: 3 10;
-    stroke-width: 0.75;
+    stroke-dasharray: 8 6;
+    stroke-width: 0.5;
 }
 .macd-grid .tick line {
     stroke: #999;

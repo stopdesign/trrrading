@@ -233,7 +233,7 @@ async function run() {
 
   // Кнопки переключения инструмента
   let index = 0;
-  for (const symbol in symbols) {
+  for (const symbol of Object.keys(symbols).sort()) {
     index += 1;
     const span = document.createElement('span');
     span.setAttribute('class', 'button');
@@ -262,7 +262,7 @@ async function run() {
 
   // Врубить первый график
   if (symbols) {
-    toggleChart(Object.keys(symbols)[0]);
+    toggleChart(Object.keys(symbols).sort()[0]);
   }
 
   draw_stats(stats);
@@ -663,7 +663,7 @@ function draw(data, trades, indicator) {
     svg.select("g.candlestick .indicator-top")
       .attr("d", indicator_top);
 
-    let din_cnt = (x.range()[1] - x.range()[0]) / 70;
+    let din_cnt = (x.range()[1] - x.range()[0]) / 100;
     let xAxisZ = d3.axisBottom(x).ticks(din_cnt);
 
     svg.select("g.main-grid")
