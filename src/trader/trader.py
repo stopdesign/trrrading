@@ -4,7 +4,7 @@ import pandas as pd
 from typing import List
 from datetime import datetime
 from decimal import Decimal
-from termcolor import cprint, colored
+from termcolor import colored
 from exchange import BaseExchange, all_exchanges
 from stats import AccountStats, TradeStats
 from strategy import Signal
@@ -89,8 +89,6 @@ class Trader(TelegramBotMixin):
         self.trade_stats.to_csv(f"{csv_dir}/trades.csv")
         self.account_stats.to_csv(f"{csv_dir}/stats.csv")
         if self.exchange.backtest:
-            self.settings_info()
-            self.advisors_info()
             self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
@@ -267,23 +265,3 @@ class Trader(TelegramBotMixin):
                 total_sell += abs(state_diff / all_adv_len)
 
         return total_buy, total_sell
-
-    def advisors_info(self):
-        # Только для тестов
-        cprint(" ADVISORS ", attrs=["reverse"])
-        print()
-        for advisor in self.get_advisors():
-            print(advisor.info)
-
-    def settings_info(self):
-        # Только для тестов
-        print()
-        cprint(" SETTINGS ", attrs=["reverse"])
-        txt = (
-            f"Target margin: {self.target_margin}\n"
-            f"Can short: {self.can_short}\n"
-            f"{self.exchange.margin!r}\n"
-            f"{self.exchange.fee!s}\n"
-        )
-        print()
-        print(txt)

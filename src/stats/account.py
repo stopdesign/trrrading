@@ -76,8 +76,27 @@ class AccountStats:
         df = pd.DataFrame.from_records(self.stats, index=["date"], coerce_float=True)
         df.to_csv(file_name, float_format="%.2f")
 
+    def advisors_info(self):
+        # Только для тестов
+        for advisor in self.trader.get_advisors():
+            print(advisor.info)
+
+    def settings_info(self):
+        # Только для тестов
+        txt = (
+            f"{type(self.exchange).__name__}, "
+            # f"Target margin: {self.trader.target_margin}\n"
+            # f"Can short: {self.trader.can_short}\n"
+            f"{self.exchange.margin!r}, "
+            f"{self.exchange.fee!r}\n"
+        )
+        print(txt)
+
     def print_summary(self):
-        cprint("\n" + colored(" RESULTS ", attrs=["reverse"]))
+        cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
+
+        self.settings_info()
+        self.advisors_info()
 
         pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
         p = self.exchange.net_value - self.exchange.cash_initial
@@ -86,6 +105,8 @@ class AccountStats:
         # Не уверен, что это можно считать ROI, но это профит
         # на единицу задействованных в торговле денег.
         roi = p / self.trader.target_margin * 100
+
+        rel_fee = self.fee / float(p) * 100
 
         # R2
         if self.deposits and len(self.deposits) > 1:
@@ -100,20 +121,23 @@ class AccountStats:
             self.max_drawdown = 0
             rel_slpg = 0
 
+        if self.exchange.dt_last:
+            end = self.exchange.dt_last.date()
+        else:
+            end = "—"
+
         txt = (
             "\n"
-            f"{self.exchange.dt_start}\n"
-            f"{self.exchange.dt_last}\n"
-            "\n"
-            f"ROI: {roi:+10.1f}%\n"
-            f"Max DD: {self.max_drawdown:7.1f}%\n"
-            f"PF: {pf:12.2f}\n"
-            f"R²: {r2:12.2f}\n"
-            f"Trades: {trades:8.0f}\n"
-            f"Fee: {-self.fee:+11.0f}\n"
-            f"GP: {self.gross_profit:+12.0f}\n"
-            f"GL: {self.gross_loss:+12.0f}\n"
-            f"Slippage: {rel_slpg:5.1f}%\n"
+            f"Start:     {self.exchange.dt_start.date()}\n"
+            f"End:       {end!s:>10}\n"
+            "---------------------\n"
+            f"ROI:      {roi:+10.1f}%\n"
+            f"Max Drawdown:  {self.max_drawdown:5.1f}%\n"
+            f"Profit Factor: {pf:6.2f}\n"
+            f"R²:            {r2:6.2f}\n"
+            f"Trades:    {trades:10.0f}\n"
+            f"Fee:         {rel_fee:+7.1f}%\n"
+            f"Slippage:    {rel_slpg:7.1f}%\n"
         )
         cprint(txt)
 
