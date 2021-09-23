@@ -57,8 +57,8 @@ class AccountStats:
         def get_margin_for_position(position):
             amount = position["amount"]
             price = position["price"]
-            margin_level = self.exchange.get_margin_level(amount < 0)
-            return abs(float(amount)) * float(price) * margin_level if price else None
+            level = self.exchange.get_margin_level(amount < 0)
+            return abs(float(amount)) * float(price) * level if price else None
 
         margin_used = 0
         # TODO: вынести margin_used в self.exchange
@@ -103,11 +103,23 @@ class AccountStats:
         trades = self.trades_count["buy"] + self.trades_count["sell"]
         roi = p / self.trader.target_margin * 100
         rel_max_drawdown = roi / self.max_drawdown
+
+        # R2
+        if self.deposits and len(self.deposits) > 1:
+            x = np.arange(len(self.deposits))
+            y = np.array(self.deposits, dtype=float)
+            _, _, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+            r2 = r_value ** 2
+        else:
+            r2 = 0
+            self.max_drawdown = 0
+
         txt = (
             f"ROI:{roi:6.1f}%   "
             f"RMD:{rel_max_drawdown:5.1f}   "
             f"DD:{self.max_drawdown:5.1f}%   "
             f"PF:{pf:6.2f}   "
+            f"R²:{r2:6.2f}   "
             f"TR:{trades:>4}   "
             f"{advisor.instrument:<10}  "
             f"{advisor.strategy!r}"
@@ -134,7 +146,7 @@ class AccountStats:
         if self.deposits and len(self.deposits) > 1:
             x = np.arange(len(self.deposits))
             y = np.array(self.deposits, dtype=float)
-            slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+            slope, _, r_value, p_value, std_err = scipy.stats.linregress(x, y)
             r2 = r_value ** 2
             gp = float(self.gross_profit)
             rel_slpg = self.slippage / (gp + self.slippage) * 100 if gp else 0
@@ -170,46 +182,55 @@ class AccountStats:
         margin_level = self.exchange.get_margin_level(amount < 0)
         return abs(float(amount)) * float(price) * margin_level if price else None
 
-    def portfolio_info(self):
-        positions = defaultdict(dict)
+    def positions_extra(self):
+        """
+        Добавляет advised_position к позициям портфолио.
+        Объединяет реальные позиции у брокера (по которым нет advised)
+        и позиции из конфига бота (по которым может не быть чего-то еще).
+        """
 
-        for symbol, value in self.exchange.get_positions().items():
-            positions[symbol] = value
-            positions[symbol]["advised"] = self.trader.get_advised_position(symbol)
+        # Позиции, реально открытые у брокера
+        positions = self.exchange.get_positions()
 
+        # Инструменты, которые есть в конфиге, но не у брокера
         for symbol in self.exchange.symbols:
             if symbol not in positions:
                 positions[symbol] = {
-                    "advised": self.trader.get_advised_position(symbol),
-                    "price": self.exchange.get_price(symbol, "mid"),
-                    "amount": 0,
+                    "amount": Decimal(0),
+                    # бесполезно, т.к. цены в этом случае не будет у биржи
+                    "price": Decimal(str(self.exchange.get_price(symbol, "mid"))),
+                    "daily_pnl": float("nan"),
                 }
 
-        total_margin_used = 0
+        for symbol, position in positions.items():
+            position["symbol"] = symbol
+            position["advised"] = self.trader.get_advised_position(symbol)
 
-        txt = colored("Positions:    ", "blue")
+        return positions
+
+    def get_margin_used_by_bot(self):
+        """
+        Примерно (криво) считает margin, использованный для позиций бота.
+        """
+        total_margin_used = 0
+        for symbol, position in self.exchange.get_positions().items():
+            total_margin_used += self.get_margin_for_position(symbol, position)
+        return total_margin_used
+
+    def portfolio_info(self):
+        positions = self.positions_extra()
+        res = colored("Positions:", "blue")
         for symbol, position in sorted(positions.items()):
-            if position["advised"] is not None:
-                advised = "{0:+0.0f}".format(position["advised"])
-                total_margin_used += self.get_margin_for_position(symbol, position)
-                cur = float(position['amount'])
-                adv = float(position['advised'])
-                rel_diff = abs(cur - adv) / abs(cur + adv) if cur + adv else 0
-                color = "cyan" if rel_diff < 0.05 else "yellow"
-            else:
-                advised = "-"
-                color = "white"
-            amount = position.get('amount') or 0
-            txt += colored(
-                f"{symbol}  "
-                f"cur: {amount:+0.0f}, "
-                f"adv: {advised};  ",
-                color,
-            )
-        log.info(txt)
+            txt = f"{symbol}, cur: {position['amount']}, adv: {position['advised']};"
+            color = "cyan" if position["advised"] is not None else "white"
+            res += "  " + colored(txt, color)
+        log.info(res)
+
+    def account_info(self):
+        bot_margin = self.get_margin_used_by_bot()
 
         log.info(colored(f"Net Value:   {self.exchange.net_value:6.0f}", "blue"))
-        log.info(colored(f"Margin Used: {total_margin_used:6.0f}", "blue"))
+        log.info(colored(f"Margin Used: {bot_margin:6.0f}", "blue"))
 
         if hasattr(self.exchange, "real_margin"):
             log.info(colored(f"Margin Real: {self.exchange.real_margin:6.0f}", "blue"))

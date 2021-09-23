@@ -58,6 +58,7 @@ class Trader(TelegramBotMixin):
         log.info(colored(f"Historical data from {self.exchange.dt_from}", "white"))
         self.exchange.warm_up()
         self.account_stats.portfolio_info()
+        self.account_stats.account_info()
 
     def start(self):
         self.start_tg_bot()
@@ -69,6 +70,7 @@ class Trader(TelegramBotMixin):
         log.info("Stop stream")
         self.account_stats.snapshot()
         self.account_stats.portfolio_info()
+        self.account_stats.account_info()
 
         self.stop_tg_bot()
 
@@ -125,6 +127,7 @@ class Trader(TelegramBotMixin):
             # self.trade_stats.log_trade_result(symbol, payload)
             if not self.exchange.backtest:
                 self.account_stats.portfolio_info()
+                self.account_stats.account_info()
 
         return True
 

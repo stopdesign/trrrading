@@ -13,7 +13,7 @@ PROCESSES = 3  # cpu_count()
 
 
 root = logging.getLogger()
-root.setLevel(logging.WARNING)
+root.setLevel(logging.CRITICAL)
 
 
 def get_stored_symbols():
@@ -40,6 +40,7 @@ def main() -> None:
         "NVDA.ARCA", "OIH.ARCA", "ROBO.ARCA", "SIL.ARCA", "SPY.ARCA",
         "TAN.ARCA", "URA.ARCA", "XOP.ARCA"
     ]
+    symbols = ["URA.ARCA"]
 
     params = []
 
@@ -49,12 +50,14 @@ def main() -> None:
     broker_conf = yaml.full_load(open(broker_conf_path))
 
     for symbol in sorted(symbols):
-        for length in [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]:
+        # for length in [10, 50, 100, 200, 400, 600, 800]:
+        # for r in [0.2, 0.4, 0.6, 0.8, 1, 1.5, 2]:
+        # r = 0.42
+        for length in [20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 180, 210]:
             advisor = {
-                "strategy": "Range",
-                "range": 0.1,
+                "strategy": "ChannelBreakout3",
+                # "range": r,
                 "length": length,
-                "count_bars": 2,
             }
             conf = {
                 "short": True,

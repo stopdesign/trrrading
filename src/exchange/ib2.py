@@ -48,6 +48,8 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         nest_asyncio.apply(self.loop)
 
         self.ib = ib.IB()
+        self.ib_account = None
+        self.positions_pnl = {}
 
         # Подписаться на события шлюза IB
         self.ib.connectedEvent += self.on_connect
@@ -55,6 +57,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.ib.pendingTickersEvent += self.market_stream_event
         self.ib.errorEvent += self.on_ib_error
         self.ib.accountValueEvent += self.on_ib_value_event
+        self.ib.pnlSingleEvent += self.on_ib_pnl_single_event
         # self.ib.positionEvent += self.on_ib_position_event
         # self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
         self.ib.timeoutEvent += lambda *args: log.error(f"Timeout: {args}")
@@ -97,7 +100,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             self._net_value = Decimal(event.value)
             dt = datetime.utcnow().replace(microsecond=0)
             if dt != self._net_value_dt:
-                txt = f"Net value: {self._net_value}, Margin: {self._real_margin}"
+                txt = f"{dt}, Net value: {self._net_value}, Margin: {self._real_margin}"
                 log.info(colored(txt, "blue"))
             self._net_value_dt = dt
 
@@ -128,6 +131,12 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             "yellow",
         )
 
+    async def on_ib_pnl_single_event(self, pnl_single):
+        """
+        Пришел PnL для позиции.
+        """
+        self.positions_pnl[pnl_single.conId] = pnl_single.dailyPnL
+
     def on_connect(self):
         log.warning(colored(f"ON_CONNECT", "green"))
         send_telegram("Connected")
@@ -143,6 +152,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             if contract.bars is not None:
                 log.warning(f"Failed BAR: {contract.symbol}")
                 contract.bars = None
+            if contract.pnl_data is not None:
+                log.warning(f"Failed PnL: {contract.symbol}")
+                contract.pnl_data = None
 
     async def on_ib_error(self, req_id, error_code, error_string, contract):
         if req_id and req_id < 0 and "connection is OK" not in error_string:
@@ -307,6 +319,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
             contract.bars = None
             contract.mkt_ticker = None
+            contract.pnl_data = None
             contract.last_bar = None
             contract.last_mkt = None
             contracts.append(contract)
@@ -410,6 +423,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 try:
                     log.info("Reconnect")
                     await self.ib.connectAsync(**self.ib_params)
+                    self.ib_account = self.ib.managedAccounts()[0]
                 except asyncio.exceptions.TimeoutError:
                     log.error("Reconnect TimeoutError")
                 except ConnectionRefusedError:
@@ -428,6 +442,14 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Подписка на обновления по контрактам.
         """
+
+        # Получить информацию (conId) по контрактам
+        contracts_to_qualify = []
+        for contract in self.contracts:
+            if not contract.conId:
+                contracts_to_qualify.append(contract)
+        await self.ib.qualifyContractsAsync(*contracts_to_qualify)
+
         for contract in self.contracts:
             if contract.bars is not None and contract.last_bar:
                 dt = datetime.utcnow()
@@ -469,9 +491,23 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 if contract.mkt_ticker:
                     log.warning(colored(f"Cancel MKT: {contract.symbol}", "red"))
                     self.ib.cancelMktData(contract)
+                    contract.mkt_ticker = None
+                    await asyncio.sleep(0.1)
                 log.info(colored(f"Subscribe MKT: {contract.symbol}", "blue"))
                 contract.mkt_ticker = self.ib.reqMktData(contract)
                 await asyncio.sleep(0)
+
+                # P&L данные
+                if contract.pnl_data:
+                    log.warning(colored(f"Cancel PnL: {contract.symbol}", "red"))
+                    self.ib.cancelPnLSingle(self.ib_account, "", contract.conId)
+                    contract.pnl_data = None
+                    await asyncio.sleep(0.1)
+                log.info(colored(f"Subscribe PnL: {contract.symbol}", "blue"))
+                self.ib.reqPnLSingle(self.ib_account, "", contract.conId)
+                contract.pnl_data = True
+                await asyncio.sleep(0)
+
             self.subscribed = True
 
     def historical_stream_event(self, row):
@@ -516,6 +552,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                         self.on_event("trade", dt, symbol, payload)
                     except Exception as e:
                         log.error(f"Exception [on_event trade]: {e}")
+                        log.exception(e)
                 await asyncio.sleep(0)
             await asyncio.sleep(0)
 
@@ -694,6 +731,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             ex = p.contract.primaryExchange or p.contract.exchange
             symbol = f"{p.contract.symbol}.{ex}"
             positions[symbol] = {
+                "daily_pnl": self.positions_pnl.get(p.contract.conId, float("nan")),
                 "amount": Decimal(p.position),
                 "price": Decimal(str(p.avgCost)),
             }
