@@ -54,8 +54,8 @@ class TelegramBotMixin:
         if message.chat.username != TELEGRAM_USERNAME:
             return
 
-        txt = "Name     Now     Adv     PnL\n"
-        txt += "————————————————————————————\n"
+        txt_1 = ""
+        txt_2 = ""
 
         positions = self.account_stats.positions_extra()
 
@@ -68,17 +68,20 @@ class TelegramBotMixin:
             advised = position["advised"] or float("nan")
             pnl = position["daily_pnl"] or float("nan")
             total_pnl += 0 if math.isnan(pnl) else pnl
-            txt += f"{ticker:<4}{amount:+8.0f}{advised:+8.0f}{pnl:+8.0f}\n"
+            txt_2 += f"{ticker:<4}{amount:+8.0f}{advised:+8.0f}{pnl:+8.0f}\n"
 
-        txt += "————————————————————————————\n"
-        txt += f"Bot Margin      {bot_margin:12.2f}\n"
+        txt_1 += f"Net Value       {self.exchange.net_value:12.2f}\n"
+        txt_1 += f"Daily PnL       {total_pnl:+12.2f}　　　　　　　　\n"
+        txt_1 += f"Bot Margin      {bot_margin:12.2f}\n"
         if hasattr(self.exchange, "real_margin"):
-            txt += f"Real Margin     {self.exchange.real_margin:12.2f}\n"
-        txt += f"Net Value       {self.exchange.net_value:12.2f}\n"
-        txt += f"Daily PnL       {total_pnl:+12.2f}\n"
-        txt += "ண"
+            txt_1 += f"Real Margin     {self.exchange.real_margin:12.2f}\n"
 
-        txt = txt.replace("+nan", "   ·").replace(" nan", "   ·")
+        txt_1 += "\n         Pos     Adv     PnL\n"
+        txt_1 += "————————————————————————————\n"
+        txt_1 += txt_2
+
+        txt = txt_1.replace("+nan", "   ·").replace(" nan", "   ·")
+        txt = txt.replace(" ", " ")
 
         await message.answer(f"{hpre(txt)}", parse_mode=ParseMode.HTML)
 
