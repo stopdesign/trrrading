@@ -1,7 +1,9 @@
+import logging
 import pandas_market_calendars as mcal
 from datetime import timedelta, datetime
 from strategy import Signal, BaseStrategy, all_strategies
-from termcolor import cprint
+
+log = logging.getLogger("advisor")
 
 
 class Advisor:
@@ -17,7 +19,7 @@ class Advisor:
     strategy: BaseStrategy
 
     def __init__(self, symbol, extra_trade=False, extra_data=False, **kwargs):
-        self.instrument = symbol
+        self.symbol = symbol
         self.strategy_name = kwargs.pop("strategy")
         self.strategy = all_strategies[self.strategy_name](**kwargs)
 
@@ -32,12 +34,12 @@ class Advisor:
         self.last_bar_dt = None
 
     def __str__(self):
-        return f"<Advisor symbol={self.instrument} strategy={self.strategy}>"
+        return f"<Advisor symbol={self.symbol} strategy={self.strategy}>"
 
     @property
     def info(self):
         return (
-            f"{self.instrument} "
+            f"{self.symbol} "
             f"extra_data={self.extra_data:<1} "
             f"extra_trade={self.extra_trade:<1} "
             f"strategy={self.strategy!r}"
@@ -45,9 +47,11 @@ class Advisor:
 
     @property
     def exchange_symbol(self):
-        exchange_symbol = self.instrument.split(".")[1]
+        exchange_symbol = self.symbol.split(".")[1]
         exchange_symbol = exchange_symbol.replace("ARCA", "NYSE")
         exchange_symbol = exchange_symbol.replace("NYMEX", "CMES")
+        exchange_symbol = exchange_symbol.replace("GLOBEX", "CMES")
+        exchange_symbol = exchange_symbol.replace("ECBOT", "CMES")
         return exchange_symbol
 
     def init_schedule(self, start, end):
@@ -76,13 +80,7 @@ class Advisor:
                 diff = dt - self.last_bar_dt
                 t0 = self.schedule.get(dt.date())[0]
                 if diff != timedelta(minutes=1) and dt != t0:
-                    cprint(
-                        f" Bar gap {self.instrument},"
-                        f" new: {dt},"
-                        f" old: {self.last_bar_dt} ",
-                        color="red",
-                        attrs=["reverse"],
-                    )
+                    log.warning(f"Bar gap {self.symbol}, {dt}, {self.last_bar_dt}")
         self.last_bar_dt = dt
         # Обновить набор исторических данных
         self.strategy.on_bar(bar)
@@ -98,14 +96,8 @@ class Advisor:
         if self.is_main_session(dt) and diff > timedelta(seconds=150) and dt_min != t0:
             # Старый бар допустим, если это первый бар основной сессии.
             # Вне основной сессии непрерывность не проверяется.
-            cprint(
-                f" Test price old bar {self.instrument},"
-                f" now: {dt},"
-                f" bar: {self.last_bar_dt} ",
-                color="magenta",
-                attrs=["reverse"],
-            )
-            return Signal.PASS
+            log.warning(f"Old bar {self.symbol}, now: {dt}, bar: {self.last_bar_dt}")
+            # return Signal.PASS
         signal = self.strategy.test_price(price)
         if signal in [Signal.SHORT, Signal.LONG, Signal.CLOSE]:
             self.state = signal

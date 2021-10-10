@@ -135,7 +135,7 @@ class Trader(TelegramBotMixin):
         """
         Все советники для данного инструмента.
         """
-        return [a for a in self.advisors if not symbol or a.instrument == symbol]
+        return [a for a in self.advisors if not symbol or a.symbol == symbol]
 
     def get_current_position(self, instrument):
         """

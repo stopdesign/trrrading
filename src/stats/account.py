@@ -2,7 +2,6 @@ import logging
 import pandas as pd
 import numpy as np
 import scipy.stats
-from collections import defaultdict
 from decimal import Decimal
 from exchange import BaseExchange
 from termcolor import cprint, colored
@@ -96,7 +95,7 @@ class AccountStats:
         advisor = self.trader.get_advisors()[0]
 
         if not self.deposits:
-            print(f"SKIP   {advisor.instrument:<10}  {advisor.strategy!r}")
+            print(f"SKIP   {advisor.symbol:<10}  {advisor.strategy!r}")
 
         pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
         p = self.exchange.net_value - self.exchange.cash_initial
@@ -121,10 +120,11 @@ class AccountStats:
             f"PF:{pf:6.2f}   "
             f"R²:{r2:6.2f}   "
             f"TR:{trades:>4}   "
-            f"{advisor.instrument:<10}  "
+            f"{advisor.symbol:<10}  "
             f"{advisor.strategy!r}"
         )
         print(txt)
+        return roi
 
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
@@ -140,7 +140,10 @@ class AccountStats:
         # на единицу задействованных в торговле денег.
         roi = p / self.trader.target_margin * 100
 
-        rel_fee = -self.fee / float(p) * 100
+        if p:
+            rel_fee = -self.fee / float(p) * 100
+        else:
+            rel_fee = float("nan")
 
         # R2
         if self.deposits and len(self.deposits) > 1:
@@ -214,7 +217,11 @@ class AccountStats:
         """
         total_margin_used = 0
         for symbol, position in self.exchange.get_positions().items():
-            total_margin_used += self.get_margin_for_position(symbol, position)
+            mp = self.get_margin_for_position(symbol, position)
+            if mp is not None:
+                total_margin_used += mp
+            else:
+                log.error(f"get_margin_for_position is None, {symbol}, {position}")
         return total_margin_used
 
     def portfolio_info(self):

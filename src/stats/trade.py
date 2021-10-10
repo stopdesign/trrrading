@@ -74,4 +74,3 @@ class TradeStats:
         )
         txt = txt.replace("+0", colored(" 0", "white"))
         log.info(txt)
-        # send_telegram(txt)
