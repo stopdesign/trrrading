@@ -39,14 +39,13 @@ def send_telegram(text: str):
     if not token:
         return
 
-    url = "https://api.telegram.org/bot"
-    channel_id = TELEGRAM_CHANNEL_ID
-    url += token
-    method = url + "/sendMessage"
-
-    text = ansi_escape.sub("", text)
-
-    r = requests.post(method, data={"chat_id": channel_id, "text": text}, timeout=3)
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = {
+        "text": ansi_escape.sub("", text),
+        "chat_id": TELEGRAM_CHANNEL_ID,
+        "parse_mode": "html",
+    }
+    r = requests.post(url, data=data, timeout=3)
 
     if r.status_code != 200:
         raise requests.exceptions.HTTPError("post_text error")
