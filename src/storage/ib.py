@@ -1,3 +1,4 @@
+import logging
 import os
 import pandas as pd
 from datetime import timezone, datetime, timedelta
@@ -9,6 +10,9 @@ DATA_BASE_DIR = BASE_DIR / "data"
 
 TRADES_NUM_COL = ["open", "high", "low", "close", "volume", "average", "barCount"]
 BIDASK_NUM_COL = ["av_bid", "max_ask", "min_bid", "av_ask"]
+
+
+log = logging.getLogger("storage.ib")
 
 
 def get_file_name(exchange, symbol, data_type, date):
@@ -40,6 +44,11 @@ def load_as_df(ticker, data_type, start=None, end=None):
         path = get_file_name(exchange, symbol, data_type, date)
         if os.path.isfile(path):
             data += open(path).read()
+        else:
+            log.debug(f"No file: {path}")
+
+    if not data:
+        return
 
     df = pd.read_csv(StringIO(data), sep="\t", index_col="date", dtype=str)
     df = df[df["rth"] != "rth"]  # убрать заголовочные строки
