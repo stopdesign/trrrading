@@ -7,6 +7,9 @@ from data_types import Bar
 
 
 class ChannelBreakout4(BaseStrategy):
+    """
+    Как ChannelBreakout3, только гэпы заполняются фейковыми барами.
+    """
     don = None
     padding = 0
     count_bars = False

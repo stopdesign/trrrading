@@ -98,7 +98,7 @@ class Range(BaseStrategy):
                 else:
                     cnt = 1
 
-                for i in range(cnt):
+                for ii in range(cnt):
                     self.calc_channel(nb)
                     self.data.append(nb)
 
