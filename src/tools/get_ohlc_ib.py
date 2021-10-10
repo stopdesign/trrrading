@@ -3,6 +3,7 @@
 """
 
 import os
+import random
 import click
 import pytz
 import pandas as pd
@@ -32,7 +33,7 @@ dt_format = click.DateTime(formats=["%Y-%m-%d"])
 ib_params = {
     "host": "127.0.0.1",
     "port": 4001,  # 7497
-    "clientId": 15,
+    "clientId": random.randint(20, 99),
     "timeout": 10,
 }
 
@@ -69,7 +70,7 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # day_end = f"{day:%Y%m%d 23:59:59} UTC"
     # print(day, " | ", day_end, " | ", day_utc)
 
-    if contract.exchange == "NYMEX":
+    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT"]:
         duration = "2 D"
     else:
         duration = "1 D"
@@ -87,11 +88,11 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     if len(bars) == 0:
         raise ValueError("Empty response")
 
-    if contract.exchange == "NYMEX":
+    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT"]:
         ex_tz = pytz.timezone('America/New_York')
         t = datetime.combine(day, datetime.min.time()).astimezone(ex_tz)
-        t0 = t - timedelta(days=1) + timedelta(hours=18)
-        t1 = t + timedelta(hours=17)
+        t0 = t - timedelta(days=1) + timedelta(hours=14, minutes=30)
+        t1 = t + timedelta(hours=14, minutes=30)
         only_one_day = []
         for bar in bars:
             dt = bar.date
@@ -121,13 +122,22 @@ def get_splits(ticker):
     return splits
 
 
-def download_and_save(contract, data_types=None, start=None, end=None):
+def download_and_save(contract, data_types=None, start=None, end=None, force=False):
     data_types = data_types or ["BID_ASK", "TRADES"]
 
     symbol = contract.symbol
     exchange = contract.primaryExchange or contract.exchange
 
     ticker = f"{symbol}.{exchange}"
+
+    if contract.secType == "FUT":
+        contract.includeExpired = True
+        contracts = ib.reqContractDetails(contract)
+        contract_exp_dates = [c.contract.lastTradeDateOrContractMonth for c in contracts]
+        contract_exp_dates = sorted(contract_exp_dates)
+        contract.lastTradeDateOrContractMonth = contract_exp_dates[0]
+    else:
+        contract_exp_dates = None
 
     try:
         first_day = get_first_day(contract)
@@ -148,14 +158,16 @@ def download_and_save(contract, data_types=None, start=None, end=None):
     cal_exchange = cal_exchange.replace("ARCA", "NYSE")
     cal_exchange = cal_exchange.replace("NYMEX", "CMES")
     cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
+    cal_exchange = cal_exchange.replace("ECBOT", "CMES")
 
     cal = mcal.get_calendar(cal_exchange).schedule(start, end)
 
-    try:
-        splits = get_splits(ticker)
-    except ValueError:
-        cprint(f"Can't get splits for {symbol}", "red")
-        return False
+    splits = None
+    if contract.secType == "STK":
+        try:
+            splits = get_splits(ticker)
+        except ValueError:
+            cprint(f"Can't get splits for {symbol}", "red")
 
     if splits:
         df = pd.DataFrame.from_records(splits)
@@ -185,9 +197,19 @@ def download_and_save(contract, data_types=None, start=None, end=None):
             f_name = get_file_name(exchange, symbol, data_type, day)
 
             # вдруг такой файл уже есть
-            if Path(f_name).is_file():
-                cprint(f"SKIP: {f_name}", "yellow")
+            if Path(f_name).is_file() and not force:
+                # cprint(f"SKIP: {f_name}", "yellow")
                 continue
+
+            # Для фьючерсов тут уточняется, какой
+            # именно контракт получать для этой даты.
+            if contract.secType == "FUT":
+                exp_date = None
+                for ced in contract_exp_dates:
+                    if ced >= d0.strftime("%Y%m%d"):
+                        exp_date = ced
+                        break
+                contract.lastTradeDateOrContractMonth = exp_date
 
             # Получить данные за день
             try:
@@ -198,6 +220,10 @@ def download_and_save(contract, data_types=None, start=None, end=None):
             except ConnectionError as e:
                 cprint(f"ConnectionError: {symbol}, {day}, {data_type}", "red")
                 cprint(e, "red")
+                continue
+
+            if type(df).__name__ == "NoneType" or df.empty:
+                cprint(f"No data: {d0}, {data_type}", "blue")
                 continue
 
             # Пометить рабочие часы
@@ -211,17 +237,17 @@ def download_and_save(contract, data_types=None, start=None, end=None):
             df = df.set_index("date")
 
             # Убрать нулевые объемы
-            df = df.loc[df.volume != 0]
+            # df = df.loc[df.volume != 0]
 
             # В режиме BID_ASK данные имеют другой смысл. Переименовать.
             if data_type == "BID_ASK":
                 df.rename(columns=BID_ASK_COLUMNS_MAP, inplace=True)
                 # Убрать записи, где не было изменений.
                 # Запись для начала основной сессии (RTH) сохраняется.
-                df = df.drop_duplicates(
-                    subset=["av_bid", "max_ask", "min_bid", "av_ask", "rth"],
-                    keep="first",
-                )
+                # df = df.drop_duplicates(
+                #     subset=["av_bid", "max_ask", "min_bid", "av_ask", "rth"],
+                #     keep="first",
+                # )
 
             # Создать директорию, если надо
             d_name = os.path.dirname(f_name)
@@ -242,18 +268,36 @@ def daterange(start_date, end_date):
 @click.argument("symbols", nargs=-1, required=True)
 @click.option("--start", type=dt_format)
 @click.option("--end", type=dt_format)
+@click.option("--force", is_flag=True)
+@click.option("--midpoint", is_flag=True)
+@click.option("--bidask", is_flag=True, default=True)
+@click.option("--trades", is_flag=True, default=True)
 def main(**kwargs):
+    """
+    python get_ohlc_ib.py mes.globex --start 2020-12-20
+
+    Examples:
+    mes.globex
+    mym.ecbot
+    hg.nymex
+    aapl.nasdaq
+    fcx.nyse
+    copx.arca
+    """
     dt = datetime.now()
 
     last_week = datetime.now() - timedelta(7)
     dt_start = (kwargs.get("start") or last_week).date()
     dt_end = (kwargs.get("end") or datetime.now()).date()
+    force = kwargs.get("force", False)
 
-    # Stock("COPX", "SMART", "USD", primaryExchange="ARCA")
-    # Future("HG", exchange="NYMEX", localSymbol="HGU1")
-    # Future("ES", exchange="GLOBEX", localSymbol="ESU1")
-
-    data_types = ["TRADES", "BID_ASK"]
+    data_types = []
+    if kwargs.get("midpoint"):
+        data_types.append("MIDPOINT")
+    if kwargs.get("bidask"):
+        data_types.append("BID_ASK")
+    if kwargs.get("trades"):
+        data_types.append("TRADES")
 
     for stock in kwargs.get("symbols"):
         stock = stock.upper()
@@ -262,8 +306,13 @@ def main(**kwargs):
         else:
             symbol = stock
             pe = "ARCA"
-        contract = Stock(symbol, "SMART", "USD", primaryExchange=pe)
-        download_and_save(contract, data_types, dt_start, dt_end)
+
+        if pe in ["GLOBEX", "ECBOT", "NYMEX"]:
+            contract = Future(symbol, exchange=pe, currency="USD")
+        else:
+            contract = Stock(symbol, "SMART", "USD", primaryExchange=pe)
+
+        download_and_save(contract, data_types, dt_start, dt_end, force)
         print()
 
     print(f"Done in {str(datetime.now() - dt)[:-7]}")
