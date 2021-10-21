@@ -15,7 +15,7 @@ class BacktestExchange(BaseExchange):
     def __init__(self, instruments: dict, **kwargs):
         super().__init__(instruments, **kwargs)
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
-        self.cash_initial = kwargs.get("cash", Decimal("10000"))
+        self.cash_initial = kwargs.get("cash", Decimal("100000"))
         self.cash = self.cash_initial
         self.all_data = pd.DataFrame()
 
@@ -51,13 +51,15 @@ class BacktestExchange(BaseExchange):
         Запустить интервальное событие при необходимости.
         """
         dt = row.Index.to_pydatetime()
-        if self.dt_last and dt.hour != self.dt_last.hour:
+        if self.dt_last and dt.minute != self.dt_last.minute:
             norm_dt = dt.replace(minute=0, second=0, microsecond=0)
             if dt.day != self.dt_last.day:
                 norm_dt = norm_dt.replace(hour=0)
                 self.on_event("day", norm_dt)
-            else:
+            elif dt.hour != self.dt_last.hour:
                 self.on_event("hour", norm_dt)
+            elif dt.minute != self.dt_last.minute:
+                self.on_event("minute", norm_dt)
         self.dt_last = dt
 
     def stream_event(self, row):
