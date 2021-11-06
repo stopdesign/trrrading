@@ -87,9 +87,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.cash = self.cash_initial
         self.all_data = pd.DataFrame()
         self.dt_last = None
-
         self.finished = False
-        self.subscribed = False
 
         self._order_lock = {}
 
@@ -144,17 +142,18 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     def on_disconnect(self):
         log.warning(colored(f"ON_DISCONNECT", "red"))
         send_telegram("Disconnected")
-        self.subscribed = False
-        for contract in self.contracts:
-            if contract.mkt_ticker:
-                log.warning(f"Failed MKT: {contract.symbol}")
-                contract.mkt_ticker = None
-            if contract.bars is not None:
-                log.warning(f"Failed BAR: {contract.symbol}")
-                contract.bars = None
-            if contract.pnl_data is not None:
-                log.warning(f"Failed PnL: {contract.symbol}")
-                contract.pnl_data = None
+        # если произошел незапланированный дисконнект — разметить переконнект
+        if not self.finished:
+            for contract in self.contracts:
+                if contract.mkt_ticker:
+                    log.warning(f"Failed MKT: {contract.symbol}")
+                    contract.mkt_ticker = None
+                if contract.bars is not None:
+                    log.warning(f"Failed BAR: {contract.symbol}")
+                    contract.bars = None
+                if contract.pnl_data is not None:
+                    log.warning(f"Failed PnL: {contract.symbol}")
+                    contract.pnl_data = None
 
     async def on_ib_error(self, req_id, error_code, error_string, contract):
         if req_id and req_id < 0 and "connection is OK" not in error_string:
@@ -166,7 +165,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             for contract in self.contracts:
                 log.warning(f"Failed MKT: {contract.symbol}")
                 contract.mkt_ticker = None
-            self.subscribed = False
 
         # Отвалилась подписка на BAR
         # 10182: Failed to request live updates (disconnected).
@@ -217,12 +215,16 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 mkt_age = datetime.utcnow() - contract.last_mkt
                 log.warning(f"mkt_age: {mkt_age}")
 
+    def contract_symbol(self, contract):
+        ex = contract.primaryExchange or contract.exchange
+        return f"{contract.symbol}.{ex}"
+
     async def initial_update(self):
         # Открытые ордеры
         if ot := self.ib.openTrades():
             log.error("Open orders on bot init")
             for t in ot:
-                symbol = f"{t.contract.symbol}.{t.contract.primaryExchange}"
+                symbol = self.contract_symbol(t.contract)
                 log.error(
                     f"{symbol:<12}"
                     f"{t.order.action:<5}"
@@ -267,7 +269,12 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         # РАЗМЕТИТЬ RTH
         start = datetime.utcnow() - timedelta(days=300)
         end = datetime.utcnow() + timedelta(days=1)
-        cal_exchange = contract.primaryExchange.replace("ARCA", "NYSE")
+        cal_exchange = contract.primaryExchange or contract.exchange
+        cal_exchange = cal_exchange.replace("ARCA", "NYSE")
+        cal_exchange = cal_exchange.replace("NYMEX", "CMES")
+        cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
+        cal_exchange = cal_exchange.replace("ECBOT", "CMES")
+
         cal = mcal.get_calendar(cal_exchange).schedule(start, end)
         by_days = {}
         for day, t in sorted(cal.T.to_dict("list").items()):
@@ -301,8 +308,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
             df1 = df1[(df1["barCount"] != "0") | (df1["rth"] == "1")]
             df = df1
 
-        symbol = f"{contract.symbol}.{contract.primaryExchange}"
-        df["ticker"] = symbol
+        df["ticker"] = self.contract_symbol(contract)
         df["data_type"] = data_type
 
         return df
@@ -316,6 +322,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         contracts = []
         for symbol in self.symbols:
             sym, pe = symbol.split(".")
+            # if pe == "GLOBEX":
+            #     contract = ib.Future(sym, exchange=pe, localSymbol="MESZ1")
+            # else:
+            #     contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
             contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
             contract.bars = None
             contract.mkt_ticker = None
@@ -332,9 +342,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         current_data = []
         try:
             self.ib.connect(**self.ib_params)
-            for symbol in self.symbols:
-                sym, pe = symbol.split(".")
-                contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
+            self.ib.qualifyContracts(*self.contracts)  # для загрузки conId
+            for contract in self.contracts:
+                symbol = self.contract_symbol(contract)
                 for data_type in ["TRADES", "BIDASK"]:
                     query = f"ticker == '{symbol}' & data_type == '{data_type}'"
                     tail_df = self.all_data.query(query)
@@ -356,7 +366,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         # Вычислить последний исторический бар для данного контракта
         for contract in self.contracts:
-            symbol = f"{contract.symbol}.{contract.primaryExchange}"
+            symbol = self.contract_symbol(contract)
             query = f"ticker == '{symbol}' & data_type == 'TRADES'"
             last_dt = stream.query(query).tail(1).index.item().to_pydatetime()
             contract.last_bar = last_dt
@@ -419,10 +429,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 continue
 
             if not self.ib.isConnected():
-                self.subscribed = False
                 try:
                     log.info("Reconnect")
                     await self.ib.connectAsync(**self.ib_params)
+                    # await self.ib.qualifyContractsAsync(*self.contracts)
                     self.ib_account = self.ib.managedAccounts()[0]
                 except asyncio.exceptions.TimeoutError:
                     log.error("Reconnect TimeoutError")
@@ -442,13 +452,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Подписка на обновления по контрактам.
         """
-
-        # Получить информацию (conId) по контрактам
-        contracts_to_qualify = []
         for contract in self.contracts:
-            if not contract.conId:
-                contracts_to_qualify.append(contract)
-        await self.ib.qualifyContractsAsync(*contracts_to_qualify)
+            assert contract.conId, f"no conId, {contract}"
+            assert contract.exchange, f"no exchange, {contract}"
 
         for contract in self.contracts:
             if contract.bars is not None and contract.last_bar:
@@ -485,30 +491,19 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         await asyncio.sleep(1)
 
-        if not self.subscribed:
-            for contract in self.contracts:
-                # Тиковые данные
-                if contract.mkt_ticker:
-                    log.warning(colored(f"Cancel MKT: {contract.symbol}", "red"))
-                    self.ib.cancelMktData(contract)
-                    contract.mkt_ticker = None
-                    await asyncio.sleep(0.1)
+        for contract in self.contracts:
+            # Тиковые данные
+            if not contract.mkt_ticker:
                 log.info(colored(f"Subscribe MKT: {contract.symbol}", "blue"))
                 contract.mkt_ticker = self.ib.reqMktData(contract)
-                await asyncio.sleep(0)
-
-                # P&L данные
-                if contract.pnl_data:
-                    log.warning(colored(f"Cancel PnL: {contract.symbol}", "red"))
-                    self.ib.cancelPnLSingle(self.ib_account, "", contract.conId)
-                    contract.pnl_data = None
-                    await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)
+            # P&L данные
+            if not contract.pnl_data:
                 log.info(colored(f"Subscribe PnL: {contract.symbol}", "blue"))
                 self.ib.reqPnLSingle(self.ib_account, "", contract.conId)
                 contract.pnl_data = True
-                await asyncio.sleep(0)
-
-            self.subscribed = True
+                await asyncio.sleep(0.1)
+            await asyncio.sleep(0)
 
     def historical_stream_event(self, row):
         dt = row.Index.to_pydatetime()
@@ -529,7 +524,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
     async def market_stream_event(self, tickers):
         # Обработать quotes
         for ticker in tickers:
-            symbol = f"{ticker.contract.symbol}.{ticker.contract.primaryExchange}"
+            symbol = self.contract_symbol(ticker.contract)
             dt = ticker.time.replace(microsecond=0, tzinfo=None)
             ask = ticker.ask if ticker.ask > 0 else None
             bid = ticker.bid if ticker.bid > 0 else None
@@ -543,7 +538,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         # Обработать trades
         for ticker in tickers:
-            symbol = f"{ticker.contract.symbol}.{ticker.contract.primaryExchange}"
+            symbol = self.contract_symbol(ticker.contract)
             dt = ticker.time.replace(microsecond=0, tzinfo=None)
             for tick in ticker.ticks:
                 if tick.tickType in TRADE_TYPES and tick.price > 0:
@@ -577,11 +572,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         После появления нового бара отправить событие.
         """
-        symbol = str(f"{contract.symbol}.{contract.primaryExchange}")
+        symbol = self.contract_symbol(contract)
         # Посмотреть, какой бар был последним, и добавить все новые бары
         for bar in bars[-1000:-1]:  # последние 1000, кроме самого последнего
             bar_dt = bar.date.replace(tzinfo=None)
-            if bar_dt > contract.last_bar:
+            if not contract.last_bar or bar_dt > contract.last_bar:
                 payload = Bar.from_bar_data(bar, symbol)
                 self.on_event("bar", bar_dt, symbol, payload)
                 contract.last_bar = bar_dt
@@ -591,8 +586,12 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         """
         Открыть позицию/ордер на бирже.
         """
-        sym, pe = symbol.split(".")
-        contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
+        contract = None
+        for con in self.contracts:
+            if symbol and symbol == self.contract_symbol(con):
+                contract = con
+        if not contract:
+            return
 
         # Добываю цену и делаю запас
         mid_price = self.get_price(symbol, "mid")
@@ -663,8 +662,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         except KeyboardInterrupt:
             pass
 
+        # TODO: всю эту хуйню вынести в TradeStats.log_trade_result
         color = "red"
-        commission = None
+        fee = None
         amnt_sum = "—"
         if trade.orderStatus.status == "Filled":
             color = "green"
@@ -675,26 +675,32 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 log.warning(colored(txt, "red"))
             com_raw = sum(f.commissionReport.commission for f in trade.fills)
             amnt_sum = sum(int(f.execution.shares) for f in trade.fills)
-            commission = f"{com_raw:0.2f}"
+            fee = f"{com_raw:0.2f}"
         txt = (
             f"TRADE #{order.orderId}: {side} {symbol} {amnt_sum} — "
             f"{trade.orderStatus.status}, "
             f"{trade.orderStatus.avgFillPrice:0.2f}, "
             f"sig: {sig_price:0.2f}, "
             f"mid: {mid_price:0.2f}, "
-            f"fee: {commission}, "
+            f"fee: {fee}, "
             f"time: {sec:0.1f} sec"
         )
         log.warning(colored(txt, color=color, attrs=["reverse"]))
-        send_telegram(txt)
 
-        price = trade.orderStatus.avgFillPrice
+        # Сообщение в телеграм
+        # TODO: тоже вынести в TradeStats.что-нибудь
+        if trade.orderStatus.status == "Filled":
+            side_sym = "▲" if side == "buy" else "▼"
+            tele_txt = f"#{order.orderId}: {side_sym} {amnt_sum} {symbol} "
+            tele_txt += f"@ {trade.orderStatus.avgFillPrice:0.2f} "
+            tele_txt += f"› 30.68, fee: {fee}, {sec:0.0f} sec".replace(" ", " ")
+            send_telegram(tele_txt)
 
         # Событие «успешное завершение сделки»
         payload = {
             "side": side,
             "amount": amount,
-            "price": price,
+            "price": trade.orderStatus.avgFillPrice,
             "profit": None,
             "slippage": 0,  # TODO
             "fee": 0,  # TODO
@@ -727,13 +733,30 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
     def get_positions(self):
         positions = {}
-        for p in self.ib.positions():
-            ex = p.contract.primaryExchange or p.contract.exchange
-            symbol = f"{p.contract.symbol}.{ex}"
+        for p in self.ib.portfolio():
+            symbol = self.contract_symbol(p.contract)
             positions[symbol] = {
                 "daily_pnl": self.positions_pnl.get(p.contract.conId, float("nan")),
                 "amount": Decimal(p.position),
-                "price": Decimal(str(p.avgCost)),
+                "price": Decimal(str(p.averageCost)),
             }
+            # Если такого инструмента раньше не было,
+            # то добавить его в отслеживаемые контракты
+            has_con = False
+            for con in self.contracts:
+                if symbol == self.contract_symbol(con):
+                    has_con = True
+                    break
+            if not has_con:
+                log.warning(f"Add new contract for '{symbol}'")
+                contract = p.contract
+                contract.bars = None
+                contract.mkt_ticker = None
+                contract.pnl_data = None
+                contract.last_bar = None
+                contract.last_mkt = None
+                # FIXME: убрать хардкодинг биржи
+                contract.exchange = "GLOBEX"
+                self.contracts.append(contract)
         self.positions = positions
         return self.positions
