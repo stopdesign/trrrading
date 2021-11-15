@@ -284,7 +284,7 @@ class IBFakeExchange(BaseExchange, Healthcheck):
 
         def is_main_session(dt):
             t0, t1 = by_days.get(dt.date(), (None, None))
-            return str(int(t0 and t1 and t0 <= dt < t1))
+            return str(int(bool(t0 and t1 and t0 <= dt < t1)))
 
         df["rth"] = df.index.map(is_main_session)
 
