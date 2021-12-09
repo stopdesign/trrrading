@@ -4,8 +4,9 @@
 /coverage
 /node_modules
 *_local.*
-*.sqlite3
+*.sqlite3*
 reload
+*.bak
 
 # tmp data
 /front/*.csv

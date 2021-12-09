@@ -11,9 +11,10 @@ from notifications.alert import send_telegram
 from exchange.utils.nyse_cal import trading_session, time_to_next_session
 from storage.ib import load_many
 from exchange import BaseExchange
-from exchange.mixin import Healthcheck
+from exchange.mixin import Healthcheck, AccountEvents
 from data_types import BidAsk, Trade, Bar, Margin, Fee
 from ib_insync.ticker import TickerUpdateEvent  # noqa
+from tortoise import Tortoise
 
 log = logging.getLogger("broker")
 
@@ -31,7 +32,33 @@ BID_ASK_COLUMNS_MAP = {
 }
 
 
-class IBFakeExchange(BaseExchange, Healthcheck):
+async def init_db():
+    await Tortoise.init(
+        config={
+            "connections": {
+                "default": {
+                    "engine": "tortoise.backends.asyncpg",
+                    "credentials": {
+                        "database": "bot",
+                        "host": "127.0.0.1",
+                        "port": 5432,
+                        "user": "postgres",
+                        "password": "",
+                        "minsize": 1,
+                        "maxsize": 1,
+                    }
+                }
+            },
+            "apps": {
+                "models": {
+                    "models": ["models"],
+                }
+            },
+        },
+    )
+
+
+class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
     healthcheck_interval = 60
     rel_price_cap = 0.005  # на столько limit price будет хуже mid_price
     price_precision = Decimal("0.01")
@@ -43,13 +70,14 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         super().__init__(instruments, **kwargs)
 
         self.contracts = []
-
         self.loop = asyncio.get_event_loop()
         nest_asyncio.apply(self.loop)
 
         self.ib = ib.IB()
         self.ib_account = None
         self.positions_pnl = {}
+
+        self.trade_exec_data = {}
 
         # Подписаться на события шлюза IB
         self.ib.connectedEvent += self.on_connect
@@ -58,18 +86,33 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         self.ib.errorEvent += self.on_ib_error
         self.ib.accountValueEvent += self.on_ib_value_event
         self.ib.pnlSingleEvent += self.on_ib_pnl_single_event
-        # self.ib.positionEvent += self.on_ib_position_event
-        # self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
+        self.ib.positionEvent += self.on_ib_position_event
+        self.ib.updatePortfolioEvent += self.on_ib_update_portfolio
         self.ib.timeoutEvent += lambda *args: log.error(f"Timeout: {args}")
+
         # self.ib.commissionReportEvent += lambda t, f, r: log.info(colored(
         #     f"FEE: {t.contract.symbol} #{f.execution.orderId} - {f.time} - "
         #     f"comm: {r.commission} — amnt: {int(f.execution.shares)}",
         #     "red")
         # )
 
+        # self.ib.positionEvent += self.on_ib_event('updateEvent')
+        # self.ib.updatePortfolioEvent += self.on_ib_event('updateEvent')
+
+        # self.ib.updateEvent += self.on_ib_event('updateEvent')
+        # self.ib.barUpdateEvent += self.on_ib_event('barUpdateEvent')
+        self.ib.newOrderEvent += self.on_ib_event('newOrderEvent')
+        self.ib.orderModifyEvent += self.on_ib_event('orderModifyEvent')
+        self.ib.cancelOrderEvent += self.on_ib_event('cancelOrderEvent')
+        # self.ib.openOrderEvent += self.on_ib_event('openOrderEvent')
+        self.ib.orderStatusEvent += self.on_ib_order_status_event
+        self.ib.execDetailsEvent += self.on_ib_event('execDetailsEvent')
+        # self.ib.commissionReportEvent += self.on_ib_event('commissionReportEvent')
+
         self.ib_params = {
             "host": "127.0.0.1",
-            "port": 4001,  # 7497
+            # "port": 4001,
+            "port": 7497,
             "clientId": 0,
             "timeout": 10,
         }
@@ -101,33 +144,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 txt = f"{dt}, Net value: {self._net_value}, Margin: {self._real_margin}"
                 log.info(colored(txt, "blue"))
             self._net_value_dt = dt
-
-    async def on_ib_position_event(self, position):
-        """
-        Меняется размер позиции.
-        Или раз в три минуты по расписанию, вроде бы.
-        """
-        dt = datetime.utcnow().replace(microsecond=0)
-        cprint(
-            f"{dt}: on position, "
-            f"{position.contract.symbol}, "
-            f"{position.position}, "
-            f"{position.avgCost} ",
-            "yellow",
-        )
-
-    async def on_ib_update_portfolio(self, item):
-        """
-        Меняется размер или стоимость позиции в портфолио.
-        """
-        dt = datetime.utcnow().replace(microsecond=0)
-        cprint(
-            f"{dt}: on update portfolio, "
-            f"{item.contract.symbol}, "
-            f"{item.position}, "
-            f"{item.marketValue} ",
-            "yellow",
-        )
 
     async def on_ib_pnl_single_event(self, pnl_single):
         """
@@ -219,20 +235,6 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         ex = contract.primaryExchange or contract.exchange
         return f"{contract.symbol}.{ex}"
 
-    async def initial_update(self):
-        # Открытые ордеры
-        if ot := self.ib.openTrades():
-            log.error("Open orders on bot init")
-            for t in ot:
-                symbol = self.contract_symbol(t.contract)
-                log.error(
-                    f"{symbol:<12}"
-                    f"{t.order.action:<5}"
-                    f"{t.order.totalQuantity:>8} "
-                    f"{t.orderStatus.status:<10}"
-                    f"{t.order.outsideRth}"
-                )
-
     def load_historical_data(self):
         df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
         # BIDASK должен приходить раньше TRADES для этого интервала
@@ -322,11 +324,11 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         contracts = []
         for symbol in self.symbols:
             sym, pe = symbol.split(".")
-            # if pe == "GLOBEX":
-            #     contract = ib.Future(sym, exchange=pe, localSymbol="MESZ1")
-            # else:
-            #     contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
-            contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
+            if pe in ["GLOBEX", "NYMEX"]:
+                contract = ib.Future(sym, exchange=pe, localSymbol="MCLF2")
+            else:
+                contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
+            # contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
             contract.bars = None
             contract.mkt_ticker = None
             contract.pnl_data = None
@@ -388,6 +390,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         task = asyncio.to_thread(self.healthcheck_loop)
         asyncio.gather(task, return_exceptions=True)
 
+        # Открыть соединение с базой
+        self.loop.run_until_complete(init_db())
+
         # Поддерживать соединение и подписки на данные
         self.loop.create_task(self.connection_keeper())
 
@@ -411,6 +416,9 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         if self.ib.isConnected():
             self.ib.disconnect()
 
+        # Закрыть соединение с базой
+        self.loop.run_until_complete(Tortoise.close_connections())
+
         self.loop.stop()
 
     async def connection_keeper(self):
@@ -420,13 +428,17 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         while not self.finished:
             dt = datetime.utcnow().replace(microsecond=0)
 
-            time_to_next = time_to_next_session(dt, main=True)
-            wake_up_in_advance = 300
-            if time_to_next > timedelta(seconds=wake_up_in_advance):
-                txt = f"Next trading session in {time_to_next}, sleep"
-                log.warning(colored(txt, color="red", attrs=["reverse"]))
-                await asyncio.sleep(time_to_next.total_seconds() - wake_up_in_advance)
-                continue
+            # FIXME: сделать нормальную поддержку настроек про время
+            # Возможно, нужно всегда держать соединение, т.к. всегда будут
+            # какие-то активы для торговли. Или выключать на выходные.
+            # Или настраивать в конфиге брокера.
+            # time_to_next = time_to_next_session(dt, main=True)
+            # wake_up_in_advance = 300
+            # if time_to_next > timedelta(seconds=wake_up_in_advance):
+            #     txt = f"Next trading session in {time_to_next}, sleep"
+            #     log.warning(colored(txt, color="red", attrs=["reverse"]))
+            #     await asyncio.sleep(time_to_next.total_seconds() - wake_up_in_advance)
+            #     continue
 
             if not self.ib.isConnected():
                 try:
@@ -597,25 +609,56 @@ class IBFakeExchange(BaseExchange, Healthcheck):
         mid_price = self.get_price(symbol, "mid")
         lmt_price = self.get_limit_price(mid_price, side)
 
+        # FIXME: The price does not conform to the price variation for this contract
+        lmt_price = round(lmt_price * 4) / 4
+
+        # TODO: Вынести в настройки выбор типа ордера
         # order = ib.LimitOrder(side.upper(), amount, lmt_price, outsideRth=True)
 
         # Midprice orders are not supported outside of regular trading hours
-        order = ib.Order(
-            orderType="MIDPRICE",
+        # order = ib.Order(
+        #     orderType="MIDPRICE",
+        #     action=side.upper(),
+        #     totalQuantity=amount,
+        #     lmtPrice=lmt_price,
+        # )
+
+        order = ib.MarketOrder(
             action=side.upper(),
             totalQuantity=amount,
-            lmtPrice=lmt_price,
+            algoStrategy="Adaptive",
+            algoParams=[
+                ib.TagValue("adaptivePriority", "Patient"),  # Urgent, Normal, Patient
+            ],
+            tif="DAY",
         )
 
         if self._order_lock.get(symbol):
-            log.error(colored(f"{symbol} has orders", "red", attrs=["reverse"]))
-            return
+            # log.error(colored(f"{symbol} has orders", "red", attrs=["reverse"]))
+            # return
+
+            # FIXME: сделать отмену только ордера по данному инструменту
+            log.error(colored(f"{symbol} cancel orders", "red", attrs=["reverse"]))
+            self.ib.reqGlobalCancel()
+            try:
+                self.ib.waitOnUpdate(timeout=1)
+                self.ib.sleep(0.1)
+                self._order_lock[symbol] = False
+            except KeyboardInterrupt:
+                pass
 
         # Заблокировать работу с этим символом
         self._order_lock[symbol] = True
 
         # Размещаю ордер
         trade = self.ib.placeOrder(contract, order)
+
+        # Кешируется информация про ордер. Будет сохранена в базу,
+        # когда у ордера появится perm_id.
+        self.trade_exec_data[trade.orderStatus.orderId] = {
+            "dt": dt,
+            "sig_price": sig_price,
+        }
 
         txt = f"TRADE #{order.orderId}: {side} {symbol} {amount}"
         log.warning(colored(txt, color="cyan", attrs=["reverse"]))
@@ -755,8 +798,10 @@ class IBFakeExchange(BaseExchange, Healthcheck):
                 contract.pnl_data = None
                 contract.last_bar = None
                 contract.last_mkt = None
-                # FIXME: убрать хардкодинг биржи
-                contract.exchange = "GLOBEX"
+                # Это работает с GLOBEX и NYMEX, но не факт,
+                # что будет работать со всем остальным.
+                if contract.primaryExchange and not contract.exchange:
+                    contract.exchange = contract.primaryExchange
                 self.contracts.append(contract)
         self.positions = positions
         return self.positions

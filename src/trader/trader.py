@@ -173,7 +173,11 @@ class Trader(TelegramBotMixin):
         """
         margin = self.exchange.get_margin_level(state < 0)
         price = self.exchange.get_price(instrument, "mid")
-        return int(math.floor(self.target_margin * state / margin / price))
+        try:
+            return int(math.floor(self.target_margin * state / margin / price))
+        except:
+            print(instrument, "NO PRICE")
+            return 0
 
     def on_trade(self, dt: datetime, symbol, sig_price, volume=None):  # noqa
         """
@@ -205,6 +209,9 @@ class Trader(TelegramBotMixin):
             if not self.exchange.backtest:
                 log.debug(f"SKIP: diff: {diff}, buy: {can_buy}, sell: {can_sell}")
             return
+
+        if not self.exchange.backtest:
+            log.info(f"ON_TRADE not skip {dt} {symbol} {sig_price}")
 
         # Посчитать объем ордера, который нужно выставить для изменения позиции
         # из имеющейся в рекомендуемую. Скорректировать по возможностям из сигналов.

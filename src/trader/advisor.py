@@ -68,7 +68,8 @@ class Advisor:
 
     def is_main_session(self, dt):
         t0, t1 = self.schedule.get(dt.date(), (None, None))
-        return t0 and t1 and t0 <= dt < t1
+        # FIXME: вынести в настройки, поддерживать фьючерсы
+        return t0 and t1  # and t0 <= dt < t1
 
     def on_bar(self, dt, bar):
         if not (self.is_main_session(dt) or self.extra_data):

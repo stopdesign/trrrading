@@ -49,7 +49,8 @@ class ColoredFormatter(logging.Formatter):
         return super().format(rec)
 
 
-console_template = "%(message)s"
+# console_template = "%(message)s"
+console_template = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 console_formater = ColoredFormatter(console_template)
 
 file_template = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

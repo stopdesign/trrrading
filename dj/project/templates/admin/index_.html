@@ -1,0 +1,105 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" type="text/css" href="{% static "admin/css/dashboard.css" %}">{% endblock %}
+
+{% block coltype %}colMS{% endblock %}
+
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+{% trans 'Home' %}
+</div>
+{% endblock %}
+
+{% block pretitle %}{% endblock %}
+{% block content_title %}<h1>Dashboard</h1>{% endblock %}
+{% block content_subtitle %}{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <table class="dashboard_table">
+        <tr>
+            <th>Launch ID</th>
+            <th>Name</th>
+            <th>Provider</th>
+            <th>Vehicle</th>
+            <th>Period Start</th>
+            <th>Period End</th>
+            <th>Orbit</th>
+            <th>Apogee</th>
+            <th>Perigee</th>
+        </tr>
+        {% for mission in missions %}
+            <tr>
+                <td>
+                    <a href="{% url 'admin:main_mission_change' mission.id %}">{{ mission.launch_id }}</a>
+                </td>
+                <td>{{ mission.name }}</td>
+                <td>{{ mission.provider }}</td>
+                <td>{{ mission.vehicle }}</td>
+                <td>{{ mission.period_start }}</td>
+                <td>{{ mission.period_end }}</td>
+                <td>{{ mission.orbit }}</td>
+                <td>{{ mission.apogee }}</td>
+                <td>{{ mission.perigee }}</td>
+            </tr>
+            <tr>
+                <td colspan="100" class="mission-content">
+                    <table>
+                        <tr>
+                            <th>Program ID</th>
+                            <th>Name</th>
+                            <th>Mission</th>
+                            <th>Vehicle</th>
+                            <th>Vehicle Class</th>
+                            <th>Block</th>
+                            <th>Config ID</th>
+                        </tr>
+                    {% for vehicle in mission.vehicles.all %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'admin:main_vehicle_change' vehicle.id %}">{{ vehicle.program_id }}</a>
+                            </td>
+                            <td>{{ vehicle.name }}</td>
+                            <td>{{ vehicle.mission }}</td>
+                            <td>{{ vehicle.vehicle }}</td>
+                            <td>{{ vehicle.vehicle_class }}</td>
+                            <td>{{ vehicle.block }}</td>
+                            <td>{{ vehicle.config_id }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="100" class="vehicle-content">
+                                <table>
+                                    <tr>
+                                        <th>Payload Name</th>
+                                        <th>Company</th>
+                                        <th>Class ID</th>
+                                        <th>Type</th>
+                                    </tr>
+                                    {% for payload in vehicle.payloads.all %}
+                                        <tr>
+                                            <td>
+                                                <a href="{% url 'admin:main_payload_change' payload.id %}">{{ payload }}</a>
+                                            </td>
+                                            <td>{{ payload.customer }}</td>
+                                            <td>{{ payload.class_id }}</td>
+                                            <td>{{ payload.type }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </table>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </table>
+                </td>
+            </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}
+
+
+{% block sidebar %}
+{% endblock %}

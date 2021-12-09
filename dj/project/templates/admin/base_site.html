@@ -1,0 +1,14 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | {% trans "Custom Admin Title" %}{% endblock %}
+{% block extrastyle %}
+    <link rel="icon" href="{% static "favicon.png" %}" type="image/x-icon" />
+    <link rel="stylesheet" type="text/css" href="{% static "admin/css/admin_cor.css" %}"/>
+{% endblock %}
+
+{% block branding %}
+    <a href="{% url 'admin:index' %}" id="site-name">TRRRADING</a>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
