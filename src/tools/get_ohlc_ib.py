@@ -8,12 +8,14 @@ import click
 import pytz
 import pandas as pd
 import requests
+import socket
 import pandas_market_calendars as mcal
 from os.path import abspath, dirname
 from datetime import datetime, timezone, timedelta
 from ib_insync import *
 from pathlib import Path
 from termcolor import cprint
+from contextlib import closing
 
 
 BASE_DIR = abspath(dirname(__file__) + "/../../data")
@@ -30,16 +32,16 @@ dt_format = click.DateTime(formats=["%Y-%m-%d"])
 # Можно пробросить порт с удаленной машины:
 # ssh -L 4001:127.0.0.1:4001 root@51.15.62.103
 
+port_tws = 7497
+port_gw = 4001
+
 ib_params = {
     "host": "127.0.0.1",
-    # "port": 4001,
-    "port": 7497,
     "clientId": random.randint(20, 99),
-    "timeout": 10,
+    "timeout": 5,
 }
 
 ib = IB()
-ib.connect(**ib_params)
 
 
 def get_file_name(exchange, symbol, data_type, date):
@@ -286,6 +288,17 @@ def main(**kwargs):
     copx.arca
     """
     dt = datetime.now()
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.settimeout(1)
+        if sock.connect_ex((ib_params["host"], port_tws)) == 0:
+            ib_params["port"] = port_tws
+        else:
+            ib_params["port"] = port_gw
+
+    print(f"Using port {ib_params['port']}")
+
+    ib.connect(**ib_params)
 
     last_week = datetime.now() - timedelta(7)
     dt_start = (kwargs.get("start") or last_week).date()
