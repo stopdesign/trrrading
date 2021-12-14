@@ -111,8 +111,8 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
 
         self.ib_params = {
             "host": "127.0.0.1",
-            # "port": 4001,
-            "port": 7497,
+            "port": 4001,
+            # "port": 7497,
             "clientId": 0,
             "timeout": 10,
         }
@@ -325,10 +325,9 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
         for symbol in self.symbols:
             sym, pe = symbol.split(".")
             if pe in ["GLOBEX", "NYMEX"]:
-                contract = ib.Future(sym, exchange=pe, localSymbol="MCLF2")
+                contract = ib.ContFuture(sym, exchange=pe)
             else:
                 contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
-            # contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
             contract.bars = None
             contract.mkt_ticker = None
             contract.pnl_data = None
