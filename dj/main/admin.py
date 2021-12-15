@@ -89,6 +89,14 @@ class ExchangeAdmin(admin.ModelAdmin):
 
 @admin.register(Instrument, site=admin_site)
 class InstrumentAdmin(admin.ModelAdmin):
+    list_display = (
+        "symbol",
+        "main_exchange",
+        "description",
+        "min_tick",
+        "sec_type",
+        "multiplier",
+    )
     actions_on_top = False
     actions = None
 

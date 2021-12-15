@@ -1,8 +1,6 @@
 from asyncio import sleep
 from datetime import timedelta, datetime
 from termcolor import cprint
-from tortoise import Tortoise, run_async
-from tortoise.transactions import in_transaction
 import models
 import ib_insync as ib
 
@@ -46,15 +44,36 @@ class AccountEvents:
             cprint(f"EXCEPTION in Trade.get_or_create {e}", "red")
 
     async def on_ib_order_status_event(self, trade):
-        # print("STATUS EVENT", trade.order.permId)
-
-        # await init_db()
-
-        instrument = await models.Instrument.get(pk=1)
-
         o = trade.order
         os = trade.orderStatus
         contract = trade.contract
+
+        if getattr(contract, "primaryExchange"):
+            exchange_symbol = contract.primaryExchange
+        else:
+            exchange_symbol = contract.exchange
+
+        exchange = await models.Exchange.get_or_none(symbol=exchange_symbol)
+        if not exchange:
+            cprint(f"Unknown exchange: {exchange_symbol}", "red")
+            return
+
+        instrument = await models.Instrument.get_or_none(
+            main_exchange=exchange,
+            symbol=contract.symbol,
+        )
+        if not instrument:
+            cprint(f"Create instrument: {contract.symbol}.{exchange_symbol}", "red")
+            res = await self.ib.reqContractDetailsAsync(contract)
+            contract_details = res[0]
+            instrument = await models.Instrument.create(
+                main_exchange=exchange,
+                symbol=contract.symbol,
+                sec_type=contract.secType,
+                multiplier=(contract.multiplier or 1),
+                min_tick=contract_details.minTick,
+                description=contract_details.longName,
+            )
 
         if o.permId:
             try:
