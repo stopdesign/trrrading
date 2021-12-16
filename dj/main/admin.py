@@ -175,7 +175,8 @@ class OrderAdmin(admin.ModelAdmin):
         if obj.status != "Filled":
             return None
         last_trade = obj.trades.last()
-        return int((last_trade.time - obj.created_at).total_seconds() - 32400)
+        if last_trade:
+            return int((last_trade.time - obj.created_at).total_seconds() - 32400)
 
     @short_description("slippage")
     def get_slippage(self, obj):
