@@ -324,7 +324,7 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
         contracts = []
         for symbol in self.symbols:
             sym, pe = symbol.split(".")
-            if pe in ["GLOBEX", "NYMEX"]:
+            if pe in ["GLOBEX", "NYMEX", "ECBOT"]:
                 contract = ib.ContFuture(sym, exchange=pe)
             else:
                 contract = ib.Stock(sym, "SMART", "USD", primaryExchange=pe)
@@ -450,12 +450,20 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
                 except ConnectionRefusedError:
                     log.error("Reconnect ConnectionRefusedError")
             if self.ib.isConnected():
-                await self.ib_resubscribe()
+                try:
+                    await self.ib_resubscribe()
+                except Exception as e:
+                    log.error(f"Resubscribe Uknown Error: {e}")
+
             await asyncio.sleep(5)
 
     def create_on_bar_handler(self, contract):
         async def func(a, b):
-            return await self.on_bar_update(a, b, contract)
+            if a is not None and b is not None:
+                return await self.on_bar_update(a, b, contract)
+            else:
+                log.error(colored(f"no a {a} or b {b}", "red"))
+                return
 
         return func
 
@@ -633,12 +641,18 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
         )
 
         if self._order_lock.get(symbol):
-            # log.error(colored(f"{symbol} has orders", "red", attrs=["reverse"]))
-            # return
+            to_cancel = self._order_lock.get(symbol)
 
-            # FIXME: сделать отмену только ордера по данному инструменту
-            log.error(colored(f"{symbol} cancel orders", "red", attrs=["reverse"]))
-            self.ib.reqGlobalCancel()
+            txt = f"TRADE: #{to_cancel.orderId} cancel {symbol}"
+            log.warning(colored(txt, "red", attrs=["reverse"]))
+
+            res = self.ib.cancelOrder(to_cancel)
+            log.info(
+                f"CANCELED: {res.order.permId}, {res.order.orderId}, "
+                f"{res.orderStatus.status}, {res.orderStatus.filled}, "
+                f"{res.orderStatus.remaining}"
+            )
+
             try:
                 self.ib.waitOnUpdate(timeout=1)
                 self.ib.sleep(0.1)
@@ -647,7 +661,7 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
                 pass
 
         # Заблокировать работу с этим символом
-        self._order_lock[symbol] = True
+        self._order_lock[symbol] = order
 
         # Размещаю ордер
         trade = self.ib.placeOrder(contract, order)
@@ -691,7 +705,6 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
                 self.ib.sleep(0.1)
             except KeyboardInterrupt:
                 log.error("waitOnUpdate has been interrupted")
-                self._order_lock[symbol] = True
                 self.stop_listen()
                 return
 

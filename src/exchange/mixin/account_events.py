@@ -129,7 +129,7 @@ class AccountEvents:
                 # update
                 pass
             else:
-                cprint(f"UNKNOWN ORDER: {order}", "red")
+                cprint(f"NO ORDER FOR ID: {o.permId}", "red")
 
     async def on_ib_position_event(self, position):
         """
