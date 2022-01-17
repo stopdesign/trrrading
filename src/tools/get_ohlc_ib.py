@@ -191,8 +191,9 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
         t0 = t[0].to_pydatetime().replace(tzinfo=timezone.utc)
         t1 = t[1].to_pydatetime().replace(tzinfo=timezone.utc)
 
-        d0, d1 = t0.date(), t1.date()
-        assert d0 == d1
+        # d0, d1 = t0.date(), t1.date()
+        middle_date = t0 + (t1 - t0) / 2
+        # assert d0 == d1
         # assert d0 < datetime.now(tz=timezone.utc).date()
 
         for data_type in data_types:
@@ -209,14 +210,14 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
             if contract.secType == "FUT":
                 exp_date = None
                 for ced in contract_exp_dates:
-                    if ced >= d0.strftime("%Y%m%d"):
+                    if ced >= middle_date.strftime("%Y%m%d"):
                         exp_date = ced
                         break
                 contract.lastTradeDateOrContractMonth = exp_date
 
             # Получить данные за день
             try:
-                df = get_data(contract, day=d0, data_type=data_type)
+                df = get_data(contract, day=middle_date, data_type=data_type)
             except ValueError:
                 cprint(f"Empty response: {symbol}, {day}, {data_type}", "red")
                 continue
@@ -226,7 +227,7 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
                 continue
 
             if type(df).__name__ == "NoneType" or df.empty:
-                cprint(f"No data: {d0}, {data_type}", "blue")
+                cprint(f"No data: {middle_date}, {data_type}", "blue")
                 continue
 
             # Пометить рабочие часы
