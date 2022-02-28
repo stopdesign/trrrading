@@ -75,10 +75,10 @@ class AccountStats:
         df = pd.DataFrame.from_records(self.stats, index=["date"], coerce_float=True)
         df.to_csv(file_name, float_format="%.2f")
 
-    def advisors_info(self):
+    def strategies_info(self):
         # Только для тестов
-        for advisor in self.trader.get_advisors():
-            print(advisor.info)
+        for strategy in self.trader.strategies:
+            print(strategy)
 
     def settings_info(self):
         # Только для тестов
@@ -92,6 +92,9 @@ class AccountStats:
         print(txt)
 
     def print_short_summary(self):
+        """
+        Для пакетного тестирования, когда тестируется только одна стратегия.
+        """
         advisor = self.trader.get_advisors()[0]
 
         if not self.deposits:
@@ -130,7 +133,7 @@ class AccountStats:
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
 
         self.settings_info()
-        self.advisors_info()
+        self.strategies_info()
 
         pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
         p = self.exchange.net_value - self.exchange.cash_initial
@@ -207,7 +210,7 @@ class AccountStats:
 
         for symbol, position in positions.items():
             position["symbol"] = symbol
-            position["advised"] = self.trader.get_advised_position(symbol)
+            position["advised"] = self.trader.portfolio.positions[symbol]
 
         return positions
 

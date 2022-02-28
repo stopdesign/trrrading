@@ -34,9 +34,9 @@ class TradeStats:
     def log_trade_result(self, _, payload):
         txt = "Trade result: "
         color = "white"
-        profit = payload["profit"]
+        profit = payload["profit"] or 0
         if not profit:
-            return
+            color = "white"
         if profit > 0:
             color = "green"
         if profit < 0:

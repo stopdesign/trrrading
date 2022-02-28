@@ -411,6 +411,10 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
             self.ib.sleep(0.5)
         except KeyboardInterrupt:
             pass
+        except asyncio.CancelledError:
+            pass
+        except RuntimeError:
+            pass
 
         if self.ib.isConnected():
             self.ib.disconnect()
@@ -635,7 +639,7 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
             totalQuantity=amount,
             algoStrategy="Adaptive",
             algoParams=[
-                ib.TagValue("adaptivePriority", "Patient"),  # Urgent, Normal, Patient
+                ib.TagValue("adaptivePriority", "Normal"),  # Urgent, Normal, Patient
             ],
             tif="DAY",
         )
@@ -658,6 +662,8 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
                 self.ib.sleep(0.1)
                 self._order_lock[symbol] = False
             except KeyboardInterrupt:
+                pass
+            except asyncio.CancelledError:
                 pass
 
         # Заблокировать работу с этим символом
@@ -707,6 +713,10 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
                 log.error("waitOnUpdate has been interrupted")
                 self.stop_listen()
                 return
+            except RuntimeError:
+                log.error("waitOnUpdate RuntimeError")
+                self.stop_listen()
+                return
 
         dt = datetime.utcnow().replace(microsecond=0)
         sec = (dt - start_dt).total_seconds()
@@ -715,6 +725,8 @@ class IBFakeExchange(BaseExchange, Healthcheck, AccountEvents):
         try:
             self.ib.sleep(1)
         except KeyboardInterrupt:
+            pass
+        except asyncio.CancelledError:
             pass
 
         # TODO: всю эту хуйню вынести в TradeStats.log_trade_result

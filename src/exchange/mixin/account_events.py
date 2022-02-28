@@ -1,21 +1,11 @@
-from asyncio import sleep
+import asyncio
 from datetime import timedelta, datetime
-from termcolor import cprint
-import models
+from termcolor import cprint, colored
+# import models
 import ib_insync as ib
+import logging
 
-
-# self.updateEvent = Event('updateEvent')
-# self.barUpdateEvent = Event('barUpdateEvent')
-# self.newOrderEvent = Event('newOrderEvent')
-# self.orderModifyEvent = Event('orderModifyEvent')
-# self.cancelOrderEvent = Event('cancelOrderEvent')
-# self.openOrderEvent = Event('openOrderEvent')
-# self.orderStatusEvent = Event('orderStatusEvent')
-# self.execDetailsEvent = Event('execDetailsEvent')
-# self.commissionReportEvent = Event('commissionReportEvent')
-# self.updatePortfolioEvent = Event('updatePortfolioEvent')
-# self.positionEvent = Event('positionEvent')
+log = logging.getLogger("account_events")
 
 
 class AccountEvents:
@@ -44,6 +34,10 @@ class AccountEvents:
             cprint(f"EXCEPTION in Trade.get_or_create {e}", "red")
 
     async def on_ib_order_status_event(self, trade):
+        await self.process_status_event(trade)
+        await self.process_all_known_orders()
+
+    async def process_status_event(self, trade):
         o = trade.order
         os = trade.orderStatus
         contract = trade.contract
@@ -123,12 +117,18 @@ class AccountEvents:
                 order.avg_fill_price = os.avgFillPrice
                 await order.save()
 
+    async def process_all_known_orders(self):
+        # Проверить все ордеры, которые вообще есть,
+        # на случай пропущенных событий. Возможно, лучше
+        # проверять их по расписанию, а не по событиям.
         for o in await self.ib.reqAllOpenOrdersAsync():
             order = await models.Order.get_or_none(uid=o.permId)
             if order:
                 # update
                 pass
             else:
+                # Нашелся ордер, который не был добавлен в базу,
+                # т.к. его события не приходили или были пропущены.
                 cprint(f"NO ORDER FOR ID: {o.permId}", "red")
 
     async def on_ib_position_event(self, position):

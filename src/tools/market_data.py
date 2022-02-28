@@ -1,8 +1,8 @@
+import json
 import sys
 import logging
+import orjson
 import redis
-import urllib3
-import requests
 import pandas_market_calendars as mcal
 from time import sleep
 from random import shuffle
@@ -11,9 +11,7 @@ from collections import Counter
 from termcolor import cprint
 from datetime import datetime, timedelta, timezone
 from os.path import abspath, join, dirname
-
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from ibkr_web_api import IbApi
 
 
 log = logging.getLogger("loader")
@@ -24,45 +22,42 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
+username = "gr5g2ry0"
+password = ""
+paper = True
 
-HISTORY_URL = "https://localhost:5000/v1/api/iserver/marketdata/history"
+ib = IbApi(username, password, paper, debug=False)
+
+
+p = "https://ndcdyn.interactivebrokers.com/portal.proxy/v1/portal"
+
+HISTORY_URL = p + "/iserver/marketdata/history"
 
 instruments = [
     {
         "conid": 265598,
         "symbol": "AAPL",
         "exchange": "NASDAQ",
-        "data_types": ["TRADES"],
     },
     {
         "conid": 461318791,
         "symbol": "MES",
         "exchange": "GLOBEX",
-        "data_types": ["TRADES"],
     },
     {
         "conid": 461318792,
         "symbol": "MNQ",
         "exchange": "GLOBEX",
-        "data_types": ["TRADES"],
-    },
-    {
-        "conid": 131217639,
-        "symbol": "BB",
-        "exchange": "NYMEX",
-        "data_types": ["TRADES"],
     },
     {
         "conid": 211651685,
         "symbol": "URA",
         "exchange": "ARCA",
-        "data_types": ["TRADES"],
     },
     {
         "conid": 508109460,
         "symbol": "MNTS",
         "exchange": "NASDAQ",
-        "data_types": ["TRADES"],
     },
 ]
 
@@ -75,28 +70,28 @@ exchange_schedule = {
 }
 
 
-r = redis.Redis(host="localhost", port=6379, db=5)
+r = redis.Redis(host="localhost", port=6379, db=6)
 
 
-def get_stats_for_hour(data, start):
-
+def get_stats_for_hour(data):
     cnt = Counter()
 
-    end = start + timedelta(hours=1)
-    start_str = datetime.strftime(start, "%Y-%m-%d %H:%M:%S")
-    end_str = datetime.strftime(end, "%Y-%m-%d %H:%M:%S")
-
-    for val in data:
-        line = val.decode()
-        if start_str <= line[:19] < end_str:
-            if "ERR" in line:
-                cnt["error"] += 1
-            elif "CLOSED" in line:
-                cnt["closed"] += 1
-            elif "FIX" in line or "LATE" in line:
-                cnt["fix"] += 1
-            else:
-                cnt["ok"] += 1
+    for line in data:
+        try:
+            j = orjson.loads(line.decode())
+        except ValueError:
+            cnt["error"] += 1
+            continue
+        if j.get("error"):
+            cnt["error"] += 1
+        elif j.get("closed"):
+            cnt["closed"] += 1
+        elif j.get("empty"):
+            cnt["empty"] += 1
+        elif j.get("fix") or j.get("late"):
+            cnt["fix"] += 1
+        else:
+            cnt["ok"] += 1
 
     return cnt
 
@@ -106,26 +101,33 @@ def update_dash(instruments, csv_path):
     Обновление CSV со статусами по часам.
     """
     end = datetime.utcnow()
-    start = end - timedelta(hours=47)
+    start = end - timedelta(hours=120)
     start = start.replace(minute=0, second=0, microsecond=0)
 
-    dash_csv_data = "ticker,group,ok,closed,error,fix\n"
+    dash_csv_data = "ticker,group,ok,closed,error,fix,empty\n"
 
     for instrument in instruments:
         key = get_key(instrument)
 
-        # Запросить данные для этого интервала
-        data = r.zrangebyscore(key, dt_to_ts(start), 10 ** 10)
-
-        # Сгруппировать данные по часам
-        # Перебрать все часы от start до now
-        for cur_hour in dt_range(start, end, timedelta(hours=1)):
-            stats = get_stats_for_hour(data, cur_hour)
-            dash_csv_data += (
-                f"{key},{cur_hour},"
-                f"{stats['ok']},{stats['closed']},"
-                f"{stats['error']},{stats['fix']}\n"
+        cur_hour_interval = start
+        for n in range(300):
+            # Запросить данные для этого интервала
+            data = r.zrangebyscore(
+                key,
+                dt_to_ts(cur_hour_interval),
+                dt_to_ts(cur_hour_interval) + 3599
             )
+            stats = get_stats_for_hour(data)
+            dash_csv_data += (
+                f"{key},{cur_hour_interval},"
+                f"{stats['ok']},{stats['closed']},"
+                f"{stats['error']},{stats['fix']},"
+                f"{stats['empty']}\n"
+            )
+
+            cur_hour_interval += timedelta(hours=1)
+            if cur_hour_interval > datetime.utcnow():
+                break
 
     with open(csv_path, "w") as f:
         f.write(dash_csv_data)
@@ -147,17 +149,26 @@ def dt_to_ts(dt):
 
 
 def get_key(instrument):
+    # Всё правильно, в базу бары складываются с ключом TRADES
     return "{symbol}.{exchange}:TRADES".format(**instrument)
 
 
-def replace_data(instrument, line_str, ts):
+def replace_data(instrument, line, ts):
     """
     Запись в базу с заменой старых данных.
     """
     key = get_key(instrument)
-    cprint(f"{key}, {ts}, {line_str}", "white")
+    line_str = json.dumps(line, indent=None, separators=(',', ':'), default=str)
+    dt = ts_to_dt(ts*1000)
+    cprint(f"{key}, {ts}, {dt}, {line_str}", "white")
     r.zremrangebyscore(key, ts, ts)
     r.zadd(key, {line_str: ts})
+
+    symbol = "{symbol}.{exchange}".format(**instrument)
+    line["conid"] = instrument["conid"]
+    line["symbol"] = symbol
+    line_str = json.dumps(line, indent=None, separators=(',', ':'), default=str)
+    r.publish(f"{symbol}:BARS", line_str)
 
 
 @cache
@@ -168,7 +179,7 @@ def get_calendar_and_schedule(exchange):
     calendar = mcal.get_calendar(exchange_schedule[exchange])
 
     # нужно покрыть вперед и назад все возможные выходные
-    start = datetime.utcnow() - timedelta(days=5)
+    start = datetime.utcnow() - timedelta(days=10)
     end = datetime.utcnow() + timedelta(days=100)
 
     # TODO: убрать хардкодинг
@@ -187,38 +198,83 @@ def check_open_time(exchange, cur_interval):
     """
     calendar, schedule = get_calendar_and_schedule(exchange)
     cur_interval_utc = cur_interval.replace(tzinfo=timezone.utc)
-    return calendar.open_at_time(schedule, cur_interval_utc)
+    try:
+        return calendar.open_at_time(schedule, cur_interval_utc)
+    except ValueError as e:
+        print(schedule)
+        raise e
+
+
+def format_valid_interval(interval):
+    return {
+        "dt": datetime.strftime(interval["dt"], "%Y-%m-%d %H:%M:%S"),
+        "o": interval["o"],
+        "h": interval["h"],
+        "l": interval["l"],
+        "c": interval["c"],
+        "vol": interval["v"],
+        # "rth": int(interval["rth"]),
+    }
 
 
 def load_intervals_from_ibkr(instrument, period, data_grid):
     # Запрос в IBKR
+    q = f"?conid={instrument['conid']}&period={period}min&bar=1min&outsideRth=true"
     try:
-        data = {
-            "conid": instrument["conid"],
-            "period": f"{period}min",
-            "bar": "1min",
-            "outsideRth": True,
-        }
-        res = requests.get(HISTORY_URL, params=data, verify=False, timeout=3)
+        ib.reset_session()
+        ib.load_session()
+        res_json = ib.iserver_request(HISTORY_URL + q, "GET")
     except Exception as e:
         cprint(f"ERROR requests {e}", "red")
         raise e
 
+    # TODO: определять ситуацию, когда данные в начале торгового дня приходят
+    # TODO: только за прошлый день (значит за этот день данных еще не было)
+
+    # Если сейчас премаркет или основная сессия,
+    # а данные приходят за постмаркет предыдущего дня.
+
+    # В этом случае записать пустые данные с флагом EMPTY
+    # во все ячейки сетки, когда биржа уже была открыта.
+
     try:
-        data = res.json()["data"]
+        data = res_json.get("data")
+        # print(data)
+
+        mnt = timedelta(minutes=1)
+        prev_dt = None
         for interval in data:
             ts = interval["t"] // 1000
+
             dt = ts_to_dt(interval["t"])
+            # cprint(dt, "green")
+
+            # Если перед этим интервалом был гэп — навставлять EMPTY
+            if dt and prev_dt and dt - prev_dt > mnt:
+                cprint("large gap", "blue")
+                for gap_dt in dt_range(prev_dt + mnt, dt - mnt):
+                    if check_open_time(instrument["exchange"], gap_dt):
+                        # cprint(f"{gap_dt} open, but no data", "yellow")
+                        gap_ts = dt_to_ts(gap_dt)
+                        if gap_ts in data_grid:
+                            interval["dt"] = gap_dt
+                            data_grid[gap_ts]["new"] = {
+                                "dt": datetime.strftime(gap_dt, "%Y-%m-%d %H:%M:%S"),
+                                "empty": 1,
+                            }
+                            data_grid[gap_ts]["t"] = gap_ts * 1000
+
             if ts in data_grid:
                 interval["dt"] = dt
-                line_str = "{dt} {o} {h} {l} {c} {v}".format(**interval)
-                data_grid[ts]["new"] = line_str
+                data_grid[ts]["new"] = format_valid_interval(interval)
                 data_grid[ts]["t"] = interval["t"]
             else:
-                pass
-                # log.debug(f"Time is not in data_grid {ts} {dt}")
+                log.debug(f"Time is not in data_grid {ts} {dt}")
+            prev_dt = dt
+
+        # print('\n\n\n')
     except Exception as e:
-        cprint(f"ERROR: {res.status_code} {res.text} {e}", "yellow")
+        cprint(f"ERROR: {res_json} {e}", "yellow")
         raise e
 
     return data_grid
@@ -238,22 +294,22 @@ def fill_gaps(instrument, data_grid):
     last_open_dt = datetime.utcnow() - timedelta(days=10)  # далеко в прошлом
     for score, line in data_grid.items():
         if line["is_it_open"]:
-            last_open_dt = line["dt"]
+            last_open_dt = datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S")
 
     # Первый ключ плохих данных, которые нужно перезагружать
     first_bad_dt = None
     for score, line in data_grid.items():
-        delta = (last_open_dt - line["dt"]).total_seconds() // 60
-        if delta > 500:
+        dt = datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S")
+        delta = (last_open_dt - dt).total_seconds() // 60
+        if delta > 1000:
             # Сшилком далеко в прошлое, не рассматриваем
             continue
         if delta < 0:
             # Интервал был после последнего закрытия, не рассматриваем
             break
 
-        data = line.get("old")
-        if not data or "ERROR" in data:
-            first_bad_dt = line["dt"]
+        if not line.get("old") or ("error" in line.get("old")):
+            first_bad_dt = datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S")
             break
 
     print()
@@ -262,8 +318,9 @@ def fill_gaps(instrument, data_grid):
     print("Last open", last_open_dt, dt_to_ts(last_open_dt))
 
     if first_bad_dt:
-        # Хотим загрузить какие-то недогруженные данные
-        period = int((last_open_dt - first_bad_dt).total_seconds() // 60) + 1
+        # Хотим загрузить какие-то недогруженные данные.
+        # Запас +5 нужен, чтобы поймать gap.
+        period = int((last_open_dt - first_bad_dt).total_seconds() // 60) + 5
         cprint(f"GET IBKR DATA, period: {period}", "blue")
         try:
             data_grid = load_intervals_from_ibkr(instrument, period, data_grid)
@@ -274,9 +331,11 @@ def fill_gaps(instrument, data_grid):
     # Сгенерить данные для закрытых интервалов
     for score, line in data_grid.items():
         if line.get("is_it_open") is False:
-            if not line.get("old") or ("ERROR" in line.get("old")):
-                line_str = "{dt} CLOSED".format(**line)
-                data_grid[score]["new"] = line_str
+            if not line.get("old") or ("error" in line.get("old")):
+                data_grid[score]["new"] = {
+                    "dt": line["dt"],
+                    "closed": 1,
+                }
 
     return data_grid
 
@@ -293,7 +352,7 @@ def update_instrument(interval_dt, instrument):
     for cur_interval in dt_range(start, interval_dt):
         is_it_open = check_open_time(instrument["exchange"], cur_interval)
         data_grid[dt_to_ts(cur_interval)] = {
-            "dt": cur_interval,
+            "dt": datetime.strftime(cur_interval, "%Y-%m-%d %H:%M:%S"),
             "is_it_open": is_it_open,
         }
 
@@ -303,13 +362,23 @@ def update_instrument(interval_dt, instrument):
     # Положить интервалы из базы в сетку
     for line in data_in_db:
         line = line.decode()
-        dt = datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+        try:
+            line_data = orjson.loads(line)
+        except orjson.JSONDecodeError:
+            log.error(f"JSONDecodeError: {line}")
+            return False
+        dt = datetime.strptime(line_data["dt"], "%Y-%m-%d %H:%M:%S")
         ts = dt_to_ts(dt)
         if ts in data_grid:
-            data_grid[ts]["old"] = line
+            data_grid[ts]["old"] = line_data
 
     # Метод заполняет пробелы из IBKR или флагом "CLOSED"
     data_grid = fill_gaps(instrument, data_grid)
+
+    # # print(json.dumps(data_grid, indent=2, default=str))
+    # for line in data_grid.values():
+    #     print("old:", line.get("old"), "  new:", line.get("new"))
+    # sys.exit()
 
     # Найти различачающиеся данные и сохранить или вывести ошибку
     for score, line in data_grid.items():
@@ -317,15 +386,24 @@ def update_instrument(interval_dt, instrument):
         # Уже были данные
         if "old" in line:
             # Но теперь есть другие данные
-            if "new" in line and line["new"] != line["old"]:
-                replace_data(instrument, line["new"] + " FIX", score)
+            old_line = line["old"]
+            old_line.pop('late', None)
+            old_line.pop('fix', None)
+            old_line.pop('avg', None)
+            old_line.pop('cnt', None)
+            old_line.pop('rth', None)
+            if "new" in line and line["new"] != old_line:
+                new_line = line["new"]
+                new_line["fix"] = 1
+                replace_data(instrument, new_line, score)
 
         # Данных не было
         else:
-            if line.get("new"):
+            if new_line := line.get("new"):
                 # Если данные пришли не real-time, то ставлю флаг LATE
-                late = " LATE" if line["dt"] < interval_dt else ""
-                replace_data(instrument, line["new"] + late, score)
+                if datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S") < interval_dt:
+                    new_line["late"] = 1
+                replace_data(instrument, new_line, score)
             else:
                 log.debug("Данных всё нет и нет")
 
@@ -368,16 +446,22 @@ def loader(dt_start, instruments):
 
             if dt - dt_start > timedelta(seconds=timeout):
                 cprint(f"ERROR интервал долго не грузится", "red")
-                line_str = f"{interval_dt} ERROR: timeout"
-                replace_data(instrument, line_str, dt_to_ts(interval_dt))
+                line_data = {
+                    "dt": datetime.strftime(interval_dt, "%Y-%m-%d %H:%M:%S"),
+                    "error": 2,
+                }
+                replace_data(instrument, line_data, dt_to_ts(interval_dt))
 
                 # Прекращаем грузить инструмент
                 break
 
             if dt.minute != dt_start.minute:
                 cprint("ERROR пора грузить новый интервал", "red")
-                line_str = f"{interval_dt} ERROR: too late"
-                replace_data(instrument, line_str, dt_to_ts(interval_dt))
+                line_data = {
+                    "dt": datetime.strftime(interval_dt, "%Y-%m-%d %H:%M:%S"),
+                    "error": 3,
+                }
+                replace_data(instrument, line_data, dt_to_ts(interval_dt))
 
                 # Прекращаем грузить данный интервал
                 return

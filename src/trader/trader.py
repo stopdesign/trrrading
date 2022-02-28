@@ -1,15 +1,12 @@
-import math
 import logging
 import pandas as pd
-from typing import List
 from datetime import datetime
-from decimal import Decimal
 from termcolor import colored
 from exchange import BaseExchange, all_exchanges
 from stats import AccountStats, TradeStats
-from strategy import Signal
-from trader import Advisor
-from trader.tg_bot import TelegramBotMixin
+from storage.redis import RedisTradingData
+from trader import Portfolio, TelegramBotMixin, Execution
+from strategy import all_strategies
 
 log = logging.getLogger("trader")
 
@@ -17,33 +14,38 @@ log = logging.getLogger("trader")
 class Trader(TelegramBotMixin):
     exchange: BaseExchange = None
 
-    def __init__(self, broker_conf, instruments, base_dir):
+    def __init__(self, broker_conf, instruments, base_dir, run):
         txt = f"Init trader at {datetime.utcnow().replace(microsecond=0)} UTC"
         log.info(colored(txt, "white"))
 
         self.base_dir = base_dir
+        self.run = run
 
         self.target_margin = broker_conf.get("target_margin")
         self.can_short = broker_conf.get("short", True)
         self.resample_rule = broker_conf.get("resample_rule", None)
 
         self.instruments = instruments
-        self.advisors = []
+        self.strategies = []
 
+        # Инициализация стратегий
         for symbol, config in instruments.items():
-            for advisor_config in config["advisors"]:
-                self.advisors.append(Advisor(symbol, **advisor_config))
+            for strategy_conf in config["strategies"]:
+                strategy_class = all_strategies[strategy_conf["name"]]
+                self.strategies.append(strategy_class(symbol, **strategy_conf))
 
         exchange_class = all_exchanges[broker_conf.get("driver")]
 
         if exchange_class.backtest:
             dt = broker_conf.get("dt_start")
             self.dt_start = datetime(dt.year, dt.month, dt.day)
-            self.dt_end = broker_conf.get("dt_end")
+            dt = broker_conf.get("dt_end")
+            self.dt_end = datetime(dt.year, dt.month, dt.day)
         else:
             self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
             self.dt_end = None
 
+        # TODO: инициализировать состояние портфолио?
         self.exchange = exchange_class(
             instruments,
             dt_start=self.dt_start,
@@ -51,12 +53,28 @@ class Trader(TelegramBotMixin):
             on_event=self.on_event,
         )
 
+        self.trading_data = RedisTradingData(
+            instruments,
+            dt_start=self.dt_start,
+            dt_end=self.dt_end,
+            on_event=self.on_event,
+        )
+
+        self.portfolio = Portfolio(self.exchange)
+        self.execution = Execution(self.exchange, self.portfolio)
+
         self.account_stats = AccountStats(self, self.exchange)
         self.trade_stats = TradeStats(self, self.exchange)
 
     def warm_up(self):
+        """
+        TODO: Почему не в init?
+        """
         log.info(colored(f"Historical data from {self.exchange.dt_from}", "white"))
-        self.exchange.warm_up()
+
+        # Прогреть индикторы прогоном исторических данных
+        self.trading_data.warm_up()
+
         self.account_stats.portfolio_info()
         self.account_stats.account_info()
 
@@ -65,9 +83,11 @@ class Trader(TelegramBotMixin):
 
         log.info("Start stream")
         self.account_stats.snapshot()
-        self.exchange.start_listen()
+        self.trading_data.start_listen()
 
         log.info("Stop stream")
+        self.trading_data.stop_listen()
+        self.exchange.close_all()
         self.account_stats.snapshot()
         self.account_stats.portfolio_info()
         self.account_stats.account_info()
@@ -75,17 +95,18 @@ class Trader(TelegramBotMixin):
         self.stop_tg_bot()
 
     def stop(self):
-        self.exchange.stop_listen()
+        self.exchange.close_all()
+        self.trading_data.stop_listen()
 
     def final_info(self):
         """
         Завершение торговли (штатное или из-за ошибки).
         Сохранить все наработанные данные.
         """
-        csv_dir = f"{self.base_dir}/../front"
+        csv_dir = f"{self.base_dir}/front"
         df = pd.DataFrame()
-        for advisor in self.get_advisors():
-            rd = advisor.strategy.resampled_data(self.resample_rule, self.dt_start)
+        for strategy in self.strategies:
+            rd = strategy.resampled_data(self.resample_rule, self.dt_start)
             df = df.append(rd)
         df.sort_index().to_csv(f"{csv_dir}/data.csv", float_format="%.2f")
         self.trade_stats.to_csv(f"{csv_dir}/trades.csv")
@@ -98,18 +119,14 @@ class Trader(TelegramBotMixin):
         В стриме биржи возникло новое событие.
         """
         if dt >= self.dt_start and not self.exchange.backtest:
-            log.debug(f"EVENT {event} {symbol} {payload}")
+            log.info(f"EVENT {event} {symbol} {payload}")
 
         if event == "bar":
-            for advisor in self.get_advisors(symbol):
-                advisor.on_bar(dt, payload)
+            self.on_bar(dt, symbol, payload)
 
-        if event == "trade" and dt < self.dt_start:
-            for advisor in self.get_advisors(symbol):
-                advisor.test_price(dt, payload.price)
-
-        if event == "trade" and dt >= self.dt_start:
-            self.on_trade(dt, symbol, payload.price)
+        if event == "trade":
+            if dt >= self.dt_start:
+                self.on_trade(dt, symbol, payload)
 
         if event == "quote":
             self.exchange.add_quote(dt, symbol, payload)
@@ -124,154 +141,48 @@ class Trader(TelegramBotMixin):
         if event == "after_trade":
             self.trade_stats.on_trade_done(dt, symbol, payload)
             self.account_stats.on_trade_done(symbol, payload)
-            # self.trade_stats.log_trade_result(symbol, payload)
+            self.trade_stats.log_trade_result(symbol, payload)
             if not self.exchange.backtest:
                 self.account_stats.portfolio_info()
                 self.account_stats.account_info()
 
         return True
 
-    def get_advisors(self, symbol=None) -> List[Advisor]:
+    def on_bar(self, dt: datetime, symbol, payload):
         """
-        Все советники для данного инструмента.
+        Новый интервал. Обновить данные в стратегиях.
+        Получить сигналы, зависящие от интервалов.
         """
-        return [a for a in self.advisors if not symbol or a.symbol == symbol]
+        hints = []
 
-    def get_current_position(self, instrument):
+        for strategy in self.strategies:
+            if strategy.symbol == symbol:
+                hints.append(strategy.on_bar(payload))
+
+        self.process_hints(hints, dt)
+
+    def on_trade(self, dt: datetime, symbol, payload):
         """
-        Сколько сейчас в портфолио есть этой штуки.
+        Новая цена. Обновить данные в стратегиях.
+        Получить сигналы, зависящие от сделок.
         """
-        positions = self.exchange.get_positions()
-        return positions.get(instrument, BaseExchange.empty_position)["amount"]
+        hints = []
 
-    def get_advised_position(self, instrument):
+        for strategy in self.strategies:
+            if strategy.symbol == symbol:
+                hints.append(strategy.on_trade(payload.price))
+
+        self.process_hints(hints, dt)
+
+    def process_hints(self, hints, dt):
         """
-        Сколько сейчас в портфолио должно быть этой штуки.
+        Обновить состояние портфолио после получения новых сигналов.
+        Применить новое состояние портфолио к торговому аккаунту.
         """
-        state = 0
-        for advisor in self.get_advisors(instrument):
-            if not advisor.state:
-                log.warning(f"NO STATE: {advisor}")
-                return None
-            state += advisor.state.numeric / len(self.advisors)
+        hints = list(filter(None, hints))
 
-        # Шорт должен быть разрешен на уровне бота и инструмента
-        instrument_config = self.instruments.get(instrument, {})
-        if not (self.can_short and instrument_config.get("short")):
-            state = max(0, state)
+        # Обновить Portfolio Targets
+        self.portfolio.rebalance(hints)
 
-        try:
-            return self.state_to_position(instrument, state)
-        except TypeError:
-            return None
-
-    def state_to_position(self, instrument, state):
-        """
-        Какому количеству акций соответствует данный state.
-        Учесть разный margin для шорта и лонга.
-        При state 1 позиция должна давать target margin.
-        """
-        margin = self.exchange.get_margin_level(state < 0)
-        price = self.exchange.get_price(instrument, "mid")
-        try:
-            return int(math.floor(self.target_margin * state / margin / price))
-        except:
-            print(instrument, "NO PRICE")
-            return 0
-
-    def on_trade(self, dt: datetime, symbol, sig_price, volume=None):  # noqa
-        """
-        Тут торговля, если стратегия дала сигнал.
-        """
-        if not self.exchange.backtest:
-            log.debug(f"ON_TRADE {dt} {symbol} {sig_price}")
-
-        # Протестировать новую цену (не добавляя в историю).
-        # Получить сигналы во все стороны.
-        buy_signals, sell_signals = self.get_signals(symbol, dt, sig_price)
-
-        # Пересчитать дискретные сигналы в количество акций
-        # FIXME: Считает оно неправильно, потому что закрытие
-        # FIXME: и открытие нужно считать по разным ценам.
-        # FIXME: Или даже менять систему подсчета margin.
-        # FIXME: Проблему видно при продаже после сильного роста.
-        can_buy = self.state_to_position(symbol, buy_signals)
-        can_sell = self.state_to_position(symbol, sell_signals)
-
-        # Это всё должно быть после тестирования новой цены в get_signals,
-        # т.к. используется advisor.state, который должен быть посчитан.
-        cp = self.get_current_position(symbol)
-        ap = self.get_advised_position(symbol)
-        diff = ap - cp
-
-        # Если ничего не нужно делать
-        if not (diff and (can_buy or can_sell)):
-            if not self.exchange.backtest:
-                log.debug(f"SKIP: diff: {diff}, buy: {can_buy}, sell: {can_sell}")
-            return
-
-        if not self.exchange.backtest:
-            log.info(f"ON_TRADE not skip {dt} {symbol} {sig_price}")
-
-        # Посчитать объем ордера, который нужно выставить для изменения позиции
-        # из имеющейся в рекомендуемую. Скорректировать по возможностям из сигналов.
-        amount, side = 0, None
-        if diff > 0:
-            amount, side = min(abs(diff), abs(can_buy)), "buy"
-        if diff < 0:
-            amount, side = -min(abs(diff), abs(can_sell)), "sell"
-
-        # Рыночная цена по текущему стакану
-        price = self.exchange.get_price(symbol, side)
-
-        # Предлагаемое изменение позиции должно быть больше минимального
-        if abs(amount) < self.get_min_tradable_amount(price):
-            amount, side = 0, None
-
-        # Лог того, что собираемся делать
-        # TODO: записать параметры в TradeStats в виде шаблона сделки,
-        # TODO: передать это в self.exchange.trade (uid или сам объект),
-        # TODO: оттуда уже выводить лог pre-trade и post-trade
-        self.trade_stats.log_trade(
-            dt, symbol, sig_price, price, cp, ap, amount, can_sell, can_buy,
-            self.exchange.net_value
-        )
-
-        # Если есть все параметры — запустить сделку
-        if price and amount:
-            self.exchange.trade(side, abs(amount), symbol, dt, sig_price)
-
-    def get_min_tradable_amount(self, price):
-        """
-        Минимальное количество акций, которое стоит покупать/продавать.
-        """
-        min_tradable_amount = math.floor(Decimal(100) / Decimal(price))
-        min_tradable_amount = max(1, min_tradable_amount)
-        return min_tradable_amount
-
-    def get_signals(self, instrument, dt, price):
-        """
-        Сумма сигналов в каждом направлении.
-        """
-        total_buy, total_sell = 0, 0
-        all_adv_len = len(self.advisors)
-
-        for advisor in self.get_advisors(instrument):
-            if advisor.state is None:
-                data_len = len(advisor.strategy.data)
-                raise Exception(f"Empty state: {advisor}, len: {data_len}")
-
-            old_state = advisor.state.numeric
-            signal = advisor.test_price(dt, price)
-            state_diff = signal.numeric - old_state
-
-            if signal == Signal.PASS:
-                continue
-
-            if state_diff > 0:
-                total_buy += abs(state_diff / all_adv_len)
-
-            if state_diff < 0:
-                total_sell += abs(state_diff / all_adv_len)
-
-        return total_buy, total_sell
+        # Выставить ордеры
+        self.execution.apply_targets(dt)

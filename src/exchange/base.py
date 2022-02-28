@@ -56,18 +56,10 @@ class BaseExchange:
         if payload.bid:
             self.quotes[symbol]["bid"] = payload.bid
             self.quotes[symbol]["dt"] = dt
+        self.dt_last = dt
 
     def trade(self, side: str, amount: float, symbol: str, dt: datetime, sig_price):
         raise NotImplementedError()
-
-    def warm_up(self):
-        pass
-
-    def start_listen(self):
-        pass
-
-    def stop_listen(self):
-        pass
 
     def print_final_info(self):
         pass
@@ -80,7 +72,7 @@ class BaseExchange:
 
     @property
     def net_value(self):
-        return
+        raise NotImplementedError()
 
     @property
     def equity_value(self):
@@ -88,3 +80,14 @@ class BaseExchange:
 
     def get_margin_level(self, short=False):
         return self.margin.short if short else self.margin.long
+
+    def close_all(self):
+        """
+        Закрыть все открытые позиции.
+        """
+        for symbol, position in self.positions.items():
+            amount = position["amount"]
+            if amount > 0:
+                self.trade("sell", abs(amount), symbol, self.dt_last, None)
+            if amount < 0:
+                self.trade("buy", abs(amount), symbol, self.dt_last, None)

@@ -1,10 +1,12 @@
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Union
 from ib_insync import BarData
 
 
 @dataclass
 class Bar:
-    date: None
+    date: Union[None, datetime]
     open: float
     high: float
     low: float

@@ -1,10 +1,8 @@
-import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from termcolor import cprint
 from exchange import BaseExchange
-from data_types import BidAsk, Trade, Margin, Fee
-from storage.ib import load_many
+from data_types import Margin, Fee
 
 
 class BacktestExchange(BaseExchange):
@@ -14,78 +12,8 @@ class BacktestExchange(BaseExchange):
 
     def __init__(self, instruments: dict, **kwargs):
         super().__init__(instruments, **kwargs)
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=20))
         self.cash_initial = kwargs.get("cash", Decimal("100000"))
         self.cash = self.cash_initial
-        self.all_data = pd.DataFrame()
-
-    def load_data(self):
-        df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
-        # BIDASK должен приходить раньше TRADES для этого интервала
-        return df.sort_values(["date", "ticker", "data_type"])
-
-    def warm_up(self):
-        """
-        Прогнать события по историческим данным.
-        """
-        self.all_data = self.load_data()
-
-        stream = self.all_data.loc[self.dt_from:self.dt_start]
-        for row in stream.itertuples():
-            self.stream_event(row)
-
-    def start_listen(self):
-        """
-        Эмулировать события, приходящие с биржи.
-        """
-        stream = self.all_data.loc[self.dt_start:self.dt_end]
-        for row in stream.itertuples():
-            self.interval_event(row)
-            self.stream_event(row)
-
-    def stop_listen(self):
-        self.close_all()
-
-    def interval_event(self, row):
-        """
-        Запустить интервальное событие при необходимости.
-        """
-        dt = row.Index.to_pydatetime()
-        if self.dt_last and dt.minute != self.dt_last.minute:
-            norm_dt = dt.replace(minute=0, second=0, microsecond=0)
-            if dt.day != self.dt_last.day:
-                norm_dt = norm_dt.replace(hour=0)
-                self.on_event("day", norm_dt)
-            elif dt.hour != self.dt_last.hour:
-                self.on_event("hour", norm_dt)
-            elif dt.minute != self.dt_last.minute:
-                self.on_event("minute", norm_dt)
-        self.dt_last = dt
-
-    def stream_event(self, row):
-        dt = row.Index.to_pydatetime()
-        symbol = row.ticker
-
-        if row.data_type == "BIDASK":
-            payload = BidAsk(bid=row.av_bid, ask=row.av_ask)
-            self.on_event("quote", dt, symbol, payload)
-
-        if row.data_type == "TRADES":
-            for price in [row.open, row.high, row.low, row.close]:
-                payload = Trade(price=price, volume=row.volume)
-                self.on_event("trade", dt, symbol, payload)
-            self.on_event("bar", dt, symbol, row)
-
-    def close_all(self):
-        """
-        Закрыть все открытые позиции.
-        """
-        for symbol, position in self.positions.items():
-            amount = position["amount"]
-            if amount > 0:
-                self.trade("sell", abs(amount), symbol, self.dt_last)
-            if amount < 0:
-                self.trade("buy", abs(amount), symbol, self.dt_last)
 
     def trade(self, side: str, amount: Decimal, symbol, dt: datetime, sig_price=None):
         """

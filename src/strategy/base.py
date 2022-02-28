@@ -1,39 +1,65 @@
 import pandas as pd
+from dataclasses import dataclass
+from typing import Optional
 from .signal import Signal
+
+
+@dataclass
+class Hint:
+    symbol: str
+    strategy: str
+    signal: Signal
+
+
+def hint(func):
+    """
+    Преобразует сигнал в Hint, учитывая информацию о предыдущем состоянии.
+    """
+    def inner(obj, *args, **kwargs) -> Optional[Hint]:
+        signal = func(obj, *args, **kwargs)
+        if signal != Signal.PASS and obj.prev_signal != signal:
+            strategy = type(obj).__name__
+            obj.prev_signal = signal
+            return Hint(symbol=obj.symbol, strategy=strategy, signal=signal)
+        return None
+    return inner
 
 
 class BaseStrategy:
 
-    interval_size = 60
-
-    def __init__(self, **kwargs):
+    def __init__(self, symbol, **kwargs):
+        self.symbol = symbol
         self.length = kwargs.get("length")
         self.params = kwargs
         self.data = []
+        self.prev_signal = Signal.PASS
         self.on_start()
 
     def __repr__(self):
         params = ""
         for key, value in self.params.items():
-            params += f" {key}={value}"
-        return f"<{type(self).__name__}{params}>"
+            params += f" {key}={value},"
+        return f"{type(self).__name__}({params.strip().strip(',')})"
 
     def on_start(self):
         pass
 
+    @hint
     def on_bar(self, data):
         pass
 
-    def on_quote(self, data):
-        pass
+    @hint
+    def on_quote(self, data) -> Signal:
+        return Signal.PASS
 
-    def on_trade(self, data):
-        pass
-
-    def test_price(self, price: float) -> Signal:
+    @hint
+    def on_trade(self, data) -> Signal:
         return Signal.PASS
 
     def resampled_data(self, resample_rule, dt_start=None):
+        """
+        Пересобрать рыночные данные и индикаторы с нужным разрешением.
+        """
         df = pd.DataFrame(self.data)
         if not df.empty:
             df.set_index("date", inplace=True)

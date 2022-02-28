@@ -75,7 +75,7 @@ def load_as_df(ticker, data_type, start=None, end=None):
         df1 = df1[(df1["barCount"] != "0") | (df1["rth"] == "1")]
         df = df1
 
-    # Добавляю фейковые записи в минутрых промежутках
+    # Добавляю фейковые записи в минутных промежутках
     if data_type == "BIDASK":
         df = df.resample('1T').pad()
 
@@ -94,6 +94,9 @@ def load_as_df(ticker, data_type, start=None, end=None):
 
 
 def load_many(tickers, data_types, start, end=None):
+    """
+    Загрузка исторических данных одного типа по нескольким инструментам.
+    """
     dfs = []
     for ticker in tickers:
         for data_type in data_types:

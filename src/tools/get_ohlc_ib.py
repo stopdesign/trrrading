@@ -68,7 +68,7 @@ def get_first_day(contract):
 
 def get_data(contract, day, data_type, timeframe="1 min"):
     day_utc = datetime.combine(day, datetime.min.time()).replace(tzinfo=timezone.utc)
-    day_utc = day_utc + timedelta(hours=27)  # +27H — чтобы закрыть весь торговый день
+    day_utc = day_utc + timedelta(hours=35)  # +27H — чтобы закрыть весь торговый день
 
     # day_end = f"{day:%Y%m%d 23:59:59} UTC"
     # print(day, " | ", day_end, " | ", day_utc)
@@ -115,7 +115,8 @@ def get_splits(ticker):
     splits = None
     for i in range(10):
         try:
-            splits = res.json()["chart"]["result"][0].get("events", {}).get("splits", {})
+            chart = res.json()["chart"]
+            splits = chart["result"][0].get("events", {}).get("splits", {})
             splits = sorted(splits.values(), key=lambda x: x["date"], reverse=True)
             break
         except Exception as e:
@@ -136,11 +137,11 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     if contract.secType == "FUT":
         contract.includeExpired = True
         contracts = ib.reqContractDetails(contract)
-        contract_exp_dates = [c.contract.lastTradeDateOrContractMonth for c in contracts]
-        contract_exp_dates = sorted(contract_exp_dates)
-        contract.lastTradeDateOrContractMonth = contract_exp_dates[0]
+        exp_dates = [c.contract.lastTradeDateOrContractMonth for c in contracts]
+        exp_dates = sorted(exp_dates)
+        contract.lastTradeDateOrContractMonth = exp_dates[0]
     else:
-        contract_exp_dates = None
+        exp_dates = None
 
     try:
         first_day = get_first_day(contract)
@@ -163,7 +164,8 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
     cal_exchange = cal_exchange.replace("ECBOT", "CMES")
 
-    cal = mcal.get_calendar(cal_exchange).schedule(start, end)
+    calendar = mcal.get_calendar(cal_exchange)
+    schedule = calendar.schedule(start, end)
 
     splits = None
     if contract.secType == "STK":
@@ -185,9 +187,10 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     d_name = os.path.dirname(f_name)
     Path(d_name).mkdir(parents=True, exist_ok=True)
 
+    # noinspection PyTypeChecker
     df.to_csv(f_name, sep="\t")
 
-    for day, t in sorted(cal.T.to_dict("list").items()):
+    for day, t in sorted(schedule.T.to_dict("list").items()):
         t0 = t[0].to_pydatetime().replace(tzinfo=timezone.utc)
         t1 = t[1].to_pydatetime().replace(tzinfo=timezone.utc)
 
@@ -209,7 +212,7 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
             # именно контракт получать для этой даты.
             if contract.secType == "FUT":
                 exp_date = None
-                for ced in contract_exp_dates:
+                for ced in exp_dates:
                     if ced >= middle_date.strftime("%Y%m%d"):
                         exp_date = ced
                         break
@@ -240,7 +243,7 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
             df["date"] = df["date"].dt.tz_localize(None)
             df = df.set_index("date")
 
-            # Убрать нулевые объемы
+            # Убрать нулевые объемы в моменты, когда биржа закрыта
             # df = df.loc[df.volume != 0]
 
             # В режиме BID_ASK данные имеют другой смысл. Переименовать.

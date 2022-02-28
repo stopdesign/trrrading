@@ -1,0 +1,32 @@
+driver: IBWebExchange
+target_margin: 10000
+
+dt_start: 2022-02-10
+dt_end: 2022-12-31
+
+#resample_rule: null
+resample_rule: 15T
+#resample_rule: 3H
+
+
+#fee:
+#  fixed_rate: 0.002
+#  fixed_price: 0.0
+#
+#margin:
+#  long: 1.0
+#  short: 1.0
+#
+#alert:
+#  drawdown: 0.01
+#  margin: 0.5
+#  fee: 10
+#
+#safety:
+#  drawdown: 0.05
+#  ticker_trades_per_hour: 10
+#  all_trades_per_hour: 20
+#
+#order:
+#  type: LIMIT
+#  preice_cap: 0.01

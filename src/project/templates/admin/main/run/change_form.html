@@ -1,0 +1,46 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+
+{% block extrastyle %}{{ block.super }}
+    <style>
+        #content {
+            margin: 0;
+            padding: 0;
+            border-left: 3px solid #eee;
+        }
+    </style>
+{% endblock %}
+
+
+{% block object-tools %}
+{% if change %}{% if not is_popup %}
+    <div id="tv_chart_container"></div>
+{% endif %}{% endif %}
+{% endblock %}
+
+
+{% block submit_buttons_bottom %}{% endblock %}
+
+
+{% block pretitle %}{% endblock %}
+{% block content_title %}{% endblock %}
+{% block content_subtitle %}{% endblock %}
+
+
+{% block admin_change_form_document_ready %}
+
+    <script>
+        window.orders = [
+          {% for order in original.orders.all %}
+            {{ order.as_json|safe }} {{ "," }}
+          {% endfor %}
+        ]
+    </script>
+
+    <script type="text/javascript" src="{% static 'admin/js/charting_library.standalone.js' %}"></script>
+    <script type="text/javascript" src="{% static 'admin/js/bundle.js' %}"></script>
+    <script type="text/javascript" src="{% static 'admin/js/tv.js' %}"></script>
+
+{% endblock %}
+
