@@ -3,9 +3,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from termcolor import cprint, colored
 from exchange import BaseExchange
-from exchange.mixin import Healthcheck, AccountEvents
+from exchange.mixin import Healthcheck
 from main.models import Order, Instrument, Account, Run
-from django.apps import apps
 
 log = logging.getLogger("broker")
 
@@ -19,12 +18,6 @@ class IBWebExchange(BaseExchange, Healthcheck):
 
     def __init__(self, instruments: dict, **kwargs):
         super().__init__(instruments, **kwargs)
-
-        # django.setup(set_prefix=False)
-        apps.populate(["main"])
-
-        # from main.models import Exchange
-
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
 
@@ -109,8 +102,8 @@ class IBWebExchange(BaseExchange, Healthcheck):
 
     def create_order(self, side, symbol, amount, price, dt):
 
-        txt = f"TRADE #order_id: {dt} {side} {symbol} {amount} @ {price}"
-        print(colored(txt, color="cyan", attrs=["reverse"]))
+        txt = f"TRADE: {dt}  {side.upper():<4}  {symbol} {int(amount):>+5d} @ {price}"
+        log.info(colored(txt, color="cyan"))
         # send_telegram(txt)
 
         """
@@ -136,14 +129,15 @@ class IBWebExchange(BaseExchange, Healthcheck):
         account = Account.objects.get(id=1)
         run = Run.objects.last()
 
-        order = Order.market_order(account, run, instrument, str(side).upper(), abs(amount))
+        order = Order.market_order(
+            account, run, instrument, str(side).upper(), abs(amount)
+        )
         order.signal_price = price
 
         # Тут эмуляция исполнения ордера при бэктесте
-        price1 = self.get_price(symbol, "buy")
-        price2 = self.get_price(symbol, "sell")
+        # price1 = self.get_price(symbol, "buy")
+        # price2 = self.get_price(symbol, "sell")
         price3 = self.get_price(symbol, "mid")
-        print(f"PRICE: {price1}, {price2}, {price3}")
 
         order.filled = abs(amount)
         order.avg_fill_price = price3
