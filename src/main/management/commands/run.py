@@ -1,25 +1,10 @@
 import argparse
-import json
 import yaml
 from datetime import datetime, timedelta
-from secrets import token_hex
-from time import sleep
 from os.path import abspath, join, dirname
 from django.core.management.base import BaseCommand
-from ibkr_web_api import IbApi
-from main.models import Run, Order, Instrument, Position, Account
-from termcolor import cprint
 from django.conf import settings
-
-
-# username = "vysoch218"
 from trader import Trader
-
-username = "gr5g2ry0"
-password = ""
-paper = True
-
-ib = IbApi(username, password, paper, debug=False)
 
 
 def valid_date(s):
@@ -36,6 +21,7 @@ class Command(BaseCommand):
         parser.add_argument('broker', type=str)
         parser.add_argument('strategy', type=str)
 
+        parser.add_argument('--backtest', action=argparse.BooleanOptionalAction)
         parser.add_argument('--start', type=valid_date, dest="dt_start")
         parser.add_argument('--end', type=valid_date, dest="dt_end")
 
@@ -58,17 +44,7 @@ class Command(BaseCommand):
         if kwargs["dt_end"]:
             broker_config["dt_end"] = kwargs["dt_end"].date() + timedelta(1)
 
-        account = Account.objects.get(id=3)
-
-        run = Run(
-            account=account,
-            broker_config=json.dumps(broker_config, indent=2, default=str),
-            strategy_config=json.dumps(strategy_config, indent=2, default=str),
-        )
-        run.save()
-
-        base_dir = "/Users/gregory/projects/life/trrrading"
-        trader = Trader(broker_config, strategy_config, base_dir, run)
+        trader = Trader(broker_config, strategy_config, kwargs.get("backtest"))
 
         try:
             trader.warm_up()
@@ -80,6 +56,4 @@ class Command(BaseCommand):
         finally:
             trader.final_info()
 
-        # log.info(f"Done in {str(datetime.utcnow() - dt)[:-7]}")
-
-        print("RUN DONE")
+        print(f"Done in {str(datetime.utcnow() - dt)[:-7]}")

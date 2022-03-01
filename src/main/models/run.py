@@ -8,9 +8,9 @@ def generate_uid():
 
 class Run(models.Model):
     uid = models.CharField(max_length=50, unique=True, default=generate_uid)
-    backtest = models.BooleanField(default=True)
 
-    account = models.ForeignKey("Account", null=False, on_delete=models.PROTECT)
+    backtest = models.BooleanField(default=True)
+    account = models.ForeignKey("Account", null=True, on_delete=models.PROTECT)
 
     description = models.CharField(max_length=100)
 

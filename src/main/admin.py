@@ -30,7 +30,7 @@ class AccountAdmin(admin.ModelAdmin):
     list_display = (
         "uid",
         "paper",
-        "description",
+        "username",
     )
     actions_on_top = False
     actions = None

@@ -1,17 +1,13 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from termcolor import cprint, colored
 from exchange import BaseExchange
 from exchange.mixin import Healthcheck, AccountEvents
-from data_types import BidAsk, Trade, Bar, Margin, Fee
+from main.models import Order, Instrument, Account, Run
 from django.apps import apps
 
 log = logging.getLogger("broker")
-
-
-import os
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 
 
 class IBWebExchange(BaseExchange, Healthcheck):
@@ -133,9 +129,6 @@ class IBWebExchange(BaseExchange, Healthcheck):
         ордеров и позиций, пересчитывать параметры ордера и создавать новый.
         """
 
-        # if not self.backtest:
-        from main.models import Order, Instrument, Account, Run
-
         stock_symbol, exchange_symbol = symbol.split(".")
         instrument = Instrument.objects.get(symbol=stock_symbol)
 
@@ -155,7 +148,7 @@ class IBWebExchange(BaseExchange, Healthcheck):
         order.filled = abs(amount)
         order.avg_fill_price = price3
         order.save()
-        order.created_at = dt
+        order.created_at = dt.replace(tzinfo=timezone.utc)
         order.save()
 
         # TODO: размещение ордера

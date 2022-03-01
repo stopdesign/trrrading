@@ -1,3 +1,4 @@
+import json
 import logging
 import pandas as pd
 from datetime import datetime
@@ -7,6 +8,7 @@ from stats import AccountStats, TradeStats
 from storage.redis import RedisTradingData
 from trader import Portfolio, TelegramBotMixin, Execution
 from strategy import all_strategies
+from main.models import Account, Run
 
 log = logging.getLogger("trader")
 
@@ -14,12 +16,24 @@ log = logging.getLogger("trader")
 class Trader(TelegramBotMixin):
     exchange: BaseExchange = None
 
-    def __init__(self, broker_conf, instruments, base_dir, run):
+    def __init__(self, broker_conf, instruments, backtest):
         txt = f"Init trader at {datetime.utcnow().replace(microsecond=0)} UTC"
         log.info(colored(txt, "white"))
 
-        self.base_dir = base_dir
-        self.run = run
+        if backtest:
+            account = None
+        else:
+            account = Account.objects.get(
+                uid=broker_conf["account"],
+                username=broker_conf["username"],
+            )
+
+        self.run = Run.objects.create(
+            account=account,
+            backtest=backtest,
+            broker_config=json.dumps(broker_conf, indent=2, default=str),
+            strategy_config=json.dumps(instruments, indent=2, default=str),
+        )
 
         self.target_margin = broker_conf.get("target_margin")
         self.can_short = broker_conf.get("short", True)
@@ -103,14 +117,13 @@ class Trader(TelegramBotMixin):
         Завершение торговли (штатное или из-за ошибки).
         Сохранить все наработанные данные.
         """
-        csv_dir = f"{self.base_dir}/front"
         df = pd.DataFrame()
         for strategy in self.strategies:
             rd = strategy.resampled_data(self.resample_rule, self.dt_start)
             df = df.append(rd)
-        df.sort_index().to_csv(f"{csv_dir}/data.csv", float_format="%.2f")
-        self.trade_stats.to_csv(f"{csv_dir}/trades.csv")
-        self.account_stats.to_csv(f"{csv_dir}/stats.csv")
+        # df.sort_index().to_csv(f"{csv_dir}/data.csv", float_format="%.2f")
+        # self.trade_stats.to_csv(f"{csv_dir}/trades.csv")
+        # self.account_stats.to_csv(f"{csv_dir}/stats.csv")
         if self.exchange.backtest:
             self.account_stats.print_summary()  # RESULTS
 

@@ -1,7 +1,7 @@
 const chart = document.getElementById("chart");
 const buttons = document.getElementById("buttons");
 
-const margin = {top: 0, right: 60, bottom: 0, left: 60};
+const margin = {top: 0, right: 80, bottom: 0, left: 60};
 const width = chart.clientWidth - margin.left - margin.right;
 const height = chart.clientHeight - margin.top - margin.bottom - (120 + 100 + 50);
 
@@ -13,7 +13,7 @@ const valueFormat2 = d3.format('+.2f');
 const dim = {
   width: width + margin.left + margin.right,
   height: chart.clientHeight - buttons.clientHeight,
-  margin: {top: 10, right: 60, bottom: 30, left: 60},
+  margin: {top: 10, right: 80, bottom: 30, left: 60},
   ohlc: {height: height + 50},
   indicator: {height: 120, padding: 0}
 };
@@ -304,17 +304,17 @@ const toggleChart = function (symbol) {
 }
 
 
-// Линии индикатора
-const indicator_top = d3.line()
-  .curve(d3.curveStepAfter)
-  .x(d => x(d.date) - 2)
-  .y(d => y(+d.up) - 2)
-  .defined(d => +d.up && (d.trend === undefined || d.trend < 0))
-const indicator_bottom = d3.line()
-  .curve(d3.curveStepAfter)
-  .x(d => x(d.date) - 2)
-  .y(d => y(+d.dn) + 2)
-  .defined(d => +d.dn && (d.trend === undefined || d.trend > 0));
+// // Линии индикатора
+// const indicator_top = d3.line()
+//   .curve(d3.curveNatural)
+//   .x(d => x(d.date))
+//   .y(d => y(+d.up))
+//   .defined(d => +d.up && (d.trend === undefined || d.trend < 0))
+// const indicator_bottom = d3.line()
+//   .curve(d3.curveNatural)
+//   .x(d => x(d.date))
+//   .y(d => y(+d.dn))
+//   .defined(d => +d.dn && (d.trend === undefined || d.trend > 0));
 
 
 function draw_stats(stats) {
@@ -454,16 +454,16 @@ function draw(data, trades, indicator) {
       .attr("stroke", "white")
 
 
-  // // Индикаторы на графике цены
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-bottom line")
-  //   .attr("d", indicator_bottom);
-  //
-  // svg.select('g.candlestick').append("path")
-  //   .datum(indicator)
-  //   .attr("class", "indicator-top line")
-  //   .attr("d", indicator_top);
+  // Индикаторы на графике цены
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-bottom line")
+    .attr("d", indicator_bottom);
+
+  svg.select('g.candlestick').append("path")
+    .datum(indicator)
+    .attr("class", "indicator-top line")
+    .attr("d", indicator_top);
 
 
   // // Индикатор, разрешающий торговлю
