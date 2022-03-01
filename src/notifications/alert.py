@@ -2,15 +2,7 @@ import re
 import json
 import requests
 from datetime import datetime, timedelta
-
-from settings import (
-    TELEGRAM_CHANNEL_ID,
-    TELEGRAM_TOKEN,
-    # MAILGUN_DOMAIN,
-    # MAILGUN_API_KEY,
-    # MAILGUN_ALERT_FROM,
-    # MAILGUN_ALERT_TO,
-)
+from django.conf import settings
 
 
 # def send_email(subject, text):
@@ -34,7 +26,7 @@ def send_telegram(text: str):
     send_telegram("message text")
     """
 
-    token = TELEGRAM_TOKEN
+    token = settings.TELEGRAM_TOKEN
 
     if not token:
         return
@@ -42,7 +34,7 @@ def send_telegram(text: str):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     data = {
         "text": ansi_escape.sub("", text),
-        "chat_id": TELEGRAM_CHANNEL_ID,
+        "chat_id": settings.TELEGRAM_CHANNEL_ID,
         "parse_mode": "html",
     }
     r = requests.post(url, data=data, timeout=3)

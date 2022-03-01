@@ -2,12 +2,12 @@ import math
 import re
 import asyncio
 import logging
-import settings
 from aiogram import Bot, Dispatcher
 from aiogram.types import ParseMode
 from aiogram.utils.markdown import hpre
 from exchange import BaseExchange
 from stats import AccountStats
+from django.conf import settings
 
 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 

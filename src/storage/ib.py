@@ -3,10 +3,10 @@ import os
 import pandas as pd
 from datetime import timezone, datetime, timedelta
 from io import StringIO
-from settings import BASE_DIR
+from django.conf import settings
 
 
-DATA_BASE_DIR = BASE_DIR / "data"
+DATA_BASE_DIR = settings.BASE_DIR / "data"
 
 TRADES_NUM_COL = ["open", "high", "low", "close", "volume", "average", "barCount"]
 BIDASK_NUM_COL = ["av_bid", "max_ask", "min_bid", "av_ask"]

@@ -8,17 +8,8 @@ from main.models import Order, Instrument, Position, Account
 from termcolor import cprint
 
 
-# username = "vysoch218"
-username = "gr5g2ry0"
-password = ""
-paper = True
-
-ib = IbApi(username, password, paper, debug=False)
-
-
 class Command(BaseCommand):
     finished = None
-    ib = None
 
     def check_new(self):
         """
@@ -233,6 +224,13 @@ class Command(BaseCommand):
             order.save()
 
     def handle(self, *args, **options):
+
+        # username = "vysoch218"
+        username = "gr5g2ry0"
+        password = ""
+        paper = True
+
+        ib = IbApi(username, password, paper, debug=False)
 
         prev_dt = datetime(1900, 1, 1)
         while not self.finished:
