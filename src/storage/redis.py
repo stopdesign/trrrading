@@ -1,12 +1,14 @@
 import json
-from time import sleep
-
+import logging
 import orjson
 import redis
+from time import sleep
 from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
 from storage.ib import load_many
 from termcolor import cprint
+
+log = logging.getLogger("redis_storage")
 
 
 def dt_to_ts(dt):
@@ -21,7 +23,7 @@ class RedisTradingData:
         self.dt_end = dt_end
         self.on_event = on_event
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=30))
-        self.symbols = self.instruments.keys()
+        self.symbols = list(self.instruments.keys())
         self.dt_last = None
 
         self.redis = redis.Redis(db=6)
@@ -35,19 +37,21 @@ class RedisTradingData:
         start_ts = str(dt_to_ts(self.dt_start)).encode()
 
         # TODO: написать штуку, которая будет загружать данные из redis в удобном виде
-        # TODO:
+        # TODO: поддержка нескольких инструментов
+
+        one_symbol = self.symbols[0]
 
         #######################
-        data_in_db = self.redis.zrangebyscore("MES.GLOBEX:QUOTES", from_ts, start_ts)
-        data_in_db += self.redis.zrangebyscore("MES.GLOBEX:TRADES", from_ts, start_ts)
+        data_in_db = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", from_ts, start_ts)
+        data_in_db += self.redis.zrangebyscore(f"{one_symbol}:TRADES", from_ts, start_ts)
 
-        print(">>>>>", len(data_in_db))
+        log.info(f"warm_up data lines: {len(data_in_db)}")
 
         all_data = sorted(data_in_db)
 
         for line in all_data:
             data = orjson.loads(line.decode('utf-8'))
-            symbol = "MES.GLOBEX"
+            symbol = one_symbol
 
             if "." in data["dt"]:
                 dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S.%f")
@@ -91,17 +95,19 @@ class RedisTradingData:
         start_ts = str(dt_to_ts(self.dt_start)).encode()
         end_ts = str(dt_to_ts(self.dt_end)).encode()
 
-        #######################
-        data_in_db = self.redis.zrangebyscore("MES.GLOBEX:QUOTES", start_ts, end_ts)
-        data_in_db += self.redis.zrangebyscore("MES.GLOBEX:TRADES", start_ts, end_ts)
+        one_symbol = self.symbols[0]
 
-        print(">>>>>", len(data_in_db))
+        #######################
+        data_in_db = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", start_ts, end_ts)
+        data_in_db += self.redis.zrangebyscore(f"{one_symbol}:TRADES", start_ts, end_ts)
+
+        log.info(f"backtest data lines: {len(data_in_db)}")
 
         all_data = sorted(data_in_db)
 
         for line in all_data:
             data = orjson.loads(line.decode('utf-8'))
-            symbol = "MES.GLOBEX"
+            symbol = one_symbol
 
             if "." in data["dt"]:
                 dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S.%f")

@@ -75,7 +75,7 @@ class Trader(TelegramBotMixin):
         )
 
         self.portfolio = Portfolio(self.exchange)
-        self.execution = Execution(self.exchange, self.portfolio)
+        self.execution = Execution(self.exchange, self.portfolio, self.run)
 
         self.account_stats = AccountStats(self, self.exchange)
         self.trade_stats = TradeStats(self, self.exchange)
@@ -101,7 +101,7 @@ class Trader(TelegramBotMixin):
 
         log.info("Stop stream")
         self.trading_data.stop_listen()
-        self.exchange.close_all()
+        # self.exchange.close_all()
         self.account_stats.snapshot()
         self.account_stats.portfolio_info()
         self.account_stats.account_info()
@@ -109,7 +109,7 @@ class Trader(TelegramBotMixin):
         self.stop_tg_bot()
 
     def stop(self):
-        self.exchange.close_all()
+        # self.exchange.close_all()
         self.trading_data.stop_listen()
 
     def final_info(self):
@@ -168,6 +168,7 @@ class Trader(TelegramBotMixin):
         """
         hints = []
 
+        # TODO: добавить цену сигнала в hint
         for strategy in self.strategies:
             if strategy.symbol == symbol:
                 hints.append(strategy.on_bar(payload))
@@ -181,6 +182,7 @@ class Trader(TelegramBotMixin):
         """
         hints = []
 
+        # TODO: добавить цену сигнала в hint
         for strategy in self.strategies:
             if strategy.symbol == symbol:
                 hints.append(strategy.on_trade(payload.price))
@@ -197,5 +199,5 @@ class Trader(TelegramBotMixin):
         # Обновить Portfolio Targets
         self.portfolio.rebalance(hints)
 
-        # Выставить ордеры
+        # Выставить ордеры, чтобы позиции стали равны Targets
         self.execution.apply_targets(dt)

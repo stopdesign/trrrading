@@ -19,7 +19,7 @@ class Order(models.Model):
         mkt = "MKT", "Market"
         lmt = "LMT", "Limit"
 
-    account = models.ForeignKey("Account", null=False, on_delete=models.PROTECT)
+    account = models.ForeignKey("Account", null=True, on_delete=models.PROTECT)
     run = models.ForeignKey("Run", null=True, on_delete=models.CASCADE, related_name="orders")
 
     instrument = models.ForeignKey("Instrument", null=False, on_delete=models.PROTECT)
@@ -41,7 +41,7 @@ class Order(models.Model):
     # Некий слепок ордера, по которому понимаем, что он изменился в IBKR
     version = models.CharField(max_length=50, null=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __init__(self, *args, **kwargs):
@@ -89,6 +89,12 @@ class Order(models.Model):
     #         order_id=token_hex(4),
     #         status="New",
     #     )
+
+    def simulate_fill(self, fill_price):
+        self.avg_fill_price = fill_price
+        self.filled = self.amount
+        self.status = "Filled"
+        self.save()
 
     def as_json(self):
         return {

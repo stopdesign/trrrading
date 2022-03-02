@@ -8,7 +8,7 @@ conf = {
         "color_console": {
             "()": "project.helpers.log_formater.DjangoColorsFormatter",
             "format": "{asctime}.{msecs:03.0f} {levelname:.3}  "
-            "{filename:>10.10}:{lineno:04d}  {message}",
+            "{filename:>12.12}:{lineno:04d}  {message}",
             "datefmt": "%H:%M:%S",
         },
     },

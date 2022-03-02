@@ -80,14 +80,3 @@ class BaseExchange:
 
     def get_margin_level(self, short=False):
         return self.margin.short if short else self.margin.long
-
-    def close_all(self):
-        """
-        Закрыть все открытые позиции.
-        """
-        for symbol, position in self.positions.items():
-            amount = position["amount"]
-            if amount > 0:
-                self.trade("sell", abs(amount), symbol, self.dt_last, None)
-            if amount < 0:
-                self.trade("buy", abs(amount), symbol, self.dt_last, None)

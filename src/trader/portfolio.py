@@ -1,6 +1,5 @@
 import logging
 from math import floor
-
 from exchange import BaseExchange
 from strategy import Signal
 
@@ -25,6 +24,9 @@ class Portfolio:
         Сюда приходят изменения прогноза от стратегий.
         Если изменений не было, то позиция не меняется.
         """
+
+        # TODO: сохранить цену последнего сигнала у каждого элемента портфолио
+
         for hint in filter(None, hints):
             deposit_per_symbol = self.exchange.net_value / len(self.instruments)
             price = self.exchange.get_price(hint.symbol, "mid")
