@@ -29,27 +29,5 @@ cd trrrading
 virtualenv -p python3 .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-dev.txt
 ```
 
-
-### Provide local settings
-Create the `src/settings/settings_local.py` using the `settings.py` as a template.
-
-Fill it with the correct values for your environment.
-
-
-### Run the script
-
-Inside the project directory run:
-```bash
-source .venv/bin/activate
-python src/main.py
-```
-
-### Static server
-```bash
-cd trrrading/front
-python3 -m http.server 8000
-```
-Frontend: http://127.0.0.1:8000/view.html

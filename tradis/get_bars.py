@@ -1,4 +1,5 @@
 import json
+import yaml
 import sys
 import logging
 import orjson
@@ -13,8 +14,8 @@ from datetime import datetime, timedelta, timezone
 from os.path import abspath, join, dirname
 from ibkr_web_api import IbApi
 
-
 log = logging.getLogger("loader")
+
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -22,55 +23,16 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
-username = "gr5g2ry0"
-password = ""
-paper = True
+PORTAL_URL = "https://ndcdyn.interactivebrokers.com/portal.proxy/v1/portal"
+HISTORY_URL = PORTAL_URL + "/iserver/marketdata/history"
 
-ib = IbApi(username, password, paper, debug=False)
-
-
-p = "https://ndcdyn.interactivebrokers.com/portal.proxy/v1/portal"
-
-HISTORY_URL = p + "/iserver/marketdata/history"
-
-instruments = [
-    {
-        "conid": 265598,
-        "symbol": "AAPL",
-        "exchange": "NASDAQ",
-    },
-    {
-        "conid": 461318791,
-        "symbol": "MES",
-        "exchange": "GLOBEX",
-    },
-    {
-        "conid": 461318792,
-        "symbol": "MNQ",
-        "exchange": "GLOBEX",
-    },
-    {
-        "conid": 211651685,
-        "symbol": "URA",
-        "exchange": "ARCA",
-    },
-    {
-        "conid": 508109460,
-        "symbol": "MNTS",
-        "exchange": "NASDAQ",
-    },
-]
-
-exchange_schedule = {
+EXCHANGE_SCHEDULE = {
     "NASDAQ": "NASDAQ",
     "NYMEX": "NYSE",
     "NYSE": "NYSE",
     "ARCA": "NYSE",
     "GLOBEX": "CME_Rate",
 }
-
-
-r = redis.Redis(host="localhost", port=6379, db=6)
 
 
 def get_stats_for_hour(data):
@@ -96,7 +58,7 @@ def get_stats_for_hour(data):
     return cnt
 
 
-def update_dash(instruments, csv_path):
+def update_dash(instruments, csv_path, redis_client):
     """
     Обновление CSV со статусами по часам.
     """
@@ -112,7 +74,7 @@ def update_dash(instruments, csv_path):
         cur_hour_interval = start
         for n in range(300):
             # Запросить данные для этого интервала
-            data = r.zrangebyscore(
+            data = redis_client.zrangebyscore(
                 key,
                 dt_to_ts(cur_hour_interval),
                 dt_to_ts(cur_hour_interval) + 3599
@@ -153,7 +115,7 @@ def get_key(instrument):
     return "{symbol}.{exchange}:TRADES".format(**instrument)
 
 
-def replace_data(instrument, line, ts):
+def replace_data(instrument, line, ts, redis_client):
     """
     Запись в базу с заменой старых данных.
     """
@@ -161,14 +123,14 @@ def replace_data(instrument, line, ts):
     line_str = json.dumps(line, indent=None, separators=(',', ':'), default=str)
     dt = ts_to_dt(ts*1000)
     cprint(f"{key}, {ts}, {dt}, {line_str}", "white")
-    r.zremrangebyscore(key, ts, ts)
-    r.zadd(key, {line_str: ts})
+    redis_client.zremrangebyscore(key, ts, ts)
+    redis_client.zadd(key, {line_str: ts})
 
     symbol = "{symbol}.{exchange}".format(**instrument)
     line["conid"] = instrument["conid"]
     line["symbol"] = symbol
     line_str = json.dumps(line, indent=None, separators=(',', ':'), default=str)
-    r.publish(f"{symbol}:BARS", line_str)
+    redis_client.publish(f"{symbol}:BARS", line_str)
 
 
 @cache
@@ -176,14 +138,14 @@ def get_calendar_and_schedule(exchange):
     """
     Календарь и расписание для биржи.
     """
-    calendar = mcal.get_calendar(exchange_schedule[exchange])
+    calendar = mcal.get_calendar(EXCHANGE_SCHEDULE[exchange])
 
     # нужно покрыть вперед и назад все возможные выходные
     start = datetime.utcnow() - timedelta(days=10)
     end = datetime.utcnow() + timedelta(days=100)
 
     # TODO: убрать хардкодинг
-    if exchange_schedule[exchange] in ["NYSE", "NASDAQ"]:
+    if EXCHANGE_SCHEDULE[exchange] in ["NYSE", "NASDAQ"]:
         schedule = calendar.schedule(start, end, start="pre", end="post")
     else:
         schedule = calendar.schedule(start, end)
@@ -217,12 +179,12 @@ def format_valid_interval(interval):
     }
 
 
-def load_intervals_from_ibkr(instrument, period, data_grid):
+def load_intervals_from_ibkr(ib, instrument, period, data_grid):
     # Запрос в IBKR
     q = f"?conid={instrument['conid']}&period={period}min&bar=1min&outsideRth=true"
     try:
         ib.reset_session()
-        ib.load_session()
+        ib.load_redis_session()
         res_json = ib.iserver_request(HISTORY_URL + q, "GET")
     except Exception as e:
         cprint(f"ERROR requests {e}", "red")
@@ -280,7 +242,7 @@ def load_intervals_from_ibkr(instrument, period, data_grid):
     return data_grid
 
 
-def fill_gaps(instrument, data_grid):
+def fill_gaps(ib, instrument, data_grid):
 
     # # Последний успешно загруженный с биржи интервал
     # last_good_ts = dt_to_ts(datetime.utcnow())
@@ -323,7 +285,7 @@ def fill_gaps(instrument, data_grid):
         period = int((last_open_dt - first_bad_dt).total_seconds() // 60) + 5
         cprint(f"GET IBKR DATA, period: {period}", "blue")
         try:
-            data_grid = load_intervals_from_ibkr(instrument, period, data_grid)
+            data_grid = load_intervals_from_ibkr(ib, instrument, period, data_grid)
         except Exception as e:
             log.error("load_intervals_from_ibkr")
             log.exception(e)
@@ -340,7 +302,7 @@ def fill_gaps(instrument, data_grid):
     return data_grid
 
 
-def update_instrument(interval_dt, instrument):
+def update_instrument(ib, interval_dt, symbol, redis_client):
 
     # IBKR позволяет грузить данные только на 1000 интервалов назад,
     # но в них не входят интервалы закрытой биржи, поэтому делаю запас.
@@ -350,14 +312,15 @@ def update_instrument(interval_dt, instrument):
     # Пустая сетка интервалов с расписанием биржи
     data_grid = {}
     for cur_interval in dt_range(start, interval_dt):
-        is_it_open = check_open_time(instrument["exchange"], cur_interval)
+        is_it_open = check_open_time(symbol["exchange"], cur_interval)
         data_grid[dt_to_ts(cur_interval)] = {
             "dt": datetime.strftime(cur_interval, "%Y-%m-%d %H:%M:%S"),
             "is_it_open": is_it_open,
         }
 
     # Интервалы в базе данных от start до конца
-    data_in_db = r.zrangebyscore(get_key(instrument), dt_to_ts(start), 10 ** 10)
+    key = get_key(symbol)
+    data_in_db = redis_client.zrangebyscore(key, dt_to_ts(start), 10 ** 10)
 
     # Положить интервалы из базы в сетку
     for line in data_in_db:
@@ -373,7 +336,7 @@ def update_instrument(interval_dt, instrument):
             data_grid[ts]["old"] = line_data
 
     # Метод заполняет пробелы из IBKR или флагом "CLOSED"
-    data_grid = fill_gaps(instrument, data_grid)
+    data_grid = fill_gaps(ib, symbol, data_grid)
 
     # # print(json.dumps(data_grid, indent=2, default=str))
     # for line in data_grid.values():
@@ -395,7 +358,7 @@ def update_instrument(interval_dt, instrument):
             if "new" in line and line["new"] != old_line:
                 new_line = line["new"]
                 new_line["fix"] = 1
-                replace_data(instrument, new_line, score)
+                replace_data(symbol, new_line, score, redis_client)
 
         # Данных не было
         else:
@@ -403,7 +366,7 @@ def update_instrument(interval_dt, instrument):
                 # Если данные пришли не real-time, то ставлю флаг LATE
                 if datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S") < interval_dt:
                     new_line["late"] = 1
-                replace_data(instrument, new_line, score)
+                replace_data(symbol, new_line, score, redis_client)
             else:
                 log.debug("Данных всё нет и нет")
 
@@ -416,7 +379,7 @@ def update_instrument(interval_dt, instrument):
     return done
 
 
-def loader(dt_start, instruments):
+def loader(ib, dt_start, instruments, redis_client):
     """
     Грузить интервал, пока не загрузится или не наступит новый интервал.
     """
@@ -430,10 +393,10 @@ def loader(dt_start, instruments):
     # Перемешиваю, чтобы при залипании первого инструмента не застряли все
     shuffle(instruments)
 
-    for instrument in instruments:
+    for symbol in instruments:
         while True:
             try:
-                if update_instrument(interval_dt, instrument):
+                if update_instrument(ib, interval_dt, symbol, redis_client):
                     # Успешно загрузилось
                     break
             except Exception as e:
@@ -450,7 +413,7 @@ def loader(dt_start, instruments):
                     "dt": datetime.strftime(interval_dt, "%Y-%m-%d %H:%M:%S"),
                     "error": 2,
                 }
-                replace_data(instrument, line_data, dt_to_ts(interval_dt))
+                replace_data(symbol, line_data, dt_to_ts(interval_dt), redis_client)
 
                 # Прекращаем грузить инструмент
                 break
@@ -461,7 +424,7 @@ def loader(dt_start, instruments):
                     "dt": datetime.strftime(interval_dt, "%Y-%m-%d %H:%M:%S"),
                     "error": 3,
                 }
-                replace_data(instrument, line_data, dt_to_ts(interval_dt))
+                replace_data(symbol, line_data, dt_to_ts(interval_dt), redis_client)
 
                 # Прекращаем грузить данный интервал
                 return
@@ -470,29 +433,61 @@ def loader(dt_start, instruments):
             sleep(sleep_time)
 
 
-def main(instruments):
-    base_dir = abspath(dirname(dirname(dirname(__file__))))
-    csv_path = abspath(join(base_dir, "front/dash/dash.csv"))
+def main(ib, instruments, redis_config, dashboard_csv_path):
+    base_dir = abspath(dirname(__file__))
+    csv_path = abspath(join(base_dir, dashboard_csv_path))
 
     prev_dt = datetime(2000, 1, 1)
     while True:
         dt = datetime.utcnow()
         if dt.minute != prev_dt.minute and dt.second > 10:
             # Начать загрузку нового минутного интервала
+            redis_client = redis.Redis(
+                host=redis_config["host"],
+                port=redis_config["port"],
+                db=redis_config["db"],
+                password=redis_config["password"],
+            )
             prev_dt = dt
-            loader(dt, instruments)
-            update_dash(instruments, csv_path)
+            loader(ib, dt, instruments, redis_client)
+            update_dash(instruments, csv_path, redis_client)
+            redis_client.close()
             print()
-            print("-------- конец цикла ---------", datetime.utcnow())
+            print("-------- конец итерации ---------", datetime.utcnow())
             print()
         else:
             sleep(1)
 
 
 if __name__ == "__main__":
-    dt = datetime.now()
+
+    # Загрузка конфига
+    config_path = abspath("config_local.yaml")
+    config = yaml.full_load(open(config_path))
+
+    username = config["username"]
+    password = config["password"]
+    paper = config["paper"]
+    secret = config["secret"]
+    redis_config = config["redis"]
+
+    instruments = config["instruments"]
+
+    dashboard_csv_path = config["dashboard_csv_path"]
+
+    ib = IbApi(
+        username,
+        password,
+        paper,
+        secret=secret,
+        debug=False,
+        redis_host=redis_config["host"],
+        redis_port=redis_config["port"],
+        redis_db=redis_config["db"],
+        redis_password=redis_config["password"],
+    )
+
     try:
-        main(instruments)
+        main(ib, instruments, redis_config, dashboard_csv_path)
     except KeyboardInterrupt:
-        pass
-    log.info(f"Done in {str(datetime.now() - dt)[:-7]}")
+        print("DONE")

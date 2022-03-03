@@ -1,6 +1,5 @@
 import json
 import logging
-import pandas as pd
 from datetime import datetime
 from termcolor import colored
 from exchange import BaseExchange, all_exchanges
@@ -117,13 +116,6 @@ class Trader(TelegramBotMixin):
         Завершение торговли (штатное или из-за ошибки).
         Сохранить все наработанные данные.
         """
-        df = pd.DataFrame()
-        for strategy in self.strategies:
-            rd = strategy.resampled_data(self.resample_rule, self.dt_start)
-            df = df.append(rd)
-        # df.sort_index().to_csv(f"{csv_dir}/data.csv", float_format="%.2f")
-        # self.trade_stats.to_csv(f"{csv_dir}/trades.csv")
-        # self.account_stats.to_csv(f"{csv_dir}/stats.csv")
         if self.exchange.backtest:
             self.account_stats.print_summary()  # RESULTS
 
@@ -185,6 +177,7 @@ class Trader(TelegramBotMixin):
         # TODO: добавить цену сигнала в hint
         for strategy in self.strategies:
             if strategy.symbol == symbol:
+                # hint = Hint
                 hints.append(strategy.on_trade(payload.price))
 
         self.process_hints(hints, dt)

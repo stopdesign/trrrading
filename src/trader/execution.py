@@ -30,8 +30,6 @@ class Execution:
             actual = self.actual_positions.get(symbol, {}).get("amount", 0)
             target = self.target_positions.get(symbol, 0)
 
-            # TODO: проверить ордеры, которые выставлены и ждут исполнения
-
             # if dt > self.exchange.dt_start:
             #     log.info(f"POSITIONS {symbol} actual={actual} target={target}")
 
@@ -46,6 +44,12 @@ class Execution:
             if not side:
                 continue
 
+            # Проверить ордеры, которые выставлены и ждут исполнения
+            # TODO: в будущем нужно добавлять/отменять ордер в этом случае
+            if amount_in_orders := self.get_amount_in_orders(symbol):
+                log.warning(f"Active orders: {symbol} {amount_in_orders}")
+                continue
+
             order = self.create_order(dt, symbol, side, order_amount)
 
             if self.exchange.backtest:
@@ -57,6 +61,20 @@ class Execution:
                     "amount": target,
                     "price": fill_price,
                 }
+
+    def get_amount_in_orders(self, symbol):
+        stock_symbol, exchange_symbol = symbol.split(".")
+        instrument = Instrument.objects.get(symbol=stock_symbol)
+
+        orders = Order.objects.filter(account=self.account, instrument=instrument)
+        orders = orders.exclude(status__in=["Filled", "Cancelled", "Inactive"])
+
+        in_active_orders = 0
+        for order in orders:
+            in_active_orders += order.amount - order.filled
+
+        assert in_active_orders >= 0
+        return in_active_orders
 
     def create_order(self, dt, symbol, side, order_amount):
         stock_symbol, exchange_symbol = symbol.split(".")
