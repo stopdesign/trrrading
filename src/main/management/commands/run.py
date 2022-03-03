@@ -1,10 +1,13 @@
 import argparse
 import yaml
+import logging
 from datetime import datetime, timedelta
 from os.path import abspath, join, dirname
 from django.core.management.base import BaseCommand
 from django.conf import settings
 from trader import Trader
+
+log = logging.getLogger("run")
 
 
 def valid_date(s):
@@ -52,7 +55,7 @@ class Command(BaseCommand):
         except KeyboardInterrupt:
             trader.stop()
         except Exception as e:
-            print(e)
+            log.exception(e)
         finally:
             trader.final_info()
 

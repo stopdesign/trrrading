@@ -7,6 +7,7 @@ from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
 from storage.ib import load_many
 from termcolor import cprint
+from django.conf import settings
 
 log = logging.getLogger("redis_storage")
 
@@ -26,7 +27,12 @@ class RedisTradingData:
         self.symbols = list(self.instruments.keys())
         self.dt_last = None
 
-        self.redis = redis.Redis(db=6)
+        self.redis = redis.Redis(
+            host=settings.TREDIS_HOST,
+            port=settings.TREDIS_PORT,
+            db=settings.TREDIS_DB,
+            password=settings.TREDIS_PASSWORD,
+        )
 
     def warm_up(self):
         """
@@ -88,7 +94,7 @@ class RedisTradingData:
                 payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
                 self.on_event("quote", dt, symbol, payload)
 
-    def start_listen(self):
+    def start_listen_(self):
         """
         Эмулировать события, приходящие с биржи.
         """
@@ -142,17 +148,21 @@ class RedisTradingData:
                 payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
                 self.on_event("quote", dt, symbol, payload)
 
+    def start_listen(self):
+        """
+        Эмулировать события, приходящие с биржи.
+        """
 
-        return
+        one_symbol = self.symbols[0]
 
         pubsub = self.redis.pubsub()
 
-        pubsub.subscribe("MES.GLOBEX:TRADES")
+        pubsub.subscribe(f"{one_symbol}:TRADES")
         # pubsub.subscribe("AAPL.NASDAQ:TRADES")
         # pubsub.subscribe("MNTS.NASDAQ:TRADES")
         # pubsub.subscribe("URA.ARCA:TRADES")
 
-        pubsub.subscribe("MES.GLOBEX:BARS")
+        pubsub.subscribe(f"{one_symbol}:BARS")
         # pubsub.subscribe("AAPL.NASDAQ:BARS")
         # pubsub.subscribe("MNTS.NASDAQ:BARS")
         # pubsub.subscribe("URA.ARCA:BARS")
