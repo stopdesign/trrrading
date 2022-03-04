@@ -6,7 +6,7 @@ from time import sleep
 from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
 from storage.ib import load_many
-from termcolor import cprint
+from termcolor import cprint, colored
 from django.conf import settings
 
 log = logging.getLogger("redis_storage")
@@ -18,14 +18,16 @@ def dt_to_ts(dt):
 
 class RedisTradingData:
 
-    def __init__(self, instruments, dt_start, dt_end, on_event, **kwargs):
+    def __init__(self, instruments, dt_start, dt_end, on_event, backtest, **kwargs):
         self.instruments = instruments
         self.dt_start = dt_start
         self.dt_end = dt_end
-        self.on_event = on_event
         self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=30))
+        self.on_event = on_event
+        self.backtest = backtest
         self.symbols = list(self.instruments.keys())
         self.dt_last = None
+        self.no_quotes_mode = False
 
         self.redis = redis.Redis(
             host=settings.TREDIS_HOST,
@@ -45,15 +47,21 @@ class RedisTradingData:
         # TODO: написать штуку, которая будет загружать данные из redis в удобном виде
         # TODO: поддержка нескольких инструментов
 
+        # FIXME: временная мера
         one_symbol = self.symbols[0]
 
         #######################
-        data_in_db = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", from_ts, start_ts)
-        data_in_db += self.redis.zrangebyscore(f"{one_symbol}:TRADES", from_ts, start_ts)
+        quotes = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", from_ts, start_ts)
+        if len(quotes):
+            log.info(f"warm_up quotes: {len(quotes)}")
+        else:
+            log.warning(colored(f"warm_up quotes: {len(quotes)}", "red"))
+            self.no_quotes_mode = True
 
-        log.info(f"warm_up data lines: {len(data_in_db)}")
+        trades = self.redis.zrangebyscore(f"{one_symbol}:TRADES", from_ts, start_ts)
+        log.info(f"warm_up trades: {len(trades)}")
 
-        all_data = sorted(data_in_db)
+        all_data = sorted(quotes + trades)
 
         for line in all_data:
             data = orjson.loads(line.decode('utf-8'))
@@ -66,8 +74,17 @@ class RedisTradingData:
 
             self.interval_event(dt)
 
+            # Это quote
+            if data.get("av_bid"):
+                payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
+                self.on_event("quote", dt, symbol, payload)
+
             # Это bar
-            if data.get("avg"):
+            if data.get("o"):
+
+                if self.no_quotes_mode:
+                    payload = BidAsk(bid=data["l"], ask=data["h"])
+                    self.on_event("quote", dt, symbol, payload)
 
                 for price in {data["o"], data["h"], data["l"], data["c"]}:
                     payload = Trade(price=price, volume=data["vol"])
@@ -89,18 +106,24 @@ class RedisTradingData:
                 )
                 self.on_event("bar", dt, symbol, payload)
 
-            # Это quote
-            if data.get("av_bid"):
-                payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
-                self.on_event("quote", dt, symbol, payload)
+    def start_listen(self):
+        if self.backtest:
+            return self.start_listen_emulation()
+        else:
+            return self.start_listen_real()
 
-    def start_listen_(self):
+    def start_listen_emulation(self):
         """
         Эмулировать события, приходящие с биржи.
         """
         start_ts = str(dt_to_ts(self.dt_start)).encode()
-        end_ts = str(dt_to_ts(self.dt_end)).encode()
 
+        if self.dt_end:
+            end_ts = str(dt_to_ts(self.dt_end)).encode()
+        else:
+            end_ts = 10 ** 10
+
+        # FIXME: временная мера
         one_symbol = self.symbols[0]
 
         #######################
@@ -122,11 +145,22 @@ class RedisTradingData:
 
             self.interval_event(dt)
 
+            # Это quote
+            if data.get("av_bid"):
+                payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
+                self.on_event("quote", dt, symbol, payload)
+
             # Это bar
-            if data.get("avg"):
+            if data.get("o"):
+
+                if self.no_quotes_mode:
+                    payload = BidAsk(bid=data["l"], ask=data["h"])
+                    self.on_event("quote", dt, symbol, payload)
+
                 for price in {data["o"], data["h"], data["l"], data["c"]}:
                     payload = Trade(price=price, volume=data["vol"])
                     self.on_event("trade", dt, symbol, payload)
+
                 payload = Bar(
                     date=dt,
                     open=data["o"],
@@ -143,12 +177,7 @@ class RedisTradingData:
                 )
                 self.on_event("bar", dt, symbol, payload)
 
-            # Это quote
-            if data.get("av_bid"):
-                payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
-                self.on_event("quote", dt, symbol, payload)
-
-    def start_listen(self):
+    def start_listen_real(self):
         """
         Эмулировать события, приходящие с биржи.
         """

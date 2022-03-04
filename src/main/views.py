@@ -57,8 +57,8 @@ def symbols(request):
       "minmovement": 1,
       "minmovement2": 0,
       "pointvalue": 1,
-      # "session": "0900-1630",
-      "session": "0000-2359",
+      "session": "0900-1630",
+      # "session": "0000-2359",
       "has_intraday": True,
       "has_no_volume": True,
       "description": f"{symbol} Inc.",
@@ -79,13 +79,18 @@ def time(request):
 def history(request):
     print(request.GET)
 
-    r = redis.Redis(db=6)
+    r = redis.Redis(
+        host=settings.TREDIS_HOST,
+        port=settings.TREDIS_PORT,
+        db=settings.TREDIS_DB,
+        password=settings.TREDIS_PASSWORD,
+    )
 
     symbol = request.GET.get("symbol")
 
     from_ts = str(request.GET.get("from")).encode()
     to_ts = str(request.GET.get("to")).encode()
-    data_in_db = r.zrangebyscore(f"{symbol}.GLOBEX:TRADES", from_ts, to_ts)
+    data_in_db = r.zrangebyscore(f"{symbol}:TRADES", from_ts, to_ts)
 
     print(len(data_in_db))
     res = {

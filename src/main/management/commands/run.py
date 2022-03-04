@@ -45,9 +45,11 @@ class Command(BaseCommand):
             broker_config["start"] = kwargs["dt_start"].date()
 
         if kwargs["dt_end"]:
-            broker_config["dt_end"] = kwargs["dt_end"].date() + timedelta(1)
+            broker_config["dt_end"] = kwargs["dt_end"].date()
 
-        trader = Trader(broker_config, strategy_config, kwargs.get("backtest"))
+        backtest = bool(kwargs.get("backtest"))
+
+        trader = Trader(broker_config, strategy_config, backtest)
 
         try:
             trader.warm_up()

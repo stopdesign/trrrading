@@ -6,7 +6,7 @@ from main.models import Instrument
 
 
 def dt_to_ts(dt):
-    return int(dt.replace(tzinfo=timezone.utc).timestamp())
+    return int(dt.timestamp())
 
 
 class Order(models.Model):
@@ -97,11 +97,16 @@ class Order(models.Model):
         self.save()
 
     def as_json(self):
+        if self.avg_fill_price:
+            price = float(self.avg_fill_price)
+        else:
+            price = float(self.signal_price)
         return {
             "amount": self.amount,
             "side": self.action.lower(),
             "time": dt_to_ts(self.created_at),
-            "price": float(self.avg_fill_price),
+            "dt": str(self.created_at),
+            "price": price,
         }
 
     class Meta:

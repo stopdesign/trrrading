@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 from math import floor
 from exchange import BaseExchange
 from strategy import Signal
@@ -17,7 +18,7 @@ class Portfolio:
         self.exchange = exchange
         self.instruments = exchange.instruments
         for symbol, config in self.instruments.items():
-            self.positions[symbol] = 0
+            self.positions[symbol] = Decimal(0)
 
     def rebalance(self, hints):
         """
@@ -30,14 +31,14 @@ class Portfolio:
         for hint in filter(None, hints):
             deposit_per_symbol = self.exchange.net_value / len(self.instruments)
             price = self.exchange.get_price(hint.symbol, "mid")
-            amount = int(floor(float(deposit_per_symbol) / price))
+            amount = Decimal(floor(float(deposit_per_symbol) / price))
             position = self.positions[hint.symbol]
             if hint.signal == Signal.LONG:
                 position = +amount
             if hint.signal == Signal.SHORT:
                 position = -amount
             if hint.signal == Signal.CLOSE:
-                position = 0
+                position = Decimal(0)
             self.positions[hint.symbol] = position
 
         # print(self.positions)

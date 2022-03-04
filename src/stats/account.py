@@ -62,7 +62,7 @@ class AccountStats:
         margin_used = 0
         # TODO: вынести margin_used в self.exchange
         for symbol, position in self.exchange.get_positions().items():
-            margin_used += get_margin_for_position(position)
+            margin_used += get_margin_for_position(position) or Decimal(0)
 
         self.stats.append({
             "date": self.exchange.dt_last,
@@ -201,10 +201,15 @@ class AccountStats:
         # Инструменты, которые есть в конфиге, но не у брокера
         for symbol in self.exchange.symbols:
             if symbol not in positions:
+                mid_price = self.exchange.get_price(symbol, "mid")
+                if mid_price is not None:
+                    mid_price = Decimal(str(self.exchange.get_price(symbol, "mid")))
+                else:
+                    mid_price = Decimal(0)
                 positions[symbol] = {
                     "amount": Decimal(0),
                     # бесполезно, т.к. цены в этом случае не будет у биржи
-                    "price": Decimal(str(self.exchange.get_price(symbol, "mid"))),
+                    "price": mid_price,
                     "daily_pnl": float("nan"),
                 }
 

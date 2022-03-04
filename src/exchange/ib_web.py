@@ -26,6 +26,7 @@ class IBWebExchange(BaseExchange, Healthcheck):
         """
         total_value = self.cash
         for symbol, position in self.positions.items():
-            mid = Decimal(str(self.get_price(symbol, "mid")))
-            total_value += position["amount"] * (mid - position["price"])
+            if position["amount"]:
+                mid = Decimal(self.get_price(symbol, "mid"))
+                total_value += position["amount"] * (mid - position["price"])
         return total_value

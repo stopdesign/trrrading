@@ -46,13 +46,14 @@ class Execution:
 
             # Проверить ордеры, которые выставлены и ждут исполнения
             # TODO: в будущем нужно добавлять/отменять ордер в этом случае
-            if amount_in_orders := self.get_amount_in_orders(symbol):
-                log.warning(f"Active orders: {symbol} {amount_in_orders}")
-                continue
+            if not self.run.backtest:
+                if amount_in_orders := self.get_amount_in_orders(symbol):
+                    log.warning(f"Active orders: {symbol} {amount_in_orders}")
+                    continue
 
             order = self.create_order(dt, symbol, side, order_amount)
 
-            if self.exchange.backtest:
+            if self.run.backtest:
                 fill_price = self.exchange.get_price(symbol, "mid")
                 fill_price = Decimal(str(fill_price))
                 order.simulate_fill(fill_price)

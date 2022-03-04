@@ -2,7 +2,7 @@ function initOnReady() {
   var widget = window.tv = new TradingView.widget({
     debug: false,
     fullscreen: false,
-    symbol: 'MES',
+    symbol: 'URA.ARCA',
     interval: '5',
     container: "tv_chart_container",
 
@@ -258,17 +258,17 @@ function initOnReady() {
 
       // shape.setTextColor(color).setArrowColor(color)
 
-      // const level = ac.createShape(
-      //   { time: order["time"], price: order["price"] },
-      //   {
-      //     shape: 'arrow_right',
-      //     overrides: {backgroundColor: "#dd0000", color: color },
-      //     zOrder: "top",
-      //     disableSelection: true,
-      //     lock: true,
-      //     text: order["price"]
-      //   }
-      // );
+      const level = ac.createShape(
+        { time: order["time"], price: order["price"] },
+        {
+          shape: 'arrow_right',
+          overrides: {backgroundColor: "#dd0000", color: color },
+          zOrder: "top",
+          disableSelection: true,
+          lock: true,
+          text: order["dt"]
+        }
+      );
 
       const arrow = ac.createShape(
         { time: order["time"], price: arrow_pos },
@@ -281,26 +281,26 @@ function initOnReady() {
         }
       );
 
-      const icon_bg = ac.createShape(
-        { time: order["time"], price: order["price"] },
-        {
-          shape: 'icon',
-          overrides: {color: "#fff", size: 30, scale: 0.7},
-          icon: '0xf068',
-          zOrder: "top",
-          disableSelection: true,
-        }
-      );
-      const icon = ac.createShape(
-        { time: order["time"], price: order["price"] },
-        {
-          shape: 'icon',
-          overrides: {color: color, size: 15},
-          icon: '0xf068',
-          zOrder: "top",
-          disableSelection: true,
-        }
-      );
+      // const icon_bg = ac.createShape(
+      //   { time: order["time"], price: order["price"] },
+      //   {
+      //     shape: 'icon',
+      //     overrides: {color: "#fff", size: 30, scale: 0.7},
+      //     icon: '0xf068',
+      //     zOrder: "top",
+      //     disableSelection: true,
+      //   }
+      // );
+      // const icon = ac.createShape(
+      //   { time: order["time"], price: order["price"] },
+      //   {
+      //     shape: 'icon',
+      //     overrides: {color: color, size: 15},
+      //     icon: '0xf068',
+      //     zOrder: "top",
+      //     disableSelection: true,
+      //   }
+      // );
 
     }
 

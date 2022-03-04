@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from termcolor import colored
 from exchange import BaseExchange, all_exchanges
 from stats import AccountStats, TradeStats
@@ -16,10 +16,13 @@ class Trader(TelegramBotMixin):
     exchange: BaseExchange = None
 
     def __init__(self, broker_conf, instruments, backtest):
-        txt = f"Init trader at {datetime.utcnow().replace(microsecond=0)} UTC"
+        dt_now = datetime.utcnow().replace(microsecond=0)
+        txt = f"Init Trader(backtest={backtest}) at {dt_now}"
         log.info(colored(txt, "white"))
 
-        if backtest:
+        self.backtest = backtest
+
+        if self.backtest:
             account = None
         else:
             account = Account.objects.get(
@@ -29,7 +32,7 @@ class Trader(TelegramBotMixin):
 
         self.run = Run.objects.create(
             account=account,
-            backtest=backtest,
+            backtest=self.backtest,
             broker_config=json.dumps(broker_conf, indent=2, default=str),
             strategy_config=json.dumps(instruments, indent=2, default=str),
         )
@@ -49,11 +52,11 @@ class Trader(TelegramBotMixin):
 
         exchange_class = all_exchanges[broker_conf.get("driver")]
 
-        if exchange_class.backtest:
+        if self.backtest:
             dt = broker_conf.get("dt_start")
             self.dt_start = datetime(dt.year, dt.month, dt.day)
             dt = broker_conf.get("dt_end")
-            self.dt_end = datetime(dt.year, dt.month, dt.day)
+            self.dt_end = datetime(dt.year, dt.month, dt.day) + timedelta(1)
         else:
             self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
             self.dt_end = None
@@ -64,6 +67,7 @@ class Trader(TelegramBotMixin):
             dt_start=self.dt_start,
             dt_end=self.dt_end,
             on_event=self.on_event,
+            backtest=self.backtest,
         )
 
         self.trading_data = RedisTradingData(
@@ -71,6 +75,7 @@ class Trader(TelegramBotMixin):
             dt_start=self.dt_start,
             dt_end=self.dt_end,
             on_event=self.on_event,
+            backtest=self.backtest,
         )
 
         self.portfolio = Portfolio(self.exchange)
@@ -83,7 +88,7 @@ class Trader(TelegramBotMixin):
         """
         TODO: Почему не в init?
         """
-        log.info(colored(f"Historical data from {self.exchange.dt_from}", "white"))
+        log.info(colored(f"Historical data from {self.trading_data.dt_from}", "white"))
 
         # Прогреть индикторы прогоном исторических данных
         self.trading_data.warm_up()
@@ -116,14 +121,14 @@ class Trader(TelegramBotMixin):
         Завершение торговли (штатное или из-за ошибки).
         Сохранить все наработанные данные.
         """
-        if self.exchange.backtest:
+        if self.backtest:
             self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """
         В стриме биржи возникло новое событие.
         """
-        if dt >= self.dt_start and not self.exchange.backtest:
+        if dt >= self.dt_start and not self.backtest:
             log.info(f"EVENT {event} {symbol} {payload}")
 
         if event == "bar":
@@ -147,7 +152,7 @@ class Trader(TelegramBotMixin):
             self.trade_stats.on_trade_done(dt, symbol, payload)
             self.account_stats.on_trade_done(symbol, payload)
             self.trade_stats.log_trade_result(symbol, payload)
-            if not self.exchange.backtest:
+            if not self.backtest:
                 self.account_stats.portfolio_info()
                 self.account_stats.account_info()
 

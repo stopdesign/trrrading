@@ -1,3 +1,6 @@
+from datetime import datetime
+from decimal import Decimal
+
 import pandas as pd
 from dataclasses import dataclass
 from typing import Optional
@@ -9,6 +12,8 @@ class Hint:
     symbol: str
     strategy: str
     signal: Signal
+    # dt: datetime
+    # signal_price: Decimal
 
 
 def hint(func):
@@ -55,29 +60,3 @@ class BaseStrategy:
     @hint
     def on_trade(self, data) -> Signal:
         return Signal.PASS
-
-    def resampled_data(self, resample_rule, dt_start=None):
-        """
-        Пересобрать рыночные данные и индикаторы с нужным разрешением.
-        """
-        df = pd.DataFrame(self.data)
-        if not df.empty:
-            df.set_index("date", inplace=True)
-            if dt_start:
-                df = df[df.index > dt_start]
-            if resample_rule:
-                df = df.resample(resample_rule).apply({
-                    "open": "first",
-                    "high": "max",
-                    "low": "min",
-                    "close": "last",
-                    "volume": "sum",
-                    "average": "mean",
-                    "barCount": "sum",
-                    "rth": "first",
-                    "ticker": "last",
-                    "up": "max",
-                    "dn": "min",
-                })
-                df.dropna(inplace=True)
-        return df
