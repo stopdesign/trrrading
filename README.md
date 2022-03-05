@@ -3,31 +3,23 @@
 Yet Another Trading Platform
 
 
-## System Requirements
-* Python 3
+## Usage
 
+Конфигурационные файлы лежат в `src/bot_config/`
 
-## Deployment
-
-
-### Install system requirements
-
-#### Linux
-```bash
-apt update
-apt install python3 virtualenv python3-virtualenv
+#### Backtest
 ```
-#### Mac
-```bash
-brew install ta-lib
+manage.py run broker_conf.yaml strategy_conf.yaml --backtest
 ```
 
-
-### Install python requirements
-```bash
-cd trrrading
-virtualenv -p python3 .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+#### Trading
+```
+manage.py run broker_conf.yaml strategy_conf.yaml
 ```
 
+#### Отправка ордеров
+Для синхронизации ордеров с IBKR (в обе стороны)
+должен быть запущен сервис синхронизации:
+```
+manage.py sync_ibkr broker_conf.yaml
+```
