@@ -76,18 +76,18 @@ class RedisTradingData:
 
             # Это quote
             if data.get("av_bid"):
-                payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
+                payload = BidAsk(date=dt, bid=data["av_bid"], ask=data["av_ask"])
                 self.on_event("quote", dt, symbol, payload)
 
             # Это bar
             if data.get("o"):
 
                 if self.no_quotes_mode:
-                    payload = BidAsk(bid=data["l"], ask=data["h"])
+                    payload = BidAsk(date=dt, bid=data["l"], ask=data["h"])
                     self.on_event("quote", dt, symbol, payload)
 
                 for price in {data["o"], data["h"], data["l"], data["c"]}:
-                    payload = Trade(price=price, volume=data["vol"])
+                    payload = Trade(date=dt, price=price, volume=data["vol"])
                     self.on_event("trade", dt, symbol, payload)
 
                 payload = Bar(
@@ -131,6 +131,7 @@ class RedisTradingData:
         data_in_db += self.redis.zrangebyscore(f"{one_symbol}:TRADES", start_ts, end_ts)
 
         log.info(f"backtest data lines: {len(data_in_db)}")
+        print()
 
         all_data = sorted(data_in_db)
 
@@ -147,20 +148,25 @@ class RedisTradingData:
 
             # Это quote
             if data.get("av_bid"):
-                payload = BidAsk(bid=data["av_bid"], ask=data["av_ask"])
+                payload = BidAsk(date=dt, bid=data["av_bid"], ask=data["av_ask"])
                 self.on_event("quote", dt, symbol, payload)
 
             # Это bar
             if data.get("o"):
 
+                # print(data)
+
+                # Симуляция QUOTES
                 if self.no_quotes_mode:
-                    payload = BidAsk(bid=data["l"], ask=data["h"])
+                    payload = BidAsk(date=dt, bid=data["l"], ask=data["h"])
                     self.on_event("quote", dt, symbol, payload)
 
+                # Симуляция отдельных сделок из OHLC
                 for price in {data["o"], data["h"], data["l"], data["c"]}:
-                    payload = Trade(price=price, volume=data["vol"])
+                    payload = Trade(date=dt, price=price, volume=data["vol"])
                     self.on_event("trade", dt, symbol, payload)
 
+                # Минутные TRADES в виде OHLC
                 payload = Bar(
                     date=dt,
                     open=data["o"],
@@ -214,7 +220,7 @@ class RedisTradingData:
                             dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S.%f")
                         else:
                             dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S")
-                        payload = Trade(price=float(data["price"]), volume=0)
+                        payload = Trade(date=dt, price=float(data["price"]), volume=0)
                         self.on_event("trade", dt, data["symbol"], payload)
 
                     elif "vol" in data:
@@ -238,7 +244,7 @@ class RedisTradingData:
                         self.on_event("bar", dt, data["symbol"], payload)
 
                         # Читерское получение quotes без настоящих данных
-                        payload = BidAsk(bid=data["l"], ask=data["h"])
+                        payload = BidAsk(date=dt, bid=data["l"], ask=data["h"])
                         self.on_event("quote", dt, data["symbol"], payload)
 
                     else:

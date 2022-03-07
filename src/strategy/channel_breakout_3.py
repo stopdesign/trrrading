@@ -2,7 +2,7 @@ import math
 from datetime import time
 from talipp.indicators import DonchianChannels
 from strategy import BaseStrategy, Signal, hint
-from data_types import Bar
+from data_types import Bar, Trade
 
 
 class ChannelBreakout3(BaseStrategy):
@@ -23,10 +23,10 @@ class ChannelBreakout3(BaseStrategy):
         else:
             bar = Bar.from_pandas(pandas_ohlc)
 
-        # if bar.date.time() < time(hour=13, minute=30):
+        # if bar.date.time() < time(hour=14, minute=30):
         #     return Signal.PASS
         #
-        # if bar.date.time() >= time(hour=19, minute=59):
+        # if bar.date.time() >= time(hour=20, minute=59):
         #     return Signal.PASS
 
         if bar.volume == 0:
@@ -52,7 +52,7 @@ class ChannelBreakout3(BaseStrategy):
         return Signal.PASS
 
     @hint
-    def on_trade(self, price: float) -> Signal:
+    def on_trade(self, trade: Trade) -> Signal:
         """
         Проверить сигнал стратегии при появлении новой цены.
         """
@@ -61,16 +61,18 @@ class ChannelBreakout3(BaseStrategy):
         if not bar or not bar.dn:
             return Signal.PASS
 
-        # if bar.date.time() < time(hour=13, minute=35):
+        # print(trade.date.time())
+
+        # if trade.date.time() < time(hour=14, minute=30):
         #     return Signal.PASS
         #
-        # if bar.date.time() >= time(hour=19, minute=55):
+        # if trade.date.time() >= time(hour=20, minute=59):
         #     return Signal.PASS
 
-        if price > bar.up - self.padding:
+        if trade.price > bar.up - self.padding:
             return Signal.LONG
 
-        if price < bar.dn + self.padding:
+        if trade.price < bar.dn + self.padding:
             return Signal.SHORT
 
         return Signal.PASS

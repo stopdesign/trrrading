@@ -215,7 +215,7 @@ class AccountStats:
 
         for symbol, position in positions.items():
             position["symbol"] = symbol
-            position["advised"] = self.trader.portfolio.positions[symbol]
+            position["advised"] = self.trader.portfolio.positions[symbol].get("amount")
 
         return positions
 

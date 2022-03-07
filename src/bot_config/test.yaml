@@ -1,16 +1,16 @@
-#MES.GLOBEX:
-#  exchange: SMART
-#  short: On
-#  strategies:
-#
-#    - name: ChannelBreakout3
-#      length: 200
-
-
-URA.ARCA:
+MES.GLOBEX:
   exchange: SMART
   short: On
   strategies:
 
     - name: ChannelBreakout3
-      length: 450
+      length: 3
+
+
+#URA.ARCA:
+#  exchange: SMART
+#  short: On
+#  strategies:
+#
+#    - name: ChannelBreakout3
+#      length: 150

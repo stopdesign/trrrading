@@ -1,31 +1,16 @@
-from datetime import datetime
-from decimal import Decimal
-
-import pandas as pd
-from dataclasses import dataclass
 from typing import Optional
 from .signal import Signal
 
 
-@dataclass
-class Hint:
-    symbol: str
-    strategy: str
-    signal: Signal
-    # dt: datetime
-    # signal_price: Decimal
-
-
 def hint(func):
     """
-    Преобразует сигнал в Hint, учитывая информацию о предыдущем состоянии.
+    Возвращает сигнал, если состояние изменилось.
     """
-    def inner(obj, *args, **kwargs) -> Optional[Hint]:
+    def inner(obj, *args, **kwargs) -> Optional[Signal]:
         signal = func(obj, *args, **kwargs)
         if signal != Signal.PASS and obj.prev_signal != signal:
-            strategy = type(obj).__name__
             obj.prev_signal = signal
-            return Hint(symbol=obj.symbol, strategy=strategy, signal=signal)
+            return signal
         return None
     return inner
 

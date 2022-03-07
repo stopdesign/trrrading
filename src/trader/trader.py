@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from termcolor import colored
+from data_types import Hint, Bar, Trade
 from exchange import BaseExchange, all_exchanges
 from stats import AccountStats, TradeStats
 from storage.redis import RedisTradingData
@@ -105,7 +106,7 @@ class Trader(TelegramBotMixin):
 
         log.info("Stop stream")
         self.trading_data.stop_listen()
-        # self.exchange.close_all()
+        self.close_all()
         self.account_stats.snapshot()
         self.account_stats.portfolio_info()
         self.account_stats.account_info()
@@ -113,7 +114,7 @@ class Trader(TelegramBotMixin):
         self.stop_tg_bot()
 
     def stop(self):
-        # self.exchange.close_all()
+        self.close_all()
         self.trading_data.stop_listen()
 
     def final_info(self):
@@ -152,13 +153,14 @@ class Trader(TelegramBotMixin):
             self.trade_stats.on_trade_done(dt, symbol, payload)
             self.account_stats.on_trade_done(symbol, payload)
             self.trade_stats.log_trade_result(symbol, payload)
-            if not self.backtest:
-                self.account_stats.portfolio_info()
-                self.account_stats.account_info()
+
+            # if not self.backtest:
+            self.account_stats.portfolio_info()
+            self.account_stats.account_info()
 
         return True
 
-    def on_bar(self, dt: datetime, symbol, payload):
+    def on_bar(self, dt: datetime, symbol, payload: Bar):
         """
         Новый интервал. Обновить данные в стратегиях.
         Получить сигналы, зависящие от интервалов.
@@ -168,11 +170,19 @@ class Trader(TelegramBotMixin):
         # TODO: добавить цену сигнала в hint
         for strategy in self.strategies:
             if strategy.symbol == symbol:
-                hints.append(strategy.on_bar(payload))
+                if signal := strategy.on_bar(payload):
+                    hint = Hint(
+                        symbol=symbol,
+                        strategy=strategy,
+                        signal=signal,
+                        signal_dt=dt,
+                        signal_price=payload.close,
+                    )
+                    hints.append(hint)
 
         self.process_hints(hints, dt)
 
-    def on_trade(self, dt: datetime, symbol, payload):
+    def on_trade(self, dt: datetime, symbol, payload: Trade):
         """
         Новая цена. Обновить данные в стратегиях.
         Получить сигналы, зависящие от сделок.
@@ -182,8 +192,15 @@ class Trader(TelegramBotMixin):
         # TODO: добавить цену сигнала в hint
         for strategy in self.strategies:
             if strategy.symbol == symbol:
-                # hint = Hint
-                hints.append(strategy.on_trade(payload.price))
+                if signal := strategy.on_trade(payload):
+                    hint = Hint(
+                        symbol=symbol,
+                        strategy=strategy,
+                        signal=signal,
+                        signal_dt=dt,
+                        signal_price=payload.price,
+                    )
+                    hints.append(hint)
 
         self.process_hints(hints, dt)
 
@@ -192,10 +209,13 @@ class Trader(TelegramBotMixin):
         Обновить состояние портфолио после получения новых сигналов.
         Применить новое состояние портфолио к торговому аккаунту.
         """
-        hints = list(filter(None, hints))
-
         # Обновить Portfolio Targets
         self.portfolio.rebalance(hints)
 
         # Выставить ордеры, чтобы позиции стали равны Targets
+        # Отталкиваться от hints
         self.execution.apply_targets(dt)
+
+    def close_all(self):
+        self.portfolio.nullify()
+        self.execution.apply_targets(self.exchange.dt_last)

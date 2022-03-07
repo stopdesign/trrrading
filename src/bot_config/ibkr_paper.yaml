@@ -1,10 +1,10 @@
 driver: IBWebExchange
 
-target_margin: 10000
+target_margin: 100000
 username: gr5g2ry0
 account: DU1492107
 
-dt_start: 2022-02-10
+dt_start: 2022-03-01
 dt_end: 2022-12-31
 
 #resample_rule: null
