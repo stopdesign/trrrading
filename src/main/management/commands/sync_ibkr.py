@@ -1,7 +1,10 @@
 import json
 import threading
 import time
+import yaml
 from datetime import datetime
+from os.path import abspath, join, dirname
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from ibkr_web_api import IbApi
 from main.models import Order, Instrument, Position, Account
@@ -11,7 +14,10 @@ from termcolor import cprint
 class Command(BaseCommand):
     finished = None
 
-    def check_new(self):
+    def add_arguments(self, parser):
+        parser.add_argument('broker', type=str)
+
+    def check_new(self, ib):
         """
         Найти новые ордеры, отправить их в IBKR.
         """
@@ -19,14 +25,14 @@ class Command(BaseCommand):
             return
         new_orders = Order.objects.filter(status="New")
         for order in new_orders:
-            self.submit_order(order)
+            self.submit_order(ib, order)
 
-    def check_ibkr(self):
+    def check_ibkr(self, ib):
         """
         Загрузить список ордеров, позиций и баланс аккаунта.
         """
         ib.reset_session()
-        ib.load_session()
+        ib.load_redis_session()
 
         account = Account.objects.get(id=1)
 
@@ -48,7 +54,7 @@ class Command(BaseCommand):
         # print(json.dumps(res.json(), indent=2, default=str))
 
         ib.reset_session()
-        ib.load_session()
+        ib.load_redis_session()
 
         # ОТКРЫТЫЕ ПОЗИЦИИ АККАУНТА
         url = f"/portal.proxy/v1/portal/portfolio/{account.uid}/positions"
@@ -152,12 +158,12 @@ class Command(BaseCommand):
             except Exception as e:
                 cprint("ERROR: %s" % e, "red")
 
-    def submit_order(self, order):
+    def submit_order(self, ib, order):
         order.status = "InProgress"
         order.save()
 
         ib.reset_session()
-        ib.load_session()
+        ib.load_redis_session()
 
         print("\n\nSUBMIT_ORDER")
 
@@ -223,22 +229,40 @@ class Command(BaseCommand):
             order.status = "Error"
             order.save()
 
-    def handle(self, *args, **options):
+    def handle(self, *args, **kwargs):
 
-        # username = "vysoch218"
-        username = "gr5g2ry0"
-        password = ""
-        paper = True
+        conf_dir = join(dirname(settings.BASE_DIR), "bot_config")
 
-        ib = IbApi(username, password, paper, debug=False)
+        broker_config_path = abspath(join(conf_dir, kwargs.get("broker")))
+
+        # Загрузка конфига
+        config = yaml.full_load(open(broker_config_path))
+
+        username = config["username"]
+        password = config["password"]
+        paper = config["paper"]
+        secret = config["secret"]
+        redis_config = config["redis"]
+
+        ib = IbApi(
+            username,
+            password,
+            paper,
+            secret=secret,
+            debug=False,
+            redis_host=redis_config["host"],
+            redis_port=redis_config["port"],
+            redis_db=redis_config["db"],
+            redis_password=redis_config["password"],
+        )
 
         prev_dt = datetime(1900, 1, 1)
         while not self.finished:
             dt = datetime.utcnow().replace(microsecond=0)
             # Каждую секунду что-то проверять
             if dt.second != prev_dt.second:
-                self.check_new()
+                self.check_new(ib)
                 if dt.second % 15 == 0:
-                    self.check_ibkr()
+                    self.check_ibkr(ib)
             time.sleep(0.01)
             prev_dt = dt
