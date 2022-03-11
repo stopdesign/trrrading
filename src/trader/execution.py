@@ -1,8 +1,9 @@
+import json
 import logging
 from datetime import timezone
 from decimal import Decimal
 from exchange import BaseExchange
-from main.models import Instrument, Order
+from main.models import Instrument, Order, Position
 from termcolor import colored
 
 log = logging.getLogger("execution")
@@ -23,16 +24,39 @@ class Execution:
 
     def apply_targets(self, dt):
 
-        # что на самом деле есть в портфолио
-        self.actual_positions = self.exchange.get_positions()
+        if self.run.backtest:
+            self.actual_positions = self.exchange.get_positions()
+
+        else:
+            # что на самом деле есть в портфолио
+            positions = {}
+            for position in Position.objects.filter(account=self.run.account):
+                instrument = position.instrument
+                symbol = instrument.symbol + "." + instrument.main_exchange.symbol
+                positions[symbol] = {
+                    "amount": position.amount,
+                    "price": position.avg_price,
+                    "dt": position.updated_at,
+                }
+            self.actual_positions = positions
+
+        """
+        Нужно как-то надежно определять позиции в этой точке.
+        Проблема в том, что позиции биржи и позиции базы не синхронны.
+
+        Можно сначала смотреть расхождение позиции с ранее полученным значением.
+        Если расхождение есть (сигнал от стратегии пришел), то запросить
+        сначала ордеры, а если их нет — обновить позиции по данному инструменту.
+        
+        Таким образом перед выставлением боевого ордера по сигналу будет запрос,
+        который точно определит позиции. На случай, если кто-то руками поменял
+        или были сбои в фоновой синхронизации позиций.
+        """
 
         for symbol in self.exchange.instruments:
             actual = self.actual_positions.get(symbol, {}).get("amount", 0)
             target = self.target_positions.get(symbol, {}).get("amount", 0)
             signal_price = self.target_positions.get(symbol, {}).get("signal_price", 0)
-
-            # if dt > self.exchange.dt_start:
-            #     log.info(f"POSITIONS {symbol} actual={actual} target={target}")
 
             side = None
             order_amount = abs(actual - target)
@@ -45,13 +69,18 @@ class Execution:
             if not side:
                 continue
 
+            if dt > self.exchange.dt_start:
+                log.info(colored(f"POSITIONS {symbol} actual={actual} target={target}", "magenta"))
+
             # Проверить ордеры, которые выставлены и ждут исполнения
-            # TODO: в будущем нужно добавлять/отменять ордер в этом случае
+            # TODO: в будущем можно редактировать/отменять ордер в этом случае
             if not self.run.backtest:
-                if amount_in_orders := self.get_amount_in_orders(symbol):
-                    log.warning(f"Active orders: {symbol} {amount_in_orders}")
+                amount_in_orders = self.get_amount_in_orders(symbol)
+                if amount_in_orders:
+                    log.warning(colored(f"Active orders: {symbol} {amount_in_orders}, SKIP", "red"))
                     continue
 
+            log.warning(colored(f"Create order: {symbol} {order_amount}", "blue", attrs=['reverse']))
             order = self.create_order(dt, symbol, side, order_amount, signal_price)
 
             if self.run.backtest:

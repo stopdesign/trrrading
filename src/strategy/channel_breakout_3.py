@@ -23,11 +23,11 @@ class ChannelBreakout3(BaseStrategy):
         else:
             bar = Bar.from_pandas(pandas_ohlc)
 
-        # if bar.date.time() < time(hour=14, minute=30):
-        #     return Signal.PASS
-        #
-        # if bar.date.time() >= time(hour=20, minute=59):
-        #     return Signal.PASS
+        if bar.date.time() < time(hour=14, minute=33):
+            return Signal.PASS
+
+        if bar.date.time() >= time(hour=20, minute=59):
+            return Signal.PASS
 
         if bar.volume == 0:
             return Signal.PASS
@@ -63,11 +63,11 @@ class ChannelBreakout3(BaseStrategy):
 
         # print(trade.date.time())
 
-        # if trade.date.time() < time(hour=14, minute=30):
-        #     return Signal.PASS
-        #
-        # if trade.date.time() >= time(hour=20, minute=59):
-        #     return Signal.PASS
+        if trade.date.time() < time(hour=14, minute=33):
+            return Signal.PASS
+
+        if trade.date.time() >= time(hour=20, minute=59):
+            return Signal.PASS
 
         if trade.price > bar.up - self.padding:
             return Signal.LONG

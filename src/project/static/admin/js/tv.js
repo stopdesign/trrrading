@@ -258,17 +258,17 @@ function initOnReady() {
 
       // shape.setTextColor(color).setArrowColor(color)
 
-      const level = ac.createShape(
-        { time: order["time"], price: order["price"] },
-        {
-          shape: 'arrow_right',
-          overrides: {backgroundColor: "#dd0000", color: color },
-          zOrder: "top",
-          disableSelection: true,
-          lock: true,
-          text: order["dt"]
-        }
-      );
+      // const level = ac.createShape(
+      //   { time: order["time"], price: order["price"] },
+      //   {
+      //     shape: 'arrow_right',
+      //     overrides: {backgroundColor: "#dd0000", color: color },
+      //     zOrder: "top",
+      //     disableSelection: true,
+      //     lock: true,
+      //     // text: order["dt"]
+      //   }
+      // );
 
       const arrow = ac.createShape(
         { time: order["time"], price: arrow_pos },

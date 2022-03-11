@@ -1,7 +1,7 @@
 import argparse
 import yaml
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from os.path import abspath, join, dirname
 from django.core.management.base import BaseCommand
 from django.conf import settings

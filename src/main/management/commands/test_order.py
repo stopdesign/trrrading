@@ -85,11 +85,11 @@ class Command(BaseCommand):
         account = Account.objects.get(id=1)
         instrument = Instrument.objects.get(symbol="MES")
 
-        # order = Order.market_order(account, instrument, Order.Side.buy, 6)
-        # order.save()
-
-        order = Order.limit_order(account, instrument, Order.Side.buy, 2, 4400, outside_rth=False)
+        order = Order.market_order(account, None, instrument, Order.Side.buy, 1)
         order.save()
+
+        # order = Order.limit_order(account, instrument, Order.Side.buy, 2, 4400, outside_rth=False)
+        # order.save()
 
     def handle(self, *args, **options):
 

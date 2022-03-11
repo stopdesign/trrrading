@@ -1,6 +1,8 @@
 import json
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
+
 from termcolor import colored
 from data_types import Hint, Bar, Trade
 from exchange import BaseExchange, all_exchanges
@@ -82,8 +84,23 @@ class Trader(TelegramBotMixin):
         self.portfolio = Portfolio(self.exchange)
         self.execution = Execution(self.exchange, self.portfolio, self.run)
 
+        self.init_portfolio()
+
         self.account_stats = AccountStats(self, self.exchange)
         self.trade_stats = TradeStats(self, self.exchange)
+
+    def init_portfolio(self):
+        """
+        Инициализировать начальное состояние портфолио.
+        Для бэктеста все инструменты из конфига устанавливаются в 0.
+        Для торговли берется состояние из базы данных для данного аккаунта.
+        Отсутствующие инструменты из конфига устанавливаются в 0.
+        """
+        for symbol in self.instruments.keys():
+            self.exchange.positions[symbol] = {
+                "amount": Decimal(0),
+                "price": Decimal(0),
+            }
 
     def warm_up(self):
         """
@@ -129,8 +146,8 @@ class Trader(TelegramBotMixin):
         """
         В стриме биржи возникло новое событие.
         """
-        if dt >= self.dt_start and not self.backtest:
-            log.info(f"EVENT {event} {symbol} {payload}")
+        # if dt >= self.dt_start and not self.backtest:
+        #     log.info(f"EVENT {event} {symbol} {payload}")
 
         if event == "bar":
             self.on_bar(dt, symbol, payload)
@@ -180,7 +197,7 @@ class Trader(TelegramBotMixin):
                     )
                     hints.append(hint)
 
-        self.process_hints(hints, dt)
+        # self.process_hints(hints, dt)
 
     def on_trade(self, dt: datetime, symbol, payload: Trade):
         """

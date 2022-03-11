@@ -1,6 +1,5 @@
 import logging
 from decimal import Decimal
-from termcolor import cprint, colored
 from exchange import BaseExchange
 from exchange.mixin import Healthcheck
 
@@ -16,7 +15,7 @@ class IBWebExchange(BaseExchange, Healthcheck):
 
     def __init__(self, instruments: dict, **kwargs):
         super().__init__(instruments, **kwargs)
-        self.cash_initial = kwargs.get("cash", Decimal("100000"))
+        self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
 
     @property

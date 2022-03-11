@@ -196,7 +196,7 @@ class AccountStats:
         """
 
         # Позиции, реально открытые у брокера
-        positions = self.exchange.get_positions()
+        positions = dict(self.exchange.get_positions())
 
         # Инструменты, которые есть в конфиге, но не у брокера
         for symbol in self.exchange.symbols:

@@ -17,7 +17,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('broker', type=str)
 
-    def check_new(self, ib):
+    def check_new(self, ib, account):
         """
         Найти новые ордеры, отправить их в IBKR.
         """
@@ -25,16 +25,14 @@ class Command(BaseCommand):
             return
         new_orders = Order.objects.filter(status="New")
         for order in new_orders:
-            self.submit_order(ib, order)
+            self.submit_order(ib, account, order)
 
-    def check_ibkr(self, ib):
+    def check_ibkr(self, ib, account):
         """
         Загрузить список ордеров, позиций и баланс аккаунта.
         """
         ib.reset_session()
         ib.load_redis_session()
-
-        account = Account.objects.get(id=1)
 
         print()
         print(datetime.now().replace(microsecond=0))
@@ -158,7 +156,7 @@ class Command(BaseCommand):
             except Exception as e:
                 cprint("ERROR: %s" % e, "red")
 
-    def submit_order(self, ib, order):
+    def submit_order(self, ib, account, order):
         order.status = "InProgress"
         order.save()
 
@@ -183,7 +181,7 @@ class Command(BaseCommand):
 
         cprint(json.dumps(order_data, indent=2, default=str), "white")
         data = {"orders": [order_data]}
-        url = "/portal.proxy/v1/portal/iserver/account/DU1492107/orders"
+        url = f"/portal.proxy/v1/portal/iserver/account/{account.uid}/orders"
         res = ib.request(url, "POST", data=data, is_json=True)
         print("CREATE Order HTTP status code:", res.status_code)
         try:
@@ -223,8 +221,11 @@ class Command(BaseCommand):
 
         if order_id := res_json[0].get("order_id"):
             order.order_id = order_id
-            order.status = res_json[0].get("order_status")
+            order.status = "Sent"
             order.save()
+
+            # Досрочная проверка открытых позиций
+            self.check_ibkr(ib, account)
         else:
             order.status = "Error"
             order.save()
@@ -256,13 +257,18 @@ class Command(BaseCommand):
             redis_password=redis_config["password"],
         )
 
+        account = Account.objects.get(
+            uid=config["account"],
+            username=config["username"],
+        )
+
         prev_dt = datetime(1900, 1, 1)
         while not self.finished:
             dt = datetime.utcnow().replace(microsecond=0)
             # Каждую секунду что-то проверять
             if dt.second != prev_dt.second:
-                self.check_new(ib)
+                self.check_new(ib, account)
                 if dt.second % 15 == 0:
-                    self.check_ibkr(ib)
+                    self.check_ibkr(ib, account)
             time.sleep(0.01)
             prev_dt = dt
