@@ -166,7 +166,7 @@ class Command(BaseCommand):
         order.save()
 
         ib.reset_session()
-        ib.load_redis_session()
+        ib.load_session()
 
         print("\n\nSUBMIT_ORDER")
 
