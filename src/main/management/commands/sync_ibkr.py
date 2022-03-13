@@ -1,12 +1,16 @@
 import json
 import threading
 import time
+
+import redis
 import yaml
 from datetime import datetime
 from os.path import abspath, join, dirname
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from ibkr_web_api import IbApi
+from ibkr_web_api.session_storage import RedisStorage
+
 from main.models import Order, Instrument, Position, Account
 from termcolor import cprint
 
@@ -32,7 +36,7 @@ class Command(BaseCommand):
         Загрузить список ордеров, позиций и баланс аккаунта.
         """
         ib.reset_session()
-        ib.load_redis_session()
+        ib.load_session()
 
         print()
         print(datetime.now().replace(microsecond=0))
@@ -52,7 +56,7 @@ class Command(BaseCommand):
         # print(json.dumps(res.json(), indent=2, default=str))
 
         ib.reset_session()
-        ib.load_redis_session()
+        ib.load_session()
 
         # ОТКРЫТЫЕ ПОЗИЦИИ АККАУНТА
         url = f"/portal.proxy/v1/portal/portfolio/{account.uid}/positions"
@@ -65,7 +69,8 @@ class Command(BaseCommand):
                 res_data = res.json()
                 for position_data in res_data:
                     position = self.parse_position(account, position_data)
-                    updated_positions.append(position.id)
+                    if position:
+                        updated_positions.append(position.id)
             except ValueError as e:
                 print(res.text)
                 print("parsing error", e)
@@ -243,18 +248,25 @@ class Command(BaseCommand):
         password = config["password"]
         paper = config["paper"]
         secret = config["secret"]
-        redis_config = config["redis"]
+
+        redis_client = redis.Redis(
+            settings.TREDIS_HOST,
+            settings.TREDIS_PORT,
+            settings.TREDIS_DB,
+            settings.TREDIS_PASSWORD
+        )
+        storage = RedisStorage(
+            session_name=username,
+            redis_client=redis_client,
+            secret=secret
+        )
 
         ib = IbApi(
             username,
             password,
-            paper,
-            secret=secret,
-            debug=False,
-            redis_host=redis_config["host"],
-            redis_port=redis_config["port"],
-            redis_db=redis_config["db"],
-            redis_password=redis_config["password"],
+            session_storage=storage,
+            paper=paper,
+            debug=False
         )
 
         account = Account.objects.get(

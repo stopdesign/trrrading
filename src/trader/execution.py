@@ -20,7 +20,7 @@ class Execution:
         self.exchange = exchange
         self.account = run.account
         self.target_positions = portfolio.positions
-        self.actual_positions = self.exchange.get_positions()
+        self.actual_positions = {}
 
     def apply_targets(self, dt):
 
@@ -84,73 +84,77 @@ class Execution:
             order = self.create_order(dt, symbol, side, order_amount, signal_price)
 
             if self.run.backtest:
-                # Здесь эмулируется исполнение ордера
+                self.backtest_execution(symbol, order, order_amount, side, actual, dt)
 
-                fill_price = self.exchange.get_price(symbol, "mid")
-                fill_price = Decimal(str(fill_price))
-                order.simulate_fill(fill_price)
+    def backtest_execution(self, symbol, order, order_amount, side, actual, dt):
+        """
+        Здесь эмулируется исполнение ордера
+        """
+        fill_price = self.exchange.get_price(symbol, "mid")
+        fill_price = Decimal(str(fill_price))
+        order.simulate_fill(fill_price)
 
-                # где-то тут должно быть фейковое изменение cash и margin used
-                # При полном или частичном закрытии позиции считается профит.
+        # где-то тут должно быть фейковое изменение cash и margin used
+        # При полном или частичном закрытии позиции считается профит.
 
-                if side == "sell":
-                    delta = -order_amount
-                else:
-                    delta = order_amount
+        if side == "sell":
+            delta = -order_amount
+        else:
+            delta = order_amount
 
-                # Фактическая и желаемая позиции не 0 и имеют разный знак
-                amount = delta
-                position = self.exchange.positions[symbol]
-                trade_profit = 0
+        # Фактическая и желаемая позиции не 0 и имеют разный знак
+        amount = delta
+        position = self.exchange.positions[symbol]
+        trade_profit = 0
 
-                # Позиция и дельта не 0 и имеют разный знак
-                if actual * delta < 0:
-                    # Частичное закрытие позиции
-                    amount_to_close = min(abs(actual), abs(delta))
+        # Позиция и дельта не 0 и имеют разный знак
+        if actual * delta < 0:
+            # Частичное закрытие позиции
+            amount_to_close = min(abs(actual), abs(delta))
 
-                    if side == "sell":
-                        amount_to_close = -amount_to_close
+            if side == "sell":
+                amount_to_close = -amount_to_close
 
-                    # log.info(f"amount_to_close: {amount_to_close}")
+            # log.info(f"amount_to_close: {amount_to_close}")
 
-                    # Одно с другим сокращается на partial_close_amount
-                    amount -= amount_to_close
-                    position["amount"] += amount_to_close
+            # Одно с другим сокращается на partial_close_amount
+            amount -= amount_to_close
+            position["amount"] += amount_to_close
 
-                    # Записать профит от закрытия позиции
-                    trade_profit = amount_to_close * (position["price"] - fill_price)
-                    self.exchange.cash += trade_profit
+            # Записать профит от закрытия позиции
+            trade_profit = amount_to_close * (position["price"] - fill_price)
+            self.exchange.cash += trade_profit
 
-                    # # Если amount еще остался — открыть позицию
-                    if amount != 0:
-                        self.exchange.positions[symbol] = {
-                            "amount": amount,
-                            "price": fill_price,
-                        }
-                else:
-                    # log.info(f"amount_to_open: {order_amount}")
-                    # Увеличение позиции в ту же сторону
-                    total_value = position["amount"] * position["price"]
-                    total_value += amount * Decimal(fill_price)
-                    total_amount = position["amount"] + amount
-                    av_price = total_value / total_amount
-                    self.exchange.positions[symbol] = {
-                        "amount": total_amount,
-                        "price": av_price,
-                    }
-
-                # Событие «успешное завершение сделки»
-                payload = {
-                    "side": side,
-                    "amount": order_amount,
+            # # Если amount еще остался — открыть позицию
+            if amount != 0:
+                self.exchange.positions[symbol] = {
+                    "amount": amount,
                     "price": fill_price,
-                    "profit": trade_profit,
-                    "slippage": 0,
-                    "fee": 0,
-                    "net_value": self.exchange.net_value,
                 }
-                self.exchange.on_event("after_trade", dt, symbol, payload)
-                print()
+        else:
+            # log.info(f"amount_to_open: {order_amount}")
+            # Увеличение позиции в ту же сторону
+            total_value = position["amount"] * position["price"]
+            total_value += amount * Decimal(fill_price)
+            total_amount = position["amount"] + amount
+            av_price = total_value / total_amount
+            self.exchange.positions[symbol] = {
+                "amount": total_amount,
+                "price": av_price,
+            }
+
+        # Событие «успешное завершение сделки»
+        payload = {
+            "side": side,
+            "amount": order_amount,
+            "price": fill_price,
+            "profit": trade_profit,
+            "slippage": 0,
+            "fee": 0,
+            "net_value": self.exchange.net_value,
+        }
+        self.exchange.on_event("after_trade", dt, symbol, payload)
+        print()
 
     def get_amount_in_orders(self, symbol):
         stock_symbol, exchange_symbol = symbol.split(".")

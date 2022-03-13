@@ -39,10 +39,10 @@ class Command(BaseCommand):
 
         # Загрузка конфига
         broker_config = yaml.full_load(open(broker_config_path))
-        strategy_config = yaml.full_load(open(strategy_config_path))
+        strategy_config = yaml.full_load(open(strategy_config_path))  # instruments
 
         if kwargs["dt_start"]:
-            broker_config["start"] = kwargs["dt_start"].date()
+            broker_config["dt_start"] = kwargs["dt_start"].date()
 
         if kwargs["dt_end"]:
             broker_config["dt_end"] = kwargs["dt_end"].date()

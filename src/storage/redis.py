@@ -12,6 +12,7 @@ from django.conf import settings
 log = logging.getLogger("redis_storage")
 
 
+# @TODO отправить в utils/helpers
 def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
@@ -51,6 +52,7 @@ class RedisTradingData:
         one_symbol = self.symbols[0]
 
         #######################
+        # @TODO zrangebyscore скоро перестанет работать, т.к. deprecated
         quotes = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", from_ts, start_ts)
         if len(quotes):
             log.info(f"warm_up quotes: {len(quotes)}")

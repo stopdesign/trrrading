@@ -4,6 +4,7 @@ from typing import Optional
 from data_types import Margin, Fee
 
 
+# @TODO наверное стоит сделать класс и соответствующие методы абстрактными
 class BaseExchange:
     """
     Биржа
@@ -40,7 +41,7 @@ class BaseExchange:
             if side == "mid":
                 return (quotes["ask"] + quotes["bid"]) / 2
 
-    def add_quote(self, dt, symbol, payload):
+    def add_quote(self, dt, symbol, payload):  # @TODO какой тип у payload?
         """
         Сохранить BID и ASK как актуальное состояние стакана на бирже.
         """

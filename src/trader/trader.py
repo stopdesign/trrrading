@@ -96,6 +96,7 @@ class Trader(TelegramBotMixin):
         Для торговли берется состояние из базы данных для данного аккаунта.
         Отсутствующие инструменты из конфига устанавливаются в 0.
         """
+        # @TODO в Portfolio.__init__ разве не то же самое происходит?
         for symbol in self.instruments.keys():
             self.exchange.positions[symbol] = {
                 "amount": Decimal(0),
