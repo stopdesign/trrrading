@@ -345,12 +345,14 @@ div.breadcrumbs a:hover {
 .dynamic-trades .original p,
 .dynamic-trade_set .original p,
 .dynamic-orderevent_set .original p,
+.dynamic-orders .original p,
 .dynamic-order_set .original p {
     display: none;
 }
 .inline-group .tabular tr.has_original.dynamic-trades td,
 .inline-group .tabular tr.has_original.dynamic-trade_set td,
 .inline-group .tabular tr.has_original.dynamic-orderevent_set td,
+.inline-group .tabular tr.has_original.dynamic-orders td,
 .inline-group .tabular tr.has_original.dynamic-order_set td {
     padding-top: inherit;
 }

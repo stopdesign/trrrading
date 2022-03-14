@@ -17,5 +17,9 @@ class Instrument(models.Model):
     def __str__(self):
         return f"{self.symbol}"
 
+    @property
+    def ticker(self):
+        return f"{self.symbol}.{self.main_exchange.symbol}"
+
     class Meta:
         app_label = "main"

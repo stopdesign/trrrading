@@ -2,7 +2,7 @@ function initOnReady() {
   var widget = window.tv = new TradingView.widget({
     debug: false,
     fullscreen: false,
-    symbol: 'URA.ARCA',
+    symbol: 'MES.GLOBEX',
     interval: '5',
     container: "tv_chart_container",
 

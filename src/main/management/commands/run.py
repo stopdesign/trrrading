@@ -50,15 +50,6 @@ class Command(BaseCommand):
         backtest = bool(kwargs.get("backtest"))
 
         trader = Trader(broker_config, strategy_config, backtest)
-
-        try:
-            trader.warm_up()
-            trader.start()
-        except KeyboardInterrupt:
-            trader.stop()
-        except Exception as e:
-            log.exception(e)
-        finally:
-            trader.final_info()
+        trader.start()
 
         print(f"Done in {str(datetime.utcnow() - dt)[:-7]}")

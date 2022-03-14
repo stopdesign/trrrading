@@ -2,21 +2,25 @@ import json
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
-
 from termcolor import colored
 from data_types import Hint, Bar, Trade
-from exchange import BaseExchange, all_exchanges
+from exchange import BaseExchange, IBWebExchange
 from stats import AccountStats, TradeStats
 from storage.redis import RedisTradingData
 from trader import Portfolio, TelegramBotMixin, Execution
 from strategy import all_strategies
-from main.models import Account, Run
+from main.models import Account, Run, Position, Order
 
 log = logging.getLogger("trader")
 
 
+def date_to_datetime(dt):
+    return datetime(dt.year, dt.month, dt.day)
+
+
 class Trader(TelegramBotMixin):
     exchange: BaseExchange = None
+    strategies: list = None
 
     def __init__(self, broker_conf, instruments, backtest):
         dt_now = datetime.utcnow().replace(microsecond=0)
@@ -24,6 +28,7 @@ class Trader(TelegramBotMixin):
         log.info(colored(txt, "white"))
 
         self.backtest = backtest
+        self.instruments = instruments
 
         if self.backtest:
             account = None
@@ -33,6 +38,7 @@ class Trader(TelegramBotMixin):
                 username=broker_conf["username"],
             )
 
+        # Отдельный запуск торговли или бэктеста
         self.run = Run.objects.create(
             account=account,
             backtest=self.backtest,
@@ -41,31 +47,19 @@ class Trader(TelegramBotMixin):
         )
 
         self.target_margin = broker_conf.get("target_margin")
-        self.can_short = broker_conf.get("short", True)
-        self.resample_rule = broker_conf.get("resample_rule", None)
 
-        self.instruments = instruments
-        self.strategies = []
+        self.init_strategies()
 
-        # Инициализация стратегий
-        for symbol, config in instruments.items():
-            for strategy_conf in config["strategies"]:
-                strategy_class = all_strategies[strategy_conf["name"]]
-                self.strategies.append(strategy_class(symbol, **strategy_conf))
-
-        exchange_class = all_exchanges[broker_conf.get("driver")]
-
+        # У бэктеста есть начало и конец, а реальная
+        # торговля идет от now до остановки скрипта
         if self.backtest:
-            dt = broker_conf.get("dt_start")
-            self.dt_start = datetime(dt.year, dt.month, dt.day)
-            dt = broker_conf.get("dt_end")
-            self.dt_end = datetime(dt.year, dt.month, dt.day) + timedelta(1)
+            self.dt_start = date_to_datetime(broker_conf.get("dt_start"))
+            self.dt_end = date_to_datetime(broker_conf.get("dt_end")) + timedelta(1)
         else:
             self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
             self.dt_end = None
 
-        # TODO: инициализировать состояние портфолио?
-        self.exchange = exchange_class(
+        self.exchange = IBWebExchange(
             instruments,
             dt_start=self.dt_start,
             dt_end=self.dt_end,
@@ -81,66 +75,90 @@ class Trader(TelegramBotMixin):
             backtest=self.backtest,
         )
 
-        self.portfolio = Portfolio(self.exchange)
+        self.portfolio = Portfolio(self.exchange)  # Все instruments по нулям
+
         self.execution = Execution(self.exchange, self.portfolio, self.run)
 
-        self.init_portfolio()
-
         self.account_stats = AccountStats(self, self.exchange)
+
         self.trade_stats = TradeStats(self, self.exchange)
 
-    def init_portfolio(self):
+        # Прогреть индикторы прогоном исторических данных.
+        # На этом этапе еще нет портфолио, только сигналы и Hint.
+        self.trading_data.warm_up()
+
+        for strategy in self.strategies:
+            log.info(colored(f"{strategy}, {strategy.prev_signal}", "grey"))
+
+        # Для реальной торговли подгружается фактическое состояние
+        self.update_portfolio()
+
+        self.account_stats.portfolio_info()
+        self.account_stats.account_info()
+
+    def init_strategies(self):
         """
-        Инициализировать начальное состояние портфолио.
+        Инициализация классов стратегий.
+        """
+        self.strategies = []
+        for symbol, config in self.instruments.items():
+            for strategy_conf in config["strategies"]:
+                strategy_class = all_strategies[strategy_conf["name"]]
+                self.strategies.append(strategy_class(symbol, **strategy_conf))
+
+    def update_portfolio(self):
+        """
         Для бэктеста все инструменты из конфига устанавливаются в 0.
         Для торговли берется состояние из базы данных для данного аккаунта.
         Отсутствующие инструменты из конфига устанавливаются в 0.
         """
+        # Есть два портфолио: желаемое и реальное
+
+        # Пустые значения для всех инструментов из конфига
         for symbol in self.instruments.keys():
             self.exchange.positions[symbol] = {
                 "amount": Decimal(0),
                 "price": Decimal(0),
             }
 
-    def warm_up(self):
-        """
-        TODO: Почему не в init?
-        """
-        log.info(colored(f"Historical data from {self.trading_data.dt_from}", "white"))
+        if not self.backtest:
+            self.exchange.latest_order_id = Order.objects.latest('id').id
+            print("latest_order_id:", self.exchange.latest_order_id)
 
-        # Прогреть индикторы прогоном исторических данных
-        self.trading_data.warm_up()
-
-        self.account_stats.portfolio_info()
-        self.account_stats.account_info()
+            # Для торговли через брокера позиции выставляются по значениям из базы
+            for position in Position.objects.filter(account=self.run.account):
+                instrument = position.instrument
+                symbol = instrument.symbol + "." + instrument.main_exchange.symbol
+                self.exchange.positions[symbol] = {
+                    "amount": position.amount,
+                    "price": position.avg_price,
+                    "dt": position.updated_at,
+                }
 
     def start(self):
         self.start_tg_bot()
 
-        log.info("Start stream")
-        self.account_stats.snapshot()
-        self.trading_data.start_listen()
+        log.info(colored(" Start stream ", "green", attrs=["reverse"]))
 
-        log.info("Stop stream")
-        self.trading_data.stop_listen()
-        self.close_all()
         self.account_stats.snapshot()
-        self.account_stats.portfolio_info()
-        self.account_stats.account_info()
+
+        try:
+            # Для бэктеста это заканчивается,
+            # для торговли крутится до прерывания
+            self.trading_data.start_listen()
+        except KeyboardInterrupt:
+            log.info(colored(" Stop stream ", "red", attrs=["reverse"]))
+            # self.trading_data.stop_listen()
+        except Exception as e:
+            log.exception(e)
+
+        if self.backtest:
+            self.close_all()
+            self.account_stats.print_summary()  # RESULTS
+
+        self.account_stats.snapshot()
 
         self.stop_tg_bot()
-
-    def stop(self):
-        self.close_all()
-        self.trading_data.stop_listen()
-
-    def final_info(self):
-        """
-        Завершение торговли (штатное или из-за ошибки).
-        Сохранить все наработанные данные.
-        """
-        if self.backtest:
-            self.account_stats.print_summary()  # RESULTS
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """
@@ -153,8 +171,7 @@ class Trader(TelegramBotMixin):
             self.on_bar(dt, symbol, payload)
 
         if event == "trade":
-            if dt >= self.dt_start:
-                self.on_trade(dt, symbol, payload)
+            self.on_trade(dt, symbol, payload)
 
         if event == "quote":
             self.exchange.add_quote(dt, symbol, payload)
@@ -197,7 +214,8 @@ class Trader(TelegramBotMixin):
                     )
                     hints.append(hint)
 
-        # self.process_hints(hints, dt)
+        if dt >= self.dt_start:
+            self.process_hints(hints, dt)
 
     def on_trade(self, dt: datetime, symbol, payload: Trade):
         """
@@ -219,7 +237,8 @@ class Trader(TelegramBotMixin):
                     )
                     hints.append(hint)
 
-        self.process_hints(hints, dt)
+        if dt >= self.dt_start:
+            self.process_hints(hints, dt)
 
     def process_hints(self, hints, dt):
         """

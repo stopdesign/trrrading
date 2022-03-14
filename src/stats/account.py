@@ -85,7 +85,6 @@ class AccountStats:
         txt = (
             f"{type(self.exchange).__name__}, "
             # f"Target margin: {self.trader.target_margin}\n"
-            # f"Can short: {self.trader.can_short}\n"
             f"{self.exchange.margin!r}, "
             f"{self.exchange.fee!r}\n"
         )
@@ -183,6 +182,8 @@ class AccountStats:
 
     def get_margin_for_position(self, _, position):
         amount = position["amount"]
+        if amount == 0:
+            return 0
         price = position["price"]
         # price = self.exchange.get_price(instrument, "mid")
         margin_level = self.exchange.get_margin_level(amount < 0)
@@ -215,7 +216,8 @@ class AccountStats:
 
         for symbol, position in positions.items():
             position["symbol"] = symbol
-            position["advised"] = self.trader.portfolio.positions[symbol].get("amount")
+            position["advised"] = Decimal(0)
+            # self.trader.portfolio.positions[symbol].get("amount")
 
         return positions
 
@@ -234,18 +236,17 @@ class AccountStats:
 
     def portfolio_info(self):
         positions = self.positions_extra()
-        res = colored("Positions:", "blue")
+        res = colored("Positions:", "cyan")
         for symbol, position in sorted(positions.items()):
-            txt = f"{symbol}, cur: {position['amount']}, adv: {position['advised']};"
-            color = "cyan" if position["advised"] is not None else "white"
-            res += "  " + colored(txt, color)
+            txt = f"{symbol}, cur: {position['amount']};"
+            res += "  " + colored(txt, "cyan")
         log.info(res)
 
     def account_info(self):
         bot_margin = self.get_margin_used_by_bot()
 
         log.info(colored(f"Net Value:   {self.exchange.net_value:6.0f}", "blue"))
-        log.info(colored(f"Margin Used: {bot_margin:6.0f}", "blue"))
+        log.info(colored(f"Margin Used: {bot_margin:6.0f}\n", "blue"))
 
         if hasattr(self.exchange, "real_margin"):
             log.info(colored(f"Margin Real: {self.exchange.real_margin:6.0f}", "blue"))

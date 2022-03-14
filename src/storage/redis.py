@@ -44,6 +44,8 @@ class RedisTradingData:
         from_ts = str(dt_to_ts(self.dt_from)).encode()
         start_ts = str(dt_to_ts(self.dt_start)).encode()
 
+        log.info(colored(f"Historical data from {self.dt_from}", "white"))
+
         # TODO: написать штуку, которая будет загружать данные из redis в удобном виде
         # TODO: поддержка нескольких инструментов
 

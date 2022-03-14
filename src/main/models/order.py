@@ -50,6 +50,10 @@ class Order(models.Model):
     def __str__(self):
         return f"{self.instrument} {self.action} {self.amount}"
 
+    @property
+    def ticker(self):
+        return f"{self.instrument.ticker}"
+
     @classmethod
     def limit_order(cls, account, instrument, side, amount, price, outside_rth=False):
         if instrument.sec_type == Instrument.Type.fut and outside_rth:

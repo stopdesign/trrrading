@@ -20,6 +20,7 @@ class BaseStrategy:
     def __init__(self, symbol, **kwargs):
         self.symbol = symbol
         self.length = kwargs.get("length")
+        kwargs.pop("name", None)
         self.params = kwargs
         self.data = []
         self.prev_signal = Signal.PASS
