@@ -2,8 +2,8 @@ function initOnReady() {
   var widget = window.tv = new TradingView.widget({
     debug: false,
     fullscreen: false,
-    symbol: 'MES.GLOBEX',
-    interval: '5',
+    symbol: 'URA.ARCA',
+    interval: '15',
     container: "tv_chart_container",
 
     datafeed: new Datafeeds.UDFCompatibleDatafeed("http://127.0.0.1:8000/tv"),
@@ -225,24 +225,7 @@ function initOnReady() {
 
   });
 
-
-  widget.onChartReady(function () {
-    //widget.chart().createStudy('Bar Colorer Demo', false, true);
-    // widget.chart().createStudy('FFFFF', false, true);
-    // widget.chart().createStudy('MACD', false, false);
-
-
-    var ac = widget.chart();
-
-    for (const order of window.orders) {
-      // const shape = ac.createExecutionShape()
-      //   .setText(order["side"] + " " + order["amount"])
-      //   .setDirection(order["side"])
-      //   .setTime(order["time"])
-      //   .setPrice(order["price"])
-      //   .setArrowHeight(30)
-      //   .setArrowSpacing(10);
-
+  const draw_order = function(ac, order) {
       let color;
       let icon_shape;
       let arrow_pos;
@@ -256,17 +239,15 @@ function initOnReady() {
         arrow_pos = order["price"] * 1.005;
       }
 
-      // shape.setTextColor(color).setArrowColor(color)
-
       // const level = ac.createShape(
       //   { time: order["time"], price: order["price"] },
       //   {
       //     shape: 'arrow_right',
-      //     overrides: {backgroundColor: "#dd0000", color: color },
+      //     overrides: {color: color, fontsize: 14 },
       //     zOrder: "top",
       //     disableSelection: true,
       //     lock: true,
-      //     // text: order["dt"]
+      //     text: order["dt"]
       //   }
       // );
 
@@ -274,35 +255,73 @@ function initOnReady() {
         { time: order["time"], price: arrow_pos },
         {
           shape: 'icon',
-          overrides: {color: color, size: 20, scale: 1.2},
+          overrides: {color: color, size: 17, scale: 1.1},
           icon: icon_shape,
           zOrder: "top",
           disableSelection: true,
         }
       );
+      const icon_bg = ac.createShape(
+        { time: order["time"], price: order["price"] },
+        {
+          shape: 'icon',
+          overrides: {color: "#fff", size: 12, scale: 1},
+          icon: '0xf111',
+          zOrder: "top",
+          disableSelection: true,
+        }
+      );
+      const icon = ac.createShape(
+        { time: order["time"], price: order["price"] },
+        {
+          shape: 'icon',
+          overrides: {color: color, size: 6, scale: 1},
+          icon: '0xf111',
+          zOrder: "top",
+          disableSelection: true,
+        }
+      );
+  }
 
-      // const icon_bg = ac.createShape(
-      //   { time: order["time"], price: order["price"] },
-      //   {
-      //     shape: 'icon',
-      //     overrides: {color: "#fff", size: 30, scale: 0.7},
-      //     icon: '0xf068',
-      //     zOrder: "top",
-      //     disableSelection: true,
-      //   }
-      // );
-      // const icon = ac.createShape(
-      //   { time: order["time"], price: order["price"] },
-      //   {
-      //     shape: 'icon',
-      //     overrides: {color: color, size: 15},
-      //     icon: '0xf068',
-      //     zOrder: "top",
-      //     disableSelection: true,
-      //   }
-      // );
-
+  const draw_orders = function(ac) {
+    const range = ac.getVisibleRange();
+    for (const order of window.orders) {
+      if (!order.visible && range.from < order["time"] && order["time"] < range.to) {
+        draw_order(ac, order);
+        order.visible = true;
+      }
     }
+  }
+
+  widget.onChartReady(function () {
+    // widget.chart().createStudy('Bar Colorer Demo', false, true);
+    // widget.chart().createStudy('FFFFF', false, true);
+    // widget.chart().createStudy('MACD', false, false);
+
+    const ac = widget.chart();
+    const ser = ac.getSeries();
+
+    ser.setChartStyleProperties(0, {
+        "upColor": "#999",
+        "downColor": "#999",
+        "barColorsOnPrevClose": false,
+        "dontDrawOpen": false,
+        "thinBars": true
+    })
+    ser.setChartStyleProperties(2, {
+        "color": "#999",
+        "linestyle": 0,
+        "linewidth": 1,
+        "priceSource": "close",
+        "styleType": 1  // 1 — квадратная линия, 2 — обычная линия
+    })
+
+    ac.onDataLoaded().subscribe(
+        null,
+        () => draw_orders(ac),
+        false
+    );
+
 
 
     // ac.createMultipointShape(
