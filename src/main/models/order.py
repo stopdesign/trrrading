@@ -106,6 +106,7 @@ class Order(models.Model):
         else:
             price = float(self.signal_price)
         return {
+            "id": self.id,
             "amount": self.amount,
             "side": self.action.lower(),
             "time": dt_to_ts(self.created_at),

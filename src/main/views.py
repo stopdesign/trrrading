@@ -34,8 +34,9 @@ def symbols(request):
       "minmovement": 1,
       "minmovement2": 0,
       "pointvalue": 1,
-      # "session": "0930-1600",
-      "session": "24x7",
+      "session": "0930-1600",
+      # "session-regular": "1200-1400",
+      # "session": "24x7",
       "has_intraday": True,
       "has_no_volume": True,
       "description": f"{symbol} Inc.",
@@ -85,13 +86,24 @@ def history(request):
             j = orjson.loads(line.decode('utf-8'))
             if "o" in j:
                 dt = datetime.strptime(j["dt"], "%Y-%m-%d %H:%M:%S")
+                rth = 0
+                if 14 <= dt.hour < 21 or (13 <= dt.hour < 14 and dt.minute > 30):
+                    rth = 1
                 ts = dt_to_ts(dt)
+                # if rth:
                 res["t"].append(ts)
                 res["o"].append(j["o"])
                 res["h"].append(j["h"])
                 res["l"].append(j["l"])
                 res["c"].append(j["c"])
                 res["v"].append(j["vol"])
+                # else:
+                #     res["t"].append(ts)
+                #     res["o"].append(None)
+                #     res["h"].append(None)
+                #     res["l"].append(None)
+                #     res["c"].append(None)
+                #     res["v"].append(None)
                 # print(ts, line)
     else:
         res = {"s": "no_data", "nextTime": 1722108800}
@@ -108,20 +120,20 @@ def marks(request):
 
     orders = Order.objects.filter(account=account, instrument=instrument)
 
-    times = []
-    ids = []
-    labels = []
-    prices = []
-    colors = []
-    texts = []
+    times = [1647364100]
+    ids = [123]
+    labels = ["sdfa"]
+    prices = [24]
+    colors = ["red"]
+    texts = ["asdfas"]
 
-    for order in orders:
-        times.append(dt_to_ts(order.created_at))
-        ids.append(len(ids))
-        labels.append(order.action)
-        prices.append(order.avg_fill_price)
-        colors.append("red" if order.action == "SELL" else "green")
-        texts.append(order.created_at.strftime('%H:%M:%S') + " @" + str(order.avg_fill_price))
+    # for order in orders:
+    #     times.append(dt_to_ts(order.created_at))
+    #     ids.append(len(ids))
+    #     labels.append(order.action)
+    #     prices.append(order.avg_fill_price)
+    #     colors.append("red" if order.action == "SELL" else "green")
+    #     texts.append(order.created_at.strftime('%H:%M:%S') + " @" + str(order.avg_fill_price))
 
     # 1639304000
     data = {

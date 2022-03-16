@@ -16,24 +16,25 @@ def main(ib):
 
     # ib.print_cookies()
 
-    # acnt = ib.accounts().get("accounts")[0]
-    # print(acnt)
+    acnt = ib.accounts().get("accounts")[0]
+    print(acnt)
 
     h = ib.history()
-    print(json.dumps(h, indent=2, default=str))
-    ib.snapshot_md()
+    # print(json.dumps(h, indent=2, default=str))
+    # ib.snapshot_md()
     # ib.cancel_all_orders(acnt)
     # ib.reset_session()
     # ib.load_session()
     # ib.order_details(1111)
 
-    ib.contract_details("MCL")
+    # ib.contract_details("MCL")
 
     # ib.reset_session()
     # ib.load_session()
 
     # print()
-    # ib.positions_nice(acnt)
+    res = ib.account_summary(acnt)
+    print(res.json()["netliquidation"])
     # print()
 
     # ib.portal_logout()

@@ -49,19 +49,19 @@ function initOnReady() {
     enable_publishing: false,
     allow_symbol_change: true,
     width: '100%',
-    height: '800px',
+    height: '1000px',
 
     custom_indicators_getter: function (PineJS) {
 
       var myIndicator = {
-        name: "Bar Colorer Demo",
+        name: "Deposit And Drawdown",
         metainfo: {
           _metainfoVersion: 42,
 
           id: "BarColoring@tv-basicstudies-1",
 
           name: "BarColoring",
-          description: "Bar Colorer Demo",
+          description: "DepositAndDrawdown",
           shortDescription: "BarColoring",
           scriptIdPart: "",
           is_price_study: false,
@@ -80,8 +80,8 @@ function initOnReady() {
               plot_0: {
                 linestyle: 0,
                 visible: true,
-                linewidth: 2,       // plot line width.
-                plottype: 3,       /* plot type
+                linewidth: 1,       // plot line width.
+                plottype: 4,       /* plot type
                           1  Histogram
                           2  Line
                           3  Cross
@@ -91,14 +91,14 @@ function initOnReady() {
                           7  Line with Breaks
                           8  Area with Breaks */
                 trackPrice: false,   // show price line?
-                transparency: 30,      // plot transparency, in percent.
-                color: '#ff5500' // plot color in #RRGGBB format
+                transparency: 70,      // plot transparency, in percent.
+                color: '#2e96d9' // plot color in #RRGGBB format
               },
               plot_1: {
                 linestyle: 0,
                 visible: true,
                 linewidth: 1,      // plot line width.
-                plottype: 1,       /* plot type
+                plottype: 4,       /* plot type
                           1  Histogram
                           2  Line
                           3  Cross
@@ -108,8 +108,8 @@ function initOnReady() {
                           7  Line with Breaks
                           8  Area with Breaks */
                 trackPrice: false,   // show price line?
-                transparency: 30,      // plot transparency, in percent.
-                color: '#88aa55' // plot color in #RRGGBB format
+                transparency: 80,      // plot transparency, in percent.
+                color: '#ff2600' // plot color in #RRGGBB format
               }
             },
             precision: 2,
@@ -122,7 +122,7 @@ function initOnReady() {
             },
             plot_1: {
               title: 'bbbb',
-              histogramBase: 0,
+              histogramBase: 500,
             }
           },
           inputs: [],
@@ -134,35 +134,42 @@ function initOnReady() {
             this._context = context;
             this._input = inputCallback;
 
-            var result = PineJS.Std.high(this._context) + 1 - 170;
-            var result1 = PineJS.Std.high(this._context) - 3 - 170;
+            var result = PineJS.Std.high(this._context) + 1 - 23;
+            var result1 = PineJS.Std.high(this._context) - 3 - 23;
 
-            var time = PineJS.Std.time(this._context);
+            var time = PineJS.Std.time(this._context) / 1000;
+            // console.log(time);
 
-            return [result, result1];
+            // result1 = (time - 1645633200) / 1000000;
+
+            var result3 = 0;
+            for (const order of window.orders) {
+              // console.log(order["time"], time)
+              if (Math.round(order["time"] / 100) < Math.round(time / 100)) {
+                result3 = order.amount - 500;
+              }
+            }
+
+            return [result3, 500 - result3/5];
           }
         }
       };
 
 
       var myIndicator2 = {
-        name: "FFFFF",
+        name: "aasdf",
         metainfo: {
           _metainfoVersion: 42,
-
           id: "FFFFF@tv-basicstudies-1",
-
-          name: "FFFFF",
+          name: "111",
           description: "FFFFF",
-          shortDescription: "FFFFF",
+          shortDescription: "2222",
           scriptIdPart: "",
           is_price_study: false,
           is_hidden_study: true,
           isCustomIndicator: true,
-
           isTVScript: false,
           isTVScriptStub: false,
-
           plots: [
             {'id': 'plot_0', 'type': 'line'},
           ],
@@ -172,7 +179,7 @@ function initOnReady() {
                 linestyle: 0,
                 visible: true,
                 linewidth: 2,       // plot line width.
-                plottype: 2,       /* plot type
+                plottype: 5,       /* plot type
                           1  Histogram
                           2  Line
                           3  Cross
@@ -189,12 +196,12 @@ function initOnReady() {
             precision: 2,
             inputs: {}
           },
-          styles: {
-            plot_0: {
-              title: 'aaaa',
-              histogramBase: 0,
-            },
-          },
+          // styles: {
+          //   plot_0: {
+          //     title: 'aaaa',
+          //     histogramBase: 0,
+          //   },
+          // },
           inputs: [],
 
         },
@@ -204,7 +211,7 @@ function initOnReady() {
             this._context = context;
             this._input = inputCallback;
 
-            var symbol = 'MNTS'; //PineJS.Std.ticker(this._context) + "#TEST";
+            var symbol = 'MES.GLOBEX'; //PineJS.Std.ticker(this._context) + "#TEST";
             this._context.new_sym(symbol, PineJS.Std.period(this._context), PineJS.Std.period(this._context));
           };
 
@@ -214,13 +221,84 @@ function initOnReady() {
 
             this._context.select_sym(1);
 
-            var v = 10 - PineJS.Std.close(this._context);
+            var v = PineJS.Std.close(this._context);
             return [v];
           }
         }
       };
 
-      return Promise.resolve([myIndicator, myIndicator2]);
+        var ColorerIndicator = {
+          name: "asdfas",
+          metainfo: {
+              _metainfoVersion: 22,
+
+              id: "Colorer@tv-basicstudies-1",
+
+              name: "Colorer",
+              description: "Colorer",
+              shortDescription: "Colorer",
+              scriptIdPart: "",
+              is_price_study: true,
+              is_hidden_study: false,
+              isCustomIndicator: true,
+
+              isTVScript: false,
+              isTVScriptStub: false,
+              defaults: {
+                  precision: 4,
+                  palettes: {
+                      palette_0: {
+                          colors: [
+                              { color: "#ffffff" },
+                              { color: "#fdf0d9" }
+                          ]
+                      }
+                  }
+              },
+              inputs: [],
+              plots: [{
+                  id: "plot_0",
+
+                  // plot type should be set to 'bar_colorer'
+                  type: "bg_colorer",
+
+                  // this is the name of the palette that is defined
+                  // in 'palettes' and 'defaults.palettes' sections
+                  palette: "palette_0"
+              }],
+              palettes: {
+                  palette_0: {
+                      colors: [
+                          { name: "Color 0" },
+                          { name: "Color 1" }
+                      ],
+
+                      // the mapping between the values that
+                      // are returned by the script and palette colors
+                      valToIndex: {
+                          100: 0,
+                          200: 1
+                      }
+                  }
+              }
+          },
+          constructor: function() {
+              this.main = function(context, input) {
+                  this._context = context;
+                  this._input = input;
+
+                  var valueForColor0 = 100;
+                  var valueForColor1 = 200;
+
+                  var v = PineJS.Std.volume(this._context);
+                  var result = v > 0 ? valueForColor0 : valueForColor1;
+
+                  return [result];
+              }
+          }
+      };
+
+      return Promise.resolve([myIndicator, myIndicator2, ColorerIndicator]);
     },
 
   });
@@ -294,12 +372,16 @@ function initOnReady() {
   }
 
   widget.onChartReady(function () {
-    // widget.chart().createStudy('Bar Colorer Demo', false, true);
-    // widget.chart().createStudy('FFFFF', false, true);
-    // widget.chart().createStudy('MACD', false, false);
+    widget.activeChart().createStudy('DepositAndDrawdown', false, true);
+    widget.activeChart().createStudy('FFFFF', false, true);
+    // widget.activeChart().createStudy('Colorer', false, false);
 
     const ac = widget.chart();
     const ser = ac.getSeries();
+
+    ac.applyOverrides({"mainSeriesProperties.showPriceLine": false})
+    ac.applyOverrides({"paneProperties.topMargin": '2'})
+    ac.applyOverrides({"paneProperties.bottomMargin": '2'})
 
     ser.setChartStyleProperties(0, {
         "upColor": "#999",
@@ -322,6 +404,14 @@ function initOnReady() {
         false
     );
 
+    ac.onDataLoaded().subscribe(
+        null,
+        () => {
+          ac.getPanes()[2].setHeight(150)
+          ac.getPanes()[1].setHeight(150)
+        },
+        true
+    );
 
 
     // ac.createMultipointShape(

@@ -56,7 +56,7 @@ class Trader(TelegramBotMixin):
             self.dt_start = date_to_datetime(broker_conf.get("dt_start"))
             self.dt_end = date_to_datetime(broker_conf.get("dt_end")) + timedelta(1)
         else:
-            self.dt_start = datetime.utcnow().replace(second=0, microsecond=0)
+            self.dt_start = datetime.utcnow().replace(microsecond=0)
             self.dt_end = None
 
         self.exchange = IBWebExchange(
@@ -123,7 +123,6 @@ class Trader(TelegramBotMixin):
 
         if not self.backtest:
             self.exchange.latest_order_id = Order.objects.latest('id').id
-            print("latest_order_id:", self.exchange.latest_order_id)
 
             # Для торговли через брокера позиции выставляются по значениям из базы
             for position in Position.objects.filter(account=self.run.account):
@@ -214,7 +213,7 @@ class Trader(TelegramBotMixin):
                     )
                     hints.append(hint)
 
-        if dt >= self.dt_start:
+        if dt > self.dt_start:
             self.process_hints(hints, dt)
 
     def on_trade(self, dt: datetime, symbol, payload: Trade):
@@ -237,7 +236,7 @@ class Trader(TelegramBotMixin):
                     )
                     hints.append(hint)
 
-        if dt >= self.dt_start:
+        if dt > self.dt_start:
             self.process_hints(hints, dt)
 
     def process_hints(self, hints, dt):

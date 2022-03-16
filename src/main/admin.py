@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 from django.contrib import admin
 from django.forms import widgets
+from django.db.models import Count
 from project.admin import admin_site
 from project.helpers.admin_decorators import short_description, boolean
 from .models import (
@@ -60,7 +61,7 @@ class RunAdmin(admin.ModelAdmin):
     list_display = (
         "uid",
         "backtest",
-        "description",
+        "get_num_orders",
         "created_at",
         "finished_at",
     )
@@ -70,12 +71,19 @@ class RunAdmin(admin.ModelAdmin):
 
     inlines = [OrderInline]
 
+    def get_queryset(self, request):
+        qs = super(RunAdmin, self).get_queryset(request)
+        return qs.annotate(num_orders=Count("orders"))
+
     def get_readonly_fields(self, request, obj=None):
         readonly_fields = (
             [f.name for f in self.opts.local_fields] +
             [f.name for f in self.opts.local_many_to_many]
         )
         return readonly_fields
+
+    def get_num_orders(self, obj):
+        return obj.num_orders
 
     def has_add_permission(self, request, obj=None):
         return False

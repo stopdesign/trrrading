@@ -18,9 +18,12 @@ class Portfolio:
         self.exchange = exchange
         self.instruments = exchange.instruments
         for symbol, config in self.instruments.items():
-            self.positions[symbol] = {"amount": Decimal(0), "signal_price": None}
+            self.positions[symbol] = {"amount": None, "signal_price": None}
 
     def nullify(self):
+        """
+        Выставляет в 0 все инструменты из конфига.
+        """
         for symbol, config in self.instruments.items():
             price = self.exchange.get_price(symbol, "mid")
             self.positions[symbol] = {"amount": Decimal(0), "signal_price": price}
@@ -37,17 +40,24 @@ class Portfolio:
 
             # TODO: проверить актуальность Hint
 
+            print()
+            log.debug(hint)
+
             deposit_per_symbol = self.exchange.net_value / len(self.instruments)
             price = self.exchange.get_price(hint.symbol, "mid")
             amount = Decimal(floor(float(deposit_per_symbol) / price))
-            position_amount = Decimal(self.positions[hint.symbol]["amount"])
+
+            # TODO: подсчет позиции с учетом разных magrin level
+            new_amount = None
             if hint.signal == Signal.LONG:
-                position_amount = +amount
+                new_amount = +amount
             if hint.signal == Signal.SHORT:
-                position_amount = -amount
+                new_amount = -amount
             if hint.signal == Signal.CLOSE:
-                position_amount = Decimal(0)
-            self.positions[hint.symbol]["amount"] = position_amount
-            self.positions[hint.symbol]["signal_price"] = hint.signal_price
+                new_amount = Decimal(0)
+
+            if new_amount is not None:
+                self.positions[hint.symbol]["amount"] = new_amount
+                self.positions[hint.symbol]["signal_price"] = hint.signal_price
 
         # print(self.positions)

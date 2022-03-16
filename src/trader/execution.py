@@ -27,8 +27,12 @@ class Execution:
 
         for symbol in self.exchange.instruments:
             actual = actual_positions.get(symbol, {}).get("amount", 0)
-            target = target_positions.get(symbol, {}).get("amount", 0)
+            target = target_positions.get(symbol, {}).get("amount")
             signal_price = target_positions.get(symbol, {}).get("signal_price", 0)
+
+            if target is None:
+                # log.debug(colored(f"SKIP {symbol}: no target amount, {dt}", "magenta"))
+                continue
 
             side = None
             order_amount = abs(actual - target)
@@ -39,6 +43,7 @@ class Execution:
                 side = "sell"
 
             if not side:
+                # log.debug(colored(f"SKIP {symbol}: no change, {dt}", "magenta"))
                 continue
 
             # Посчитать ордеры в стадии исполнения

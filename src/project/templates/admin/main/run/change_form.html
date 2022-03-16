@@ -32,8 +32,7 @@
 
     <script>
         window.orders = [
-          {% for order in original.orders.all %}
-            {{ order.as_json|safe }} {{ "," }}
+          {% for order in original.orders.all %}{{ order.as_json|safe }} {{ "," }}
           {% endfor %}
         ]
     </script>

@@ -7,6 +7,7 @@ from .range import Range
 from .renko import Renko
 from .mfm import MoneyFlowMultiplier
 from .drei_ema import DreiEma
+from .hull_ma import HullMa
 
 all_strategies = {
     "Random": Random,
@@ -16,6 +17,7 @@ all_strategies = {
     "Renko": Renko,
     "MoneyFlowMultiplier": MoneyFlowMultiplier,
     "DreiEma": DreiEma,
+    "HullMa": HullMa,
 }
 
 __all__ = [
