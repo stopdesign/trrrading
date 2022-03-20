@@ -7,10 +7,6 @@ account: DU1492107
 dt_start: 2022-03-01
 dt_end: 2022-12-31
 
-#resample_rule: null
-resample_rule: 15T
-#resample_rule: 3H
-
 
 #fee:
 #  fixed_rate: 0.002

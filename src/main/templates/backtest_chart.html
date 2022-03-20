@@ -1,0 +1,50 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <script type="text/javascript" src="{% static 'admin/js/charting_library.standalone.js' %}"></script>
+    <script type="text/javascript" src="{% static 'admin/js/bundle.js' %}"></script>
+    <script type="text/javascript" src="{% static 'admin/js/tv_bt.js' %}"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+
+<script>
+        window.orders = [
+            {"amount": "-420", "side": "sell", "time": 1646153160, "dt": "2022-03-01 16:46:00", "price": "23.78"},
+            {"amount": "417", "side": "buy", "time": 1646162820, "dt": "2022-03-01 19:27:00", "price": "23.97"},
+            {"amount": "-411", "side": "sell", "time": 1646318040, "dt": "2022-03-03 14:34:00", "price": "24.30"},
+            {"amount": "436", "side": "buy", "time": 1646416200, "dt": "2022-03-04 17:50:00", "price": "22.89"},
+            {"amount": "-419", "side": "sell", "time": 1646673540, "dt": "2022-03-07 17:19:00", "price": "23.81"},
+            {"amount": "418", "side": "buy", "time": 1646752140, "dt": "2022-03-08 15:09:00", "price": "23.92"},
+            {"amount": "-419", "side": "sell", "time": 1646761260, "dt": "2022-03-08 17:41:00", "price": "23.85"},
+            {"amount": "404", "side": "buy", "time": 1646769300, "dt": "2022-03-08 19:55:00", "price": "24.75"},
+            {"amount": "-406", "side": "sell", "time": 1646850660, "dt": "2022-03-09 18:31:00", "price": "24.62"},
+            {"amount": "395", "side": "buy", "time": 1646856840, "dt": "2022-03-09 20:14:00", "price": "25.31"},
+            {"amount": "-383", "side": "sell", "time": 1647009960, "dt": "2022-03-11 14:46:00", "price": "26.07"},
+            {"amount": "382", "side": "buy", "time": 1647022500, "dt": "2022-03-11 18:15:00", "price": "26.12"},
+            {"amount": "-386", "side": "sell", "time": 1647028440, "dt": "2022-03-11 19:54:00", "price": "25.84"},
+            {"amount": "419", "side": "buy", "time": 1647363780, "dt": "2022-03-15 17:03:00", "price": "23.82"},
+            {"amount": "-424", "side": "sell", "time": 1647441540, "dt": "2022-03-16 14:39:00", "price": "23.54"},
+            {"amount": "419", "side": "buy", "time": 1647457020, "dt": "2022-03-16 18:57:00", "price": "23.82"},
+            {"amount": "0", "side": null, "time": 1647647940, "dt": "2022-03-18 23:59:00", "price": "25.90"},
+        ]
+
+</script>
+
+<div id="tv_chart_container"></div>
+
+</body>
+</html>
+
+

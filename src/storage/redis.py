@@ -3,9 +3,9 @@ import logging
 import orjson
 import redis
 from time import sleep
+from decimal import Decimal
 from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
-from storage.ib import load_many
 from termcolor import cprint, colored
 from django.conf import settings
 
@@ -18,14 +18,13 @@ def dt_to_ts(dt):
 
 class RedisTradingData:
 
-    def __init__(self, instruments, dt_start, dt_end, on_event, backtest, **kwargs):
-        self.instruments = instruments
+    def __init__(self, symbols, dt_start, dt_end, on_event, backtest, **kwargs):
+        self.symbols = symbols
         self.dt_start = dt_start
         self.dt_end = dt_end
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=30))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=10))
         self.on_event = on_event
         self.backtest = backtest
-        self.symbols = list(self.instruments.keys())
         self.dt_last = None
         self.no_quotes_mode = False
 
@@ -44,20 +43,22 @@ class RedisTradingData:
         from_ts = str(dt_to_ts(self.dt_from)).encode()
         start_ts = str(dt_to_ts(self.dt_start)).encode()
 
-        log.info(colored(f"Historical data from {self.dt_from}", "white"))
+        log.info(colored(f"Historical data for symbols {self.symbols}", "white"))
+        log.info(colored(f"Warm up data from: {self.dt_from}", "white"))
+        log.info(colored(f"Trading data from: {self.dt_start}", "white"))
 
         # TODO: написать штуку, которая будет загружать данные из redis в удобном виде
         # TODO: поддержка нескольких инструментов
 
         # FIXME: временная мера
-        one_symbol = self.symbols[0]
+        one_symbol = list(self.symbols)[0]
 
         #######################
         quotes = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", from_ts, start_ts)
         if len(quotes):
             log.info(f"warm_up quotes: {len(quotes)}")
         else:
-            log.warning(colored(f"warm_up quotes: {len(quotes)}", "red"))
+            log.warning(colored(f"warm_up quotes: 0, NO QUOTES MODE", "red"))
             self.no_quotes_mode = True
 
         trades = self.redis.zrangebyscore(f"{one_symbol}:TRADES", from_ts, start_ts)
@@ -78,14 +79,14 @@ class RedisTradingData:
 
             # Это quote
             if data.get("av_bid"):
-                payload = BidAsk(date=dt, bid=data["av_bid"], ask=data["av_ask"])
+                payload = BidAsk(date=dt, bid=Decimal(data["av_bid"]), ask=Decimal(data["av_ask"]))
                 self.on_event("quote", dt, symbol, payload)
 
             # Это bar
             if data.get("o"):
 
                 if self.no_quotes_mode:
-                    payload = BidAsk(date=dt, bid=data["l"], ask=data["h"])
+                    payload = BidAsk(date=dt, bid=Decimal(data["l"]), ask=Decimal(data["h"]))
                     self.on_event("quote", dt, symbol, payload)
 
                 for price in {data["o"], data["h"], data["l"], data["c"]}:
@@ -99,12 +100,8 @@ class RedisTradingData:
                     low=data["l"],
                     close=data["c"],
                     volume=data["vol"],
-                    average=0,
-                    barCount=1,
                     rth=True,
                     ticker=symbol,
-                    up=0,
-                    dn=0,
                 )
                 self.on_event("bar", dt, symbol, payload)
 
@@ -126,7 +123,7 @@ class RedisTradingData:
             end_ts = 10 ** 10
 
         # FIXME: временная мера
-        one_symbol = self.symbols[0]
+        one_symbol = list(self.symbols)[0]
 
         #######################
         data_in_db = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", start_ts, end_ts)
@@ -150,7 +147,7 @@ class RedisTradingData:
 
             # Это quote
             if data.get("av_bid"):
-                payload = BidAsk(date=dt, bid=data["av_bid"], ask=data["av_ask"])
+                payload = BidAsk(date=dt, bid=Decimal(data["av_bid"]), ask=Decimal(data["av_ask"]))
                 self.on_event("quote", dt, symbol, payload)
 
             # Это bar
@@ -160,7 +157,7 @@ class RedisTradingData:
 
                 # Симуляция QUOTES
                 if self.no_quotes_mode:
-                    payload = BidAsk(date=dt, bid=data["l"], ask=data["h"])
+                    payload = BidAsk(date=dt, bid=Decimal(data["l"]), ask=Decimal(data["h"]))
                     self.on_event("quote", dt, symbol, payload)
 
                 # Симуляция отдельных сделок из OHLC
@@ -176,12 +173,8 @@ class RedisTradingData:
                     low=data["l"],
                     close=data["c"],
                     volume=data["vol"],
-                    average=0,
-                    barCount=1,
                     rth=True,
                     ticker=symbol,
-                    up=0,
-                    dn=0,
                 )
                 self.on_event("bar", dt, symbol, payload)
 
@@ -236,12 +229,8 @@ class RedisTradingData:
                             low=data["l"],
                             close=data["c"],
                             volume=data["vol"],
-                            average=0,
-                            barCount=1,
                             rth=True,
                             ticker=data["symbol"],
-                            up=0,
-                            dn=0,
                         )
                         self.on_event("bar", dt, data["symbol"], payload)
 
@@ -256,11 +245,6 @@ class RedisTradingData:
 
     def stop_listen(self):
         pass
-
-    def load_data(self):
-        df = load_many(self.symbols, ["TRADES", "BIDASK"], start=self.dt_from.date())
-        # BIDASK должен приходить раньше TRADES для этого интервала
-        return df.sort_values(["date", "ticker", "data_type"])
 
     def interval_event(self, dt):
         """

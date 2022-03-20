@@ -2,7 +2,7 @@ import logging
 from datetime import timezone
 from decimal import Decimal
 from exchange import BaseExchange
-from main.models import Instrument, Order
+from main.models import Instrument, Order, Position
 from termcolor import colored
 
 log = logging.getLogger("execution")
@@ -23,10 +23,12 @@ class Execution:
     def apply_targets(self, dt):
 
         target_positions = dict(self.portfolio.positions)
-        actual_positions = dict(self.exchange.get_positions())
+        # actual_positions = dict(self.exchange.get_positions())
 
         for symbol in self.exchange.instruments:
-            actual = actual_positions.get(symbol, {}).get("amount", 0)
+            actual = self.get_actual_position_amount(symbol)
+            # actual = actual_positions.get(symbol, {}).get("amount", 0)
+
             target = target_positions.get(symbol, {}).get("amount")
             signal_price = target_positions.get(symbol, {}).get("signal_price", 0)
 
@@ -65,6 +67,29 @@ class Execution:
 
             if self.run.backtest:
                 self.emulate_execution(order)
+
+    def get_actual_position_amount(self, symbol):
+        if self.run.backtest:
+            return self.exchange.positions.get(symbol, {}).get("amount")
+
+        stock_symbol, exchange_symbol = symbol.split(".")
+        instrument = Instrument.objects.get(symbol=stock_symbol)
+        orders_after_start = Order.objects.filter(
+            account=self.run.account,
+            id__gt=self.exchange.latest_order_id,
+            instrument=instrument,
+        )
+
+        # Позиция, сохраненная при запуске скрипта
+        amount = self.exchange.positions.get(symbol, {}).get("amount")
+
+        for order in orders_after_start:
+            if order.action == Order.Side.buy:
+                amount += order.filled
+            if order.action == Order.Side.sell:
+                amount -= order.filled
+
+        return amount
 
     def emulate_execution(self, order):
 

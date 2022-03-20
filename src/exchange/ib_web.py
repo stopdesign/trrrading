@@ -13,8 +13,8 @@ class IBWebExchange(BaseExchange, Healthcheck):
     healthcheck_interval = 60
     price_precision = Decimal("0.01")
 
-    def __init__(self, instruments: dict, **kwargs):
-        super().__init__(instruments, **kwargs)
+    def __init__(self, symbols, **kwargs):
+        super().__init__(symbols, **kwargs)
         self.cash_initial = kwargs.get("cash", Decimal("10000"))
         self.cash = self.cash_initial
         self.latest_order_id = None

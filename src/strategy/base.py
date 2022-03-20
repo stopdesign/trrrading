@@ -17,10 +17,10 @@ def hint(func):
 
 class BaseStrategy:
 
-    def __init__(self, symbol, **kwargs):
-        self.symbol = symbol
+    def __init__(self, **kwargs):
+        kwargs.pop("strategy", None)
+        self.symbol = kwargs.get("symbol")
         self.length = kwargs.get("length")
-        kwargs.pop("name", None)
         self.params = kwargs
         self.data = []
         self.prev_signal = Signal.PASS
@@ -34,6 +34,10 @@ class BaseStrategy:
 
     def on_start(self):
         pass
+
+    @property
+    def info(self):
+        return f"{self}, signal={self.prev_signal.value}, data_len={len(self.data)}"
 
     @hint
     def on_bar(self, data):

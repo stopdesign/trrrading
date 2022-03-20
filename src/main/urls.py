@@ -4,6 +4,11 @@ from main import views
 app_name = "main"
 
 urlpatterns = [
+    path("bt/", views.backtest, name="backtest"),
+    path("bt/history", views.backtest_data, name="backtest_data"),
+    path("bt/config", views.config, name="config"),
+    path("bt/symbols", views.symbols, name="symbols"),
+
     path("tv/history", views.history, name="history"),
     path("tv/time", views.time, name="time"),
     path("tv/symbols", views.symbols, name="symbols"),

@@ -6,8 +6,19 @@ from strategy import Signal, BaseStrategy
 
 @dataclass
 class Hint:
-    symbol: str
     strategy: BaseStrategy
     signal: Signal
     signal_dt: datetime  # время срабатывания сигнала
     signal_price: Decimal
+
+    def __repr__(self):
+        return (
+            f"Hint({self.symbol}, "
+            f"{type(self.strategy).__name__}, "
+            f"{self.signal.value} @ {self.signal_price:0.2f}, "
+            f"{self.signal_dt})"
+        )
+
+    @property
+    def symbol(self) -> str:
+        return self.strategy.symbol

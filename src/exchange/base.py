@@ -16,9 +16,8 @@ class BaseExchange:
     margin = Margin()
     fee = Fee()
 
-    def __init__(self, instruments: dict, **kwargs):
-        self.instruments = instruments
-        self.symbols = self.instruments.keys()
+    def __init__(self, symbols, **kwargs):
+        self.symbols = symbols
         self.on_event = kwargs.get("on_event")
         self.quotes = {}
         self.positions = {}

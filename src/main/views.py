@@ -1,14 +1,70 @@
-from datetime import timezone, datetime
 import redis
 import orjson
+import json
+from datetime import timezone, datetime
 from django.conf import settings
 from django.http import HttpResponse
-import json
+from django.shortcuts import render
 from main.models import Account, Instrument, Order
 
 
 def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+def backtest(request):
+    return render(request, 'backtest_chart.html')
+
+
+def backtest_data(request):
+
+    f = open("res_URA.ARCA_ChannelBreakout3")
+    # f = open("res_URA.ARCA_HullMa")
+
+    data = json.load(f)
+
+    res = {
+        "t": [],
+        "o": [],
+        "h": [],
+        "l": [],
+        "c": [],
+        "v": [],
+        "s": "ok",
+    }
+
+    from_ts = int(request.GET.get("from"))
+    to_ts = int(request.GET.get("to"))
+
+    symbol = request.GET.get("symbol")
+
+    if symbol == "indicator":
+        for line in data:
+            if from_ts < line["ts"] < to_ts:
+                res["t"].append(line["ts"])
+                res["o"].append(line["up"])
+                res["c"].append(line["dn"])
+    elif symbol == "profit":
+        for line in data:
+            if from_ts < line["ts"] < to_ts:
+                res["t"].append(line["ts"])
+                res["o"].append(line["profit"])
+                # res["c"].append(line["dn"])
+    else:
+        for line in data:
+            if from_ts < line["ts"] < to_ts:
+                res["t"].append(line["ts"])
+                res["o"].append(line["open"])
+                res["h"].append(line["high"])
+                res["l"].append(line["low"])
+                res["c"].append(line["close"])
+                res["v"].append(line["volume"])
+
+    if not len(res["t"]):
+        res = {"s": "no_data", "nextTime": 1722108800}
+
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
 
 
 def config(request):
@@ -55,7 +111,6 @@ def time(request):
 
 
 def history(request):
-    print(request.GET)
 
     r = redis.Redis(
         host=settings.TREDIS_HOST,
@@ -70,7 +125,6 @@ def history(request):
     to_ts = str(request.GET.get("to")).encode()
     data_in_db = r.zrangebyscore(f"{symbol}:TRADES", from_ts, to_ts)
 
-    print(len(data_in_db))
     res = {
         "t": [],
         "o": [],

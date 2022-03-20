@@ -90,44 +90,6 @@ class AccountStats:
         )
         print(txt)
 
-    def print_short_summary(self):
-        """
-        Для пакетного тестирования, когда тестируется только одна стратегия.
-        """
-        advisor = self.trader.get_advisors()[0]
-
-        if not self.deposits:
-            print(f"SKIP   {advisor.symbol:<10}  {advisor.strategy!r}")
-
-        pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
-        p = self.exchange.net_value - self.exchange.cash_initial
-        trades = self.trades_count["buy"] + self.trades_count["sell"]
-        roi = p / self.trader.target_margin * 100
-        rel_max_drawdown = roi / self.max_drawdown
-
-        # R2
-        if self.deposits and len(self.deposits) > 1:
-            x = np.arange(len(self.deposits))
-            y = np.array(self.deposits, dtype=float)
-            _, _, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-            r2 = r_value ** 2
-        else:
-            r2 = 0
-            self.max_drawdown = 0
-
-        txt = (
-            f"ROI:{roi:6.1f}%   "
-            f"RMD:{rel_max_drawdown:5.1f}   "
-            f"DD:{self.max_drawdown:5.1f}%   "
-            f"PF:{pf:6.2f}   "
-            f"R²:{r2:6.2f}   "
-            f"TR:{trades:>4}   "
-            f"{advisor.symbol:<10}  "
-            f"{advisor.strategy!r}"
-        )
-        print(txt)
-        return roi
-
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
 

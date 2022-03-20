@@ -1,53 +1,52 @@
-import math
+from dataclasses import dataclass, asdict
 from datetime import time
 from talipp.indicators import DonchianChannels
 from strategy import BaseStrategy, Signal, hint
 from data_types import Bar, Trade
 
 
+@dataclass()
+class Bar2(Bar):
+    """
+    Добавляю индикаторы, которые будут сохранены в файл.
+    """
+    up: float = None
+    dn: float = None
+
+
 class ChannelBreakout3(BaseStrategy):
     don = None
     padding = 0
-    count_bars = False
 
     def on_start(self):
         self.padding = self.params.get("padding", 0)
-        self.count_bars = self.params.get("count_bars", False)
         self.don = DonchianChannels(self.length)
 
     @hint
-    def on_bar(self, pandas_ohlc) -> Signal:
+    def on_bar(self, bar: Bar) -> Signal:
 
-        if type(pandas_ohlc) == Bar:
-            bar = pandas_ohlc
-        else:
-            bar = Bar.from_pandas(pandas_ohlc)
+        skip = False
 
         if bar.date.time() < time(hour=14, minute=33):
-            return Signal.PASS
+            skip = True
 
-        if bar.date.time() >= time(hour=20, minute=59):
-            return Signal.PASS
+        if bar.date.time() > time(hour=20, minute=59):
+            skip = True
 
         if bar.volume == 0:
-            return Signal.PASS
+            skip = True
 
-        if self.count_bars:
-            cnt = int(math.ceil(min(bar.barCount / self.count_bars, 20)))
-        else:
-            cnt = 1
+        if not skip:
+            self.don.add_input_value(bar)
 
-        for i in range(cnt):
-            self.don.add_input_value(pandas_ohlc)
+        # Класс, сохраняющий индикаторы
+        bar = Bar2(**asdict(bar))
 
-            if self.don:
-                bar.up = self.don[-1].ub
-                bar.dn = self.don[-1].lb
-            else:
-                bar.up = None
-                bar.dn = None
+        if self.don and not skip:
+            bar.up = self.don[-1].ub
+            bar.dn = self.don[-1].lb
 
-            self.data.append(bar)
+        self.data.append(bar)
 
         return Signal.PASS
 
@@ -66,7 +65,7 @@ class ChannelBreakout3(BaseStrategy):
         if trade.date.time() < time(hour=14, minute=33):
             return Signal.PASS
 
-        if trade.date.time() >= time(hour=20, minute=59):
+        if trade.date.time() > time(hour=20, minute=59):
             return Signal.PASS
 
         if trade.price > bar.up - self.padding:
