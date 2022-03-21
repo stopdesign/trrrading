@@ -1,15 +1,27 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Union
+from decimal import Decimal
 
 
 @dataclass
 class Bar:
-    date: Union[None, datetime]
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int
-    rth: bool
-    ticker: str
+    date: datetime
+    symbol: str
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int = None
+    rth: bool = None
+
+    @classmethod
+    def from_redis(cls, data: dict):
+        return cls(
+            date=data["dt"],
+            symbol=data["symbol"],
+            open=data["o"],
+            high=data["h"],
+            low=data["l"],
+            close=data["c"],
+            volume=data["vol"],
+        )

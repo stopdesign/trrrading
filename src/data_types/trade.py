@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Union
+from decimal import Decimal
 
 
 @dataclass
 class Trade:
-    date: Union[None, datetime]
-    price: float
-    volume: int
+    date: datetime
+    symbol: str
+    price: Decimal
+    volume: int = None
+    rth: bool = None

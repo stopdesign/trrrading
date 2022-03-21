@@ -1,19 +1,23 @@
-import json
 import logging
 import orjson
 import redis
-from time import sleep
 from decimal import Decimal
 from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
 from termcolor import cprint, colored
 from django.conf import settings
 
-log = logging.getLogger("redis_storage")
+log = logging.getLogger("redis_source")
 
 
 def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+def parse_dt(dt: str) -> datetime:
+    if "." not in dt:
+        dt += ".000000"
+    return datetime.strptime(dt, "%Y-%m-%d %H:%M:%S.%f")
 
 
 class RedisTradingData:
@@ -26,7 +30,9 @@ class RedisTradingData:
         self.on_event = on_event
         self.backtest = backtest
         self.dt_last = None
-        self.no_quotes_mode = False
+
+        # Есть ли в базе QUOTES
+        self.quotes = False
 
         self.redis = redis.Redis(
             host=settings.TREDIS_HOST,
@@ -35,75 +41,85 @@ class RedisTradingData:
             password=settings.TREDIS_PASSWORD,
         )
 
+    def load_redis_data(self, symbols, t1, t2):
+        all_data = []
+
+        # Загрузить все данные, разметить
+        for s in symbols:
+            lns = self.redis.zrangebyscore(f"{s}:TRADES", t1, t2, withscores=True)
+            if self.quotes:
+                lns += self.redis.zrangebyscore(f"{s}:QUOTES", t1, t2, withscores=True)
+
+            for data, score in lns:
+                data = orjson.loads(data.decode())
+                # Легкий фикс формата
+                data["symbol"] = s
+                data["dt"] = parse_dt(data["dt"])
+                all_data.append((score, s, data))
+
+        # Отсортировать по score и символу
+        return sorted(all_data)
+
+    def run_events(self, data: dict):
+
+        self.interval_event(data["dt"])
+
+        # Это quote
+        if self.quotes and data.get("av_bid"):
+            quote = BidAsk.from_redis_quote(data)
+            self.on_event("quote", quote.date, quote.symbol, quote)
+
+        # Это bar
+        elif data.get("o"):
+
+            if not self.quotes:
+                quote = BidAsk.from_redis_trade(data)
+                self.on_event("quote", quote.date, quote.symbol, quote)
+
+            bar = Bar.from_redis(data)
+
+            # TODO: разметить rth для этого символа
+
+            for trade in self.bar_to_trades(bar):
+                self.on_event("trade", trade.date, trade.symbol, trade)
+
+            self.on_event("bar", bar.date, bar.symbol, bar)
+
+    def bar_to_trades(self, bar: Bar) -> list[Trade]:
+        """
+        Разбивает минутный бар на отдельные сделки со смещением по 15 секунд.
+        """
+        trades = []
+        dt = 5
+        for price in {bar.open, bar.high, bar.low, bar.close}:
+            trade = Trade(
+                date=bar.date + timedelta(seconds=dt),
+                symbol=bar.symbol,
+                price=price,
+                rth=bar.rth,
+            )
+            trades.append(trade)
+            dt += 15
+        return trades
+
     def warm_up(self):
         """
         Прогнать события по историческим данным.
         """
 
         from_ts = str(dt_to_ts(self.dt_from)).encode()
-        start_ts = str(dt_to_ts(self.dt_start)).encode()
+        start_ts = str(dt_to_ts(self.dt_start - timedelta(minutes=1))).encode()
 
         log.info(colored(f"Historical data for symbols {self.symbols}", "white"))
         log.info(colored(f"Warm up data from: {self.dt_from}", "white"))
         log.info(colored(f"Trading data from: {self.dt_start}", "white"))
 
-        # TODO: написать штуку, которая будет загружать данные из redis в удобном виде
-        # TODO: поддержка нескольких инструментов
+        all_data = self.load_redis_data(self.symbols, from_ts, start_ts)
 
-        # FIXME: временная мера
-        one_symbol = list(self.symbols)[0]
+        log.info(f"warm_up data lines: {len(all_data)}")
 
-        #######################
-        quotes = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", from_ts, start_ts)
-        if len(quotes):
-            log.info(f"warm_up quotes: {len(quotes)}")
-        else:
-            log.warning(colored(f"warm_up quotes: 0, NO QUOTES MODE", "red"))
-            self.no_quotes_mode = True
-
-        trades = self.redis.zrangebyscore(f"{one_symbol}:TRADES", from_ts, start_ts)
-        log.info(f"warm_up trades: {len(trades)}")
-
-        all_data = sorted(quotes + trades)
-
-        for line in all_data:
-            data = orjson.loads(line.decode('utf-8'))
-            symbol = one_symbol
-
-            if "." in data["dt"]:
-                dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S.%f")
-            else:
-                dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S")
-
-            self.interval_event(dt)
-
-            # Это quote
-            if data.get("av_bid"):
-                payload = BidAsk(date=dt, bid=Decimal(data["av_bid"]), ask=Decimal(data["av_ask"]))
-                self.on_event("quote", dt, symbol, payload)
-
-            # Это bar
-            if data.get("o"):
-
-                if self.no_quotes_mode:
-                    payload = BidAsk(date=dt, bid=Decimal(data["l"]), ask=Decimal(data["h"]))
-                    self.on_event("quote", dt, symbol, payload)
-
-                for price in {data["o"], data["h"], data["l"], data["c"]}:
-                    payload = Trade(date=dt, price=price, volume=data["vol"])
-                    self.on_event("trade", dt, symbol, payload)
-
-                payload = Bar(
-                    date=dt,
-                    open=data["o"],
-                    high=data["h"],
-                    low=data["l"],
-                    close=data["c"],
-                    volume=data["vol"],
-                    rth=True,
-                    ticker=symbol,
-                )
-                self.on_event("bar", dt, symbol, payload)
+        for score, symbol, data in all_data:
+            self.run_events(data)
 
     def start_listen(self):
         if self.backtest:
@@ -115,133 +131,71 @@ class RedisTradingData:
         """
         Эмулировать события, приходящие с биржи.
         """
-        start_ts = str(dt_to_ts(self.dt_start)).encode()
+        start_ts = str(dt_to_ts(self.dt_start - timedelta(minutes=1))).encode()
+        end_ts = str(dt_to_ts(self.dt_end)).encode() if self.dt_end else 10 ** 10
 
-        if self.dt_end:
-            end_ts = str(dt_to_ts(self.dt_end)).encode()
-        else:
-            end_ts = 10 ** 10
+        all_data = self.load_redis_data(self.symbols, start_ts, end_ts)
 
-        # FIXME: временная мера
-        one_symbol = list(self.symbols)[0]
+        log.info(f"backtest data lines: {len(all_data)}")
 
-        #######################
-        data_in_db = self.redis.zrangebyscore(f"{one_symbol}:QUOTES", start_ts, end_ts)
-        data_in_db += self.redis.zrangebyscore(f"{one_symbol}:TRADES", start_ts, end_ts)
-
-        log.info(f"backtest data lines: {len(data_in_db)}")
-        print()
-
-        all_data = sorted(data_in_db)
-
-        for line in all_data:
-            data = orjson.loads(line.decode('utf-8'))
-            symbol = one_symbol
-
-            if "." in data["dt"]:
-                dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S.%f")
-            else:
-                dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S")
-
-            self.interval_event(dt)
-
-            # Это quote
-            if data.get("av_bid"):
-                payload = BidAsk(date=dt, bid=Decimal(data["av_bid"]), ask=Decimal(data["av_ask"]))
-                self.on_event("quote", dt, symbol, payload)
-
-            # Это bar
-            if data.get("o"):
-
-                # print(data)
-
-                # Симуляция QUOTES
-                if self.no_quotes_mode:
-                    payload = BidAsk(date=dt, bid=Decimal(data["l"]), ask=Decimal(data["h"]))
-                    self.on_event("quote", dt, symbol, payload)
-
-                # Симуляция отдельных сделок из OHLC
-                for price in {data["o"], data["h"], data["l"], data["c"]}:
-                    payload = Trade(date=dt, price=price, volume=data["vol"])
-                    self.on_event("trade", dt, symbol, payload)
-
-                # Минутные TRADES в виде OHLC
-                payload = Bar(
-                    date=dt,
-                    open=data["o"],
-                    high=data["h"],
-                    low=data["l"],
-                    close=data["c"],
-                    volume=data["vol"],
-                    rth=True,
-                    ticker=symbol,
-                )
-                self.on_event("bar", dt, symbol, payload)
+        for score, symbol, data in all_data:
+            self.run_events(data)
 
     def start_listen_real(self):
         """
         Эмулировать события, приходящие с биржи.
         """
-
-        one_symbol = self.symbols[0]
-
         pubsub = self.redis.pubsub()
 
-        pubsub.subscribe(f"{one_symbol}:TRADES")
-        # pubsub.subscribe("AAPL.NASDAQ:TRADES")
-        # pubsub.subscribe("MNTS.NASDAQ:TRADES")
-        # pubsub.subscribe("URA.ARCA:TRADES")
-
-        pubsub.subscribe(f"{one_symbol}:BARS")
-        # pubsub.subscribe("AAPL.NASDAQ:BARS")
-        # pubsub.subscribe("MNTS.NASDAQ:BARS")
-        # pubsub.subscribe("URA.ARCA:BARS")
+        for symbol in self.symbols:
+            pubsub.subscribe(f"{symbol}:TRADES")
+            pubsub.subscribe(f"{symbol}:BARS")
 
         while True:
-            message = pubsub.get_message()
-            if message and not message['data'] == 1:
-                try:
-                    data = json.loads(message['data'].decode('utf-8'))
-                except Exception as e:
-                    cprint(message, "red")
-                    data = None
+            message = pubsub.get_message(timeout=100)
 
-                if data:
-                    if "price" in data:
-                        # TRADE
-                        # cprint(json.dumps(data, default=str), "cyan")
-                        # FIXME: time data '2022-02-18 16:41:20' does not match format
-                        if "." in data["dt"]:
-                            dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S.%f")
-                        else:
-                            dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S")
-                        payload = Trade(date=dt, price=float(data["price"]), volume=0)
-                        self.on_event("trade", dt, data["symbol"], payload)
+            # Игнорировать subscribe messages
+            if message and message.get("type") == "subscribe":
+                continue
 
-                    elif "vol" in data:
-                        # BAR
-                        # cprint(json.dumps(data, default=str), "magenta")
-                        dt = datetime.strptime(data["dt"], "%Y-%m-%d %H:%M:%S")
-                        payload = Bar(
-                            date=dt,
-                            open=data["o"],
-                            high=data["h"],
-                            low=data["l"],
-                            close=data["c"],
-                            volume=data["vol"],
-                            rth=True,
-                            ticker=data["symbol"],
-                        )
-                        self.on_event("bar", dt, data["symbol"], payload)
+            # Случился таймаут
+            if message is None:
+                log.error("No messages for too long")
+                continue
 
-                        # Читерское получение quotes без настоящих данных
-                        payload = BidAsk(date=dt, bid=data["l"], ask=data["h"])
-                        self.on_event("quote", dt, data["symbol"], payload)
+            try:
+                data = orjson.loads(message['data'].decode())
+            except Exception as e:
+                log.error(cprint(f"Bad json: {message}, {e}", "red"))
+                continue
 
-                    else:
-                        cprint(json.dumps(data, default=str), "yellow")
+            try:
+                symbol = data["symbol"]
+                data["dt"] = parse_dt(data["dt"])
+            except KeyError:
+                log.error(cprint(f"Bad format: {data}", "red"))
+                continue
 
-            sleep(0.001)
+            if "price" in data:
+                # TRADE
+                trade = Trade(
+                    date=data["dt"],
+                    symbol=symbol,
+                    price=Decimal(data["price"])
+                )
+                self.on_event("trade", trade.date, trade.symbol, trade)
+
+            elif "vol" in data:
+                # BAR
+                bar = Bar.from_redis(data)
+                self.on_event("bar", bar.date, bar.symbol, bar)
+
+                # Читерское получение quotes без настоящих данных
+                quote = BidAsk.from_redis_trade(data)
+                self.on_event("quote", quote.date, quote.symbol, quote)
+
+            else:
+                log.error(cprint(f"Unknown format: {data}", "red"))
 
     def stop_listen(self):
         pass
@@ -251,11 +205,12 @@ class RedisTradingData:
         Запустить интервальное событие при необходимости.
         """
         if self.dt_last and dt.minute != self.dt_last.minute:
-            norm_dt = dt.replace(minute=0, second=0, microsecond=0)
+            norm_dt = dt.replace(second=0, microsecond=0)
             if dt.day != self.dt_last.day:
-                norm_dt = norm_dt.replace(hour=0)
+                norm_dt = norm_dt.replace(hour=0, minute=0)
                 self.on_event("day", norm_dt)
             elif dt.hour != self.dt_last.hour:
+                norm_dt = norm_dt.replace(minute=0)
                 self.on_event("hour", norm_dt)
             elif dt.minute != self.dt_last.minute:
                 self.on_event("minute", norm_dt)
