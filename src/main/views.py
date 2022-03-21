@@ -82,6 +82,12 @@ def config(request):
 
 def symbols(request):
     symbol = request.GET.get("symbol")
+    if "GLOBEX" in symbol:
+        session = "24x7"
+        instrument_type = "futures"
+    else:
+        session = "0930-1600"
+        instrument_type = "stock"
     data = {
       "name": symbol,
       "exchange-traded": "NasdaqNM",
@@ -90,13 +96,11 @@ def symbols(request):
       "minmovement": 1,
       "minmovement2": 0,
       "pointvalue": 1,
-      "session": "0930-1600",
-      # "session-regular": "1200-1400",
-      # "session": "24x7",
+      "session": session,
       "has_intraday": True,
       "has_no_volume": True,
       "description": f"{symbol} Inc.",
-      "type": "futures",
+      "type": instrument_type,
       "supported_resolutions": ["1", "5", "15", "30", "1H", "2H", "3H", "4H", "1D", "1W"],
       "pricescale": 100,
       "ticker": symbol,

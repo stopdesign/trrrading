@@ -20,7 +20,7 @@ class Executor:
         self.account = run.account
         self.portfolio = portfolio
         self.latest_order_id = None
-        self.real_positions = {}
+        self.initial_positions = {}
         self.update_portfolio()
 
     def update_portfolio(self):
@@ -33,7 +33,7 @@ class Executor:
 
         # Инструменты из конфига устанавливаются в 0
         for strategy in self.portfolio.strategies:
-            self.real_positions[strategy.symbol] = {
+            self.initial_positions[strategy.symbol] = {
                 "amount": Decimal(0),
                 "price": Decimal("nan"),
                 "dt": None,
@@ -42,7 +42,7 @@ class Executor:
         # Для торговли через брокера позиции выставляются по значениям из базы
         for position in Position.objects.filter(account=self.account):
             symbol = position.instrument.ticker
-            self.real_positions[symbol] = {
+            self.initial_positions[symbol] = {
                 "amount": position.amount,
                 "price": position.avg_price,
                 "dt": position.updated_at,
@@ -56,12 +56,12 @@ class Executor:
             actual = self.get_actual_position_amount(symbol)
             target = self.portfolio.get_total_amount(symbol)
 
+            if target.is_nan():
+                log.error(colored(f"SKIP {symbol}: no target amount, {dt}", "red"))
+                continue
+
             # TODO: проброс signal_price
             signal_price = Decimal(0)
-
-            if target is None:
-                log.debug(colored(f"SKIP {symbol}: no target amount, {dt}", "magenta"))
-                continue
 
             side = None
             order_amount = abs(actual - target)
@@ -72,13 +72,11 @@ class Executor:
                 side = "sell"
 
             if not side:
-                log.debug(colored(f"SKIP {symbol}: no change, {dt}", "magenta"))
+                # log.debug(colored(f"SKIP {symbol}: no change, {dt}", "magenta"))
                 continue
 
             # Посчитать ордеры в стадии исполнения
-            amount_in_orders = 0
-            if not self.run.backtest:
-                amount_in_orders = self.get_amount_in_orders(symbol)
+            amount_in_orders = self.get_amount_in_orders(symbol)
 
             log.info(colored(
                 f"APPLY {symbol}, actual: {actual}, target: {target}, "
@@ -89,13 +87,16 @@ class Executor:
                 log.warning(colored(f"Active orders: {symbol} {amount_in_orders}, SKIP", "red"))
                 continue
 
-            log.warning(colored(f"Create order: {symbol} {order_amount}", "blue", attrs=['reverse']))
-            # self.create_order(dt, symbol, side, order_amount, signal_price)
+            self.create_order(dt, symbol, side, order_amount, signal_price)
 
     def get_actual_position_amount(self, symbol):
+        """
+        Берутся позиции из базы на момент старта скрипта,
+        добавляются значения из всех исполненных с того момента ордеров.
+        """
 
         # Позиция, сохраненная при запуске скрипта
-        amount = self.real_positions.get(symbol, {}).get("amount")
+        amount = self.initial_positions.get(symbol, {}).get("amount")
 
         stock_symbol, exchange_symbol = symbol.split(".")
         instrument = Instrument.objects.get(symbol=stock_symbol)
@@ -131,8 +132,8 @@ class Executor:
         stock_symbol, exchange_symbol = symbol.split(".")
         instrument = Instrument.objects.get(symbol=stock_symbol)
 
-        txt = f"TRADE: {dt}  {side:>4} {symbol} {order_amount} @ {signal_price}"
-        log.info(colored(txt, color="cyan"))
+        txt = f"TRADE: {side.upper():>4} {symbol} {order_amount} @ {signal_price}"
+        log.info(colored(txt, color="cyan", attrs=["reverse"]))
 
         # Шаблон ордера
         order = Order.market_order(

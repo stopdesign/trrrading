@@ -27,8 +27,11 @@ class Portfolio:
         for strategy in self.strategies:
             self.__positions[strategy] = Position(strategy.symbol)
 
-    def get_amount(self, strategy):
+    def get_amount(self, strategy) -> Decimal:
         return self.__positions[strategy].amount
+
+    def set_initial_amount(self, strategy, amount, price=Decimal("nan")):
+        self.__positions[strategy].update(amount, price)
 
     def get_profit(self, strategy):
         net = Decimal(0)
@@ -40,7 +43,7 @@ class Portfolio:
         net += position.profit
         return int(net)
 
-    def get_total_amount(self, symbol):
+    def get_total_amount(self, symbol) -> Decimal:
         """
         Возвращает количество данного инструмента во всем стратегиям.
         """
@@ -50,7 +53,7 @@ class Portfolio:
                 amount += self.__positions[strategy].amount
         return amount
 
-    def get_virtual_net_value(self):
+    def get_virtual_net_value(self) -> Decimal:
         net = Decimal(0)
         for strategy in self.strategies:
             position = self.__positions[strategy]

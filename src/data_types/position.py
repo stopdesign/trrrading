@@ -5,13 +5,17 @@ from decimal import Decimal
 @dataclass
 class Position:
     symbol: str
-    amount: Decimal = Decimal(0)
+    amount: Decimal = Decimal("nan")
     avg_price: Decimal = Decimal("nan")
     profit: Decimal = Decimal(0)  # реализованный профит без учета slippage
 
     def update(self, amount: Decimal, price: Decimal):
 
         trade_profit = Decimal(0)
+
+        # Если раньше позиции никакой не было, то считаем её нулевой
+        if self.amount.is_nan():
+            self.amount = Decimal(0)
 
         if self.amount == amount:
             return trade_profit

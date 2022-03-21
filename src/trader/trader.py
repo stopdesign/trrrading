@@ -1,7 +1,7 @@
 import json
 import logging
 from copy import copy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from termcolor import colored
 from data_types import Hint, Bar, Trade
@@ -10,6 +10,7 @@ from storage.redis import RedisTradingData
 from trader import Exchange, Portfolio, TelegramBotMixin, Executor
 from strategy import all_strategies, Signal
 from main.models import Account, Run
+from django.utils.timezone import make_aware
 
 log = logging.getLogger("trader")
 
@@ -59,20 +60,27 @@ class Trader(TelegramBotMixin):
         # На этом этапе еще нет портфолио, только сигналы и Hint.
         self.trading_data.warm_up()
 
-        # Список стратегий, результаты прогрева
-        for strategy in self.strategies:
-            log.info(colored(f"{strategy.info}", "grey"))
-
         self.portfolio = Portfolio(self.exchange, self.strategies, self.target_margin)
+
+        # Позиции выставляются по прогретым сигналам.
+        self.init_positions()
+
+        # Список стратегий, результаты прогрева.
+        for strategy in self.strategies:
+            target_amount = self.portfolio.get_amount(strategy)
+            log.info(colored(f"{strategy.info} => {target_amount}", "grey"))
 
         # Инициализируется механизм выставления ордера на бирже
         if not self.backtest:
+            # TODO: Можно вынести все объекты БД в Executor.
+            # TODO: Это границы будущего API с базой.
             account = Account.objects.get(
                 uid=broker_conf["account"],
                 username=broker_conf["username"],
             )
             self.run = Run.objects.create(
                 account=account,
+                start_dt=make_aware(self.dt_start),
                 broker_config=json.dumps(broker_conf, indent=2, default=str),
                 strategy_config=json.dumps(strategy_conf, indent=2, default=str),
             )
@@ -94,6 +102,24 @@ class Trader(TelegramBotMixin):
             strategy_class = all_strategies[config["strategy"]]
             self.strategies.append(strategy_class(**config))
 
+    def init_positions(self):
+        """
+        Создаются и применяются Hints по последниму состоянию стратегий,
+        чтобы позиции соответствовали сигналам.
+        """
+        # for strategy in self.strategies:
+        #     self.portfolio.set_initial_amount(strategy, Decimal(0))
+        hints = []
+        for strategy in self.strategies:
+            hint = Hint(
+                strategy=strategy,
+                signal=strategy.prev_signal,
+                signal_dt=self.dt_start,
+                signal_price=Decimal("nan"),
+            )
+            hints.append(hint)
+        self.portfolio.rebalance(hints)
+
     def start(self):
         self.start_tg_bot()
 
@@ -106,6 +132,8 @@ class Trader(TelegramBotMixin):
             # для торговли крутится до прерывания
             self.trading_data.start_listen()
         except KeyboardInterrupt:
+            self.run.finished_at = datetime.now(tz=timezone.utc)
+            self.run.save()
             log.info(colored(" Stop stream ", "red", attrs=["reverse"]))
         except Exception as e:
             log.exception(e)
@@ -121,8 +149,8 @@ class Trader(TelegramBotMixin):
         """
         В стриме биржи возникло новое событие.
         """
-        if dt > self.dt_start and not self.backtest:
-            log.info(f"EVENT {event} {symbol} {payload}")
+        # if dt > self.dt_start and not self.backtest:
+        #     log.info(f"EVENT {event} {symbol} {payload}")
 
         if event == "bar":
             self.on_bar(dt, symbol, payload)
@@ -157,6 +185,7 @@ class Trader(TelegramBotMixin):
 
                 # После добавления нового бара в стратегию происходит
                 # сохранение бара с индикаторами и профитом
+                # TODO: обработать прерывание торгов и close all
                 if strategy.data and dt > self.dt_start:
                     self.strategy_stats.append(strategy, dt)
 

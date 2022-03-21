@@ -2,8 +2,8 @@ function initOnReady() {
   var widget = window.tv = new TradingView.widget({
     debug: false,
     fullscreen: false,
-    symbol: 'URA.ARCA',
-    interval: '15',
+    symbol: 'MES.GLOBEX',
+    interval: '1',
     container: "tv_chart_container",
 
     datafeed: new Datafeeds.UDFCompatibleDatafeed("http://127.0.0.1:8000/tv"),
@@ -48,8 +48,8 @@ function initOnReady() {
 
     enable_publishing: false,
     allow_symbol_change: true,
-    width: '100%',
-    height: '1000px',
+    width: '1200px',
+    height: '600px',
 
     custom_indicators_getter: function (PineJS) {
 
@@ -310,11 +310,11 @@ function initOnReady() {
       if (order["side"] === "buy") {
         color = "#080";
         icon_shape = "0xf176";
-        arrow_pos = order["price"] * 0.995;
+        arrow_pos = order["price"];
       } else {
         color = "#d00";
         icon_shape = "0xf175";
-        arrow_pos = order["price"] * 1.005;
+        arrow_pos = order["price"];
       }
 
       // const level = ac.createShape(
@@ -330,7 +330,7 @@ function initOnReady() {
       // );
 
       const arrow = ac.createShape(
-        { time: order["time"], price: arrow_pos },
+        { time: order["time"] },
         {
           shape: 'icon',
           overrides: {color: color, size: 17, scale: 1.1},
@@ -372,8 +372,8 @@ function initOnReady() {
   }
 
   widget.onChartReady(function () {
-    widget.activeChart().createStudy('DepositAndDrawdown', false, true);
-    widget.activeChart().createStudy('FFFFF', false, true);
+    // widget.activeChart().createStudy('DepositAndDrawdown', false, true);
+    // widget.activeChart().createStudy('FFFFF', false, true);
     // widget.activeChart().createStudy('Colorer', false, false);
 
     const ac = widget.chart();
@@ -404,46 +404,6 @@ function initOnReady() {
         false
     );
 
-    ac.onDataLoaded().subscribe(
-        null,
-        () => {
-          ac.getPanes()[2].setHeight(150)
-          ac.getPanes()[1].setHeight(150)
-        },
-        true
-    );
-
-
-    // ac.createMultipointShape(
-    //   [
-    //     { time: 1645214400, price: 4340 },
-    //     { time: 1645215000, price: 4350 }
-    //   ],
-    //   {
-    //     shape: 'price_label',
-    //     overrides: {backgroundColor: "#dd0000", color: "#dd0000" },
-    //   }
-    // );
-
-    // ac.createShape({ time: 1645214400 }, { shape: 'arrow_marker' });  // ok
-    // ac.createShape({ time: 1645215000 }, { shape: 'price_label' });
-    // ac.createShape({ time: 1645215600 }, { shape: 'arrow', price: 4370, channel: "low", disableSelection: true });
-    // ac.createShape({ time: 1645215600 }, { shape: 'price_note' });
-    // ac.createShape({ time: 1645214400, price: 4370 }, { shape: 'callout' });
-    // ac.createShape({ time: 1645215000, price: 4370 }, { shape: 'arrow_up', zOrder: "top", text: "asdf", overrides: {color: "#0f9" } });
-    // ac.createShape({ time: 1645215600, price: 4370 }, { shape: 'icon', icon: '0xf068' });
-
-    // widget.activeChart().createMultipointShape(
-    //     [{ time: from, price: 150 }, { time: to, price: 150 }],
-    //     {
-    //         shape: "trend_line",
-    //         lock: true,
-    //         disableSelection: true,
-    //         disableSave: true,
-    //         disableUndo: true,
-    //         text: "text",
-    //     }
-    // );
 
   });
 

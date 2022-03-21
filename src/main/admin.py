@@ -60,10 +60,14 @@ class OrderInline(admin.TabularInline):
 class RunAdmin(admin.ModelAdmin):
     list_display = (
         "uid",
-        "backtest",
+        "account",
         "get_num_orders",
         "created_at",
         "finished_at",
+    )
+
+    list_filter = (
+        "account",
     )
 
     actions_on_top = False

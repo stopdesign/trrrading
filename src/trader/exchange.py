@@ -32,9 +32,9 @@ class Exchange:
             self.quotes[symbol] = {}
         # ask и bid могут приходить независимо
         if payload.ask:
-            self.quotes[symbol]["ask"] = payload.ask
+            self.quotes[symbol]["ask"] = Decimal(payload.ask)
             self.quotes[symbol]["dt"] = dt
         if payload.bid:
-            self.quotes[symbol]["bid"] = payload.bid
+            self.quotes[symbol]["bid"] = Decimal(payload.bid)
             self.quotes[symbol]["dt"] = dt
         self.dt_last = dt

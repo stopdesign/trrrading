@@ -1,8 +1,8 @@
 
-#- symbol: URA.ARCA
-#  strategy: HullMa
-#  length: 1100
-#  short: On
+- symbol: URA.ARCA
+  strategy: HullMa
+  length: 1100
+  short: On
 
 - symbol: URA.ARCA
   strategy: ChannelBreakout3
