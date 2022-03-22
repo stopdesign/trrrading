@@ -1,11 +1,13 @@
 import logging
 import orjson
 import redis
+from functools import cache
 from decimal import Decimal
 from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
-from termcolor import cprint, colored
+from termcolor import colored
 from django.conf import settings
+import pandas_market_calendars as mcal
 
 log = logging.getLogger("redis_source")
 
@@ -18,6 +20,49 @@ def parse_dt(dt: str) -> datetime:
     if "." not in dt:
         dt += ".000000"
     return datetime.strptime(dt, "%Y-%m-%d %H:%M:%S.%f")
+
+
+EXCHANGE_SCHEDULE = {
+    "NASDAQ": "NASDAQ",
+    "NYMEX": "NYSE",
+    "NYSE": "NYSE",
+    "ARCA": "NYSE",
+    "GLOBEX": "CME_Rate",
+}
+
+
+@cache
+def get_calendar_and_schedule(exchange):
+    """
+    Календарь и расписание для биржи.
+    """
+    calendar = mcal.get_calendar(EXCHANGE_SCHEDULE[exchange])
+
+    # нужно покрыть вперед и назад все возможные выходные
+    start = datetime.utcnow() - timedelta(days=100)
+    end = datetime.utcnow() + timedelta(days=100)
+
+    # TODO: убрать хардкодинг
+    if EXCHANGE_SCHEDULE[exchange] in ["NYSE", "NASDAQ"]:
+        schedule = calendar.schedule(start, end)
+    else:
+        schedule = calendar.schedule(start, end)
+
+    return calendar, schedule
+
+
+@cache
+def check_open_time(exchange, cur_interval):
+    """
+    Открыта ли эта биржа в указанный момент.
+    """
+    calendar, schedule = get_calendar_and_schedule(exchange)
+    cur_interval_utc = cur_interval.replace(tzinfo=timezone.utc)
+    try:
+        return calendar.open_at_time(schedule, cur_interval_utc)
+    except ValueError as e:
+        print(schedule)
+        raise e
 
 
 class RedisTradingData:
@@ -78,7 +123,8 @@ class RedisTradingData:
 
             bar = Bar.from_redis(data)
 
-            # TODO: разметить rth для этого символа
+            exchange_symbol = bar.symbol.split(".")[1]
+            bar.rth = check_open_time(exchange_symbol, bar.date)
 
             for trade in self.bar_to_trades(bar):
                 self.on_event("trade", trade.date, trade.symbol, trade)
@@ -143,13 +189,16 @@ class RedisTradingData:
 
     def start_listen_real(self):
         """
-        Эмулировать события, приходящие с биржи.
+        Подписка на события в Redis pubsub.
         """
         pubsub = self.redis.pubsub()
+
+        trades_since_last_bar = {}
 
         for symbol in self.symbols:
             pubsub.subscribe(f"{symbol}:TRADES")
             pubsub.subscribe(f"{symbol}:BARS")
+            trades_since_last_bar[symbol] = 1  # Изначально считаю, что сделки шли
 
         while True:
             message = pubsub.get_message(timeout=100)
@@ -160,45 +209,67 @@ class RedisTradingData:
 
             # Случился таймаут
             if message is None:
-                log.error("No messages for too long")
+                log.error(colored("Redis pubsub timeout", "red"))
                 continue
 
+            # Парсер JSON
             try:
                 data = orjson.loads(message['data'].decode())
             except Exception as e:
-                log.error(cprint(f"Bad json: {message}, {e}", "red"))
+                log.error(colored(f"Bad json: {message}, {e}", "red"))
                 continue
 
+            # Форматирование данных
             try:
                 symbol = data["symbol"]
                 data["dt"] = parse_dt(data["dt"])
             except KeyError:
-                log.error(cprint(f"Bad format: {data}", "red"))
+                log.error(colored(f"Bad format: {data}", "red"))
                 continue
+
+            # Биржа совсем закрыта
+            if "closed" in data:
+                log.info(f"{symbol} market is closed")
+                continue
+
+            exchange_symbol = symbol.split(".")[1]
+            is_rth = check_open_time(exchange_symbol, data["dt"])
 
             if "price" in data:
                 # TRADE
+                trades_since_last_bar[symbol] += 1
                 trade = Trade(
                     date=data["dt"],
                     symbol=symbol,
-                    price=Decimal(data["price"])
+                    price=Decimal(data["price"]),
+                    rth=is_rth,
                 )
                 self.on_event("trade", trade.date, trade.symbol, trade)
 
             elif "vol" in data:
                 # BAR
-                bar = Bar.from_redis(data)
-                self.on_event("bar", bar.date, bar.symbol, bar)
 
                 # Читерское получение quotes без настоящих данных
                 quote = BidAsk.from_redis_trade(data)
                 self.on_event("quote", quote.date, quote.symbol, quote)
 
-            else:
-                log.error(cprint(f"Unknown format: {data}", "red"))
+                bar = Bar.from_redis(data)
+                bar.rth = is_rth
 
-    def stop_listen(self):
-        pass
+                # Если пришел новый бар, биржа работает, объем не нулевой,
+                # но сделок с прошлого бара не приходило, то эмулировать сделки
+                if trades_since_last_bar[symbol] < 1 and bar.volume > 0:
+                    log.warning(colored(f"No trades for bar {bar}", "yellow"))
+                    for trade in self.bar_to_trades(bar):
+                        self.on_event("trade", trade.date, trade.symbol, trade)
+
+                self.on_event("bar", bar.date, bar.symbol, bar)
+
+                # Сбрасываю счетчик сделок
+                trades_since_last_bar[symbol] = 0
+
+            else:
+                log.error(colored(f"Unknown format: {data}", "red"))
 
     def interval_event(self, dt):
         """

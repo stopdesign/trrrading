@@ -27,10 +27,15 @@ class ChannelBreakout3(BaseStrategy):
 
         skip = False
 
-        if bar.date.time() < time(hour=14, minute=33):
-            skip = True
+        # if bar.date.time() < time(hour=14, minute=33):
+        #     skip = True
+        #
+        # if bar.date.time() > time(hour=20, minute=59):
+        #     skip = True
 
-        if bar.date.time() > time(hour=20, minute=59):
+        # print(bar.rth, bar.date)
+
+        if not bar.rth:
             skip = True
 
         if bar.volume == 0:
@@ -60,12 +65,7 @@ class ChannelBreakout3(BaseStrategy):
         if not bar or not bar.dn:
             return Signal.PASS
 
-        # print(trade.date.time())
-
-        if trade.date.time() < time(hour=14, minute=33):
-            return Signal.PASS
-
-        if trade.date.time() > time(hour=20, minute=59):
+        if not bar.rth:
             return Signal.PASS
 
         if trade.price > bar.up - self.padding:

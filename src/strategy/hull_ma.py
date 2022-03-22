@@ -69,11 +69,14 @@ class HullMa(BaseStrategy):
         if not bar or not bar.n1:
             return Signal.PASS
 
-        if trade.date.time() < time(hour=14, minute=33):
+        if not bar.rth:
             return Signal.PASS
 
-        if trade.date.time() >= time(hour=20, minute=59):
-            return Signal.PASS
+        # if trade.date.time() < time(hour=14, minute=33):
+        #     return Signal.PASS
+        #
+        # if trade.date.time() >= time(hour=20, minute=59):
+        #     return Signal.PASS
 
         if bar.n1 > bar.n2 + 0.0005:
             return Signal.LONG
