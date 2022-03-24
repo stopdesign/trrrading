@@ -2,7 +2,7 @@ function initOnReady() {
   var widget = window.tv = new TradingView.widget({
     debug: false,
     fullscreen: false,
-    symbol: 'MES.GLOBEX',
+    symbol: 'A',
     interval: '1',
     container: "tv_chart_container",
 
@@ -307,30 +307,36 @@ function initOnReady() {
       let color;
       let icon_shape;
       let arrow_pos;
+
+      let price = parseFloat(order["price"]);
+
+      let range = widget.activeChart().getVisiblePriceRange();
+      let range_range = range.to - range.from;
+
       if (order["side"] === "buy") {
         color = "#080";
         icon_shape = "0xf176";
-        arrow_pos = order["price"];
+        arrow_pos = price - (range_range/20);
       } else {
         color = "#d00";
         icon_shape = "0xf175";
-        arrow_pos = order["price"];
+        arrow_pos = price + (range_range/20);
       }
 
       // const level = ac.createShape(
-      //   { time: order["time"], price: order["price"] },
+      //   { time: order["time"], price: arrow_pos },
       //   {
       //     shape: 'arrow_right',
       //     overrides: {color: color, fontsize: 14 },
       //     zOrder: "top",
       //     disableSelection: true,
       //     lock: true,
-      //     text: order["dt"]
+      //     text: order["price"] + " " + arrow_pos
       //   }
       // );
 
       const arrow = ac.createShape(
-        { time: order["time"] },
+        { time: order["time"], price: arrow_pos },
         {
           shape: 'icon',
           overrides: {color: color, size: 17, scale: 1.1},
@@ -340,7 +346,7 @@ function initOnReady() {
         }
       );
       const icon_bg = ac.createShape(
-        { time: order["time"], price: order["price"] },
+        { time: order["time"], price: price },
         {
           shape: 'icon',
           overrides: {color: "#fff", size: 12, scale: 1},
@@ -350,7 +356,7 @@ function initOnReady() {
         }
       );
       const icon = ac.createShape(
-        { time: order["time"], price: order["price"] },
+        { time: order["time"], price: price },
         {
           shape: 'icon',
           overrides: {color: color, size: 6, scale: 1},
@@ -363,6 +369,9 @@ function initOnReady() {
 
   const draw_orders = function(ac) {
     const range = ac.getVisibleRange();
+
+    console.log('New history bars are loaded', range);
+
     for (const order of window.orders) {
       if (!order.visible && range.from < order["time"] && order["time"] < range.to) {
         draw_order(ac, order);

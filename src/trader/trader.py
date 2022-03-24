@@ -67,8 +67,8 @@ class Trader(TelegramBotMixin):
 
         # Список стратегий, результаты прогрева.
         for strategy in self.strategies:
-            target_amount = self.portfolio.get_amount(strategy)
-            log.info(colored(f"{strategy.info} => {target_amount}", "grey"))
+            amnt = self.portfolio.get_amount(strategy)
+            log.info(colored(f"Strategy: {strategy.info} => {amnt}", "grey"))
 
         # Инициализируется механизм выставления ордера на бирже
         if not self.backtest:
@@ -233,5 +233,7 @@ class Trader(TelegramBotMixin):
         """
         self.portfolio.rebalance(hints)
 
-        if not self.backtest:
-            self.executor.apply_targets(dt)
+        if self.backtest:
+            return
+
+        self.executor.apply_targets(dt)

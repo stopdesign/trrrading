@@ -360,25 +360,28 @@ function initOnReady() {
       let color;
       let icon_shape;
       let arrow_pos;
+
+      let price = parseFloat(order["price"]);
+
       if (order["side"] === "buy") {
         color = "#080";
         icon_shape = "0xf176";
-        arrow_pos = order["price"] * 0.995;
+        arrow_pos = price * 0.995;
       } else {
         color = "#d00";
         icon_shape = "0xf175";
-        arrow_pos = order["price"] * 1.005;
+        arrow_pos = price * 1.005;
       }
 
       // const level = ac.createShape(
-      //   { time: order["time"], price: order["price"] },
+      //   { time: order["time"], price: price },
       //   {
       //     shape: 'arrow_right',
       //     overrides: {color: color, fontsize: 14 },
       //     zOrder: "top",
       //     disableSelection: true,
       //     lock: true,
-      //     text: order["dt"]
+      //     text: order["price"]
       //   }
       // );
 
@@ -386,14 +389,15 @@ function initOnReady() {
         { time: order["time"], price: arrow_pos },
         {
           shape: 'icon',
-          overrides: {color: color, size: 17, scale: 1.1},
+          overrides: {color: color, size: 20, scale: 1.1},
           icon: icon_shape,
           zOrder: "top",
           disableSelection: true,
         }
       );
+
       const icon_bg = ac.createShape(
-        { time: order["time"], price: order["price"] },
+        { time: order["time"], price: price },
         {
           shape: 'icon',
           overrides: {color: "#fff", size: 15, scale: 1},
@@ -403,7 +407,7 @@ function initOnReady() {
         }
       );
       const icon = ac.createShape(
-        { time: order["time"], price: order["price"] },
+        { time: order["time"], price: price },
         {
           shape: 'icon',
           overrides: {color: color, size: 8, scale: 1},
@@ -428,7 +432,7 @@ function initOnReady() {
     // widget.activeChart().createStudy('DepositAndDrawdown', false, true);
     widget.activeChart().createStudy('FFFFF', false, true);
     widget.activeChart().createStudy('PROFIT', false, true);
-    // widget.activeChart().createStudy('Colorer', false, false);
+    widget.activeChart().createStudy('Colorer', false, false);
 
     const ac = widget.chart();
     const ser = ac.getSeries();

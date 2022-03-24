@@ -12,6 +12,10 @@ def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
+def dashboard(request):
+    return render(request, 'dashboard.html')
+
+
 def backtest(request):
     return render(request, 'backtest_chart.html')
 
@@ -58,7 +62,7 @@ def backtest_data(request):
                 res["h"].append(line["high"])
                 res["l"].append(line["low"])
                 res["c"].append(line["close"])
-                res["v"].append(line["volume"])
+                res["v"].append(int(line["rth"]))
 
     if not len(res["t"]):
         res = {"s": "no_data", "nextTime": 1722108800}
@@ -86,6 +90,7 @@ def symbols(request):
         session = "24x7"
         instrument_type = "futures"
     else:
+        # session = "24x7"
         session = "0930-1600"
         instrument_type = "stock"
     data = {

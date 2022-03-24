@@ -1,6 +1,8 @@
 import json
 import threading
 import time
+from decimal import Decimal
+
 import yaml
 from datetime import datetime
 from os.path import abspath, join, dirname
@@ -26,6 +28,47 @@ class Command(BaseCommand):
         new_orders = Order.objects.filter(status="New")
         for order in new_orders:
             self.submit_order(ib, account, order)
+
+    def check_account(self, ib, account):
+        """
+        Загрузить список ордеров, позиций и баланс аккаунта.
+        """
+        ib.reset_session()
+        ib.load_redis_session()
+
+        print()
+        print(datetime.now().replace(microsecond=0))
+
+        url = f"/portal.proxy/v1/portal/portfolio/{account.uid}/summary"
+        res = ib.request(url, "GET", data={}, is_json=True)
+        if res.status_code == 200:
+            try:
+                self.parse_account(account, res.json())
+            except ValueError as e:
+                print(res.text)
+                print("parsing error", e)
+            # res.json()
+            # print(json.dumps(res.json(), indent=2, default=str))
+        else:
+            print(res.status_code)
+            print(res.text)
+            cprint(f"check_accounts ERROR", "red")
+
+    def parse_account(self, account, res_data):
+        net_value = res_data.get("netliquidation")["amount"]
+        print(f"Net Value: {net_value}")
+        account.net_value = Decimal(net_value)
+
+        cash_value = res_data.get("totalcashvalue")["amount"]
+        account.cash_value = Decimal(cash_value)
+
+        ex_liq_com = res_data.get("excessliquidity-c")["amount"]
+        account.ex_liq_com = Decimal(ex_liq_com)
+
+        ex_liq_sec = res_data.get("excessliquidity-s")["amount"]
+        account.ex_liq_sec = Decimal(ex_liq_sec)
+
+        account.save()
 
     def check_ibkr(self, ib, account):
         """
@@ -188,6 +231,8 @@ class Command(BaseCommand):
             res_json = res.json()
         except:
             print(res.text)
+            order.status = "Error"
+            order.save()
             return
 
         # print(json.dumps(res_json, indent=2, default=str))
@@ -195,6 +240,8 @@ class Command(BaseCommand):
         if "error" in res_json:
             cprint(f"ERROR: {res_json['error']}", "red")
             cprint(f"RAW ERROR: {res_json}", "white")
+            order.status = "Error"
+            order.save()
             return
 
         if messages := res_json[0].get("message"):
@@ -270,5 +317,6 @@ class Command(BaseCommand):
                 self.check_new(ib, account)
                 if dt.second % 15 == 0:
                     self.check_ibkr(ib, account)
-            time.sleep(0.01)
+                    self.check_account(ib, account)
+            time.sleep(0.1)
             prev_dt = dt

@@ -1,8 +1,9 @@
 import logging
+from time import sleep
 import orjson
 import redis
 from functools import cache
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from datetime import timedelta, datetime, timezone
 from data_types import BidAsk, Trade, Bar
 from termcolor import colored
@@ -71,7 +72,7 @@ class RedisTradingData:
         self.symbols = symbols
         self.dt_start = dt_start
         self.dt_end = dt_end
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=10))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=3))
         self.on_event = on_event
         self.backtest = backtest
         self.dt_last = None
@@ -84,6 +85,10 @@ class RedisTradingData:
             port=settings.TREDIS_PORT,
             db=settings.TREDIS_DB,
             password=settings.TREDIS_PASSWORD,
+            decode_responses=True,
+            socket_keepalive=True,
+            socket_timeout=300,
+            health_check_interval=3,
         )
 
     def load_redis_data(self, symbols, t1, t2):
@@ -96,7 +101,7 @@ class RedisTradingData:
                 lns += self.redis.zrangebyscore(f"{s}:QUOTES", t1, t2, withscores=True)
 
             for data, score in lns:
-                data = orjson.loads(data.decode())
+                data = orjson.loads(data)
                 # Легкий фикс формата
                 data["symbol"] = s
                 data["dt"] = parse_dt(data["dt"])
@@ -201,75 +206,89 @@ class RedisTradingData:
             trades_since_last_bar[symbol] = 1  # Изначально считаю, что сделки шли
 
         while True:
-            message = pubsub.get_message(timeout=100)
-
-            # Игнорировать subscribe messages
-            if message and message.get("type") == "subscribe":
-                continue
-
-            # Случился таймаут
-            if message is None:
-                log.error(colored("Redis pubsub timeout", "red"))
-                continue
-
-            # Парсер JSON
             try:
-                data = orjson.loads(message['data'].decode())
+                message = pubsub.get_message(timeout=100)
             except Exception as e:
-                log.error(colored(f"Bad json: {message}, {e}", "red"))
+                log.error(colored(e, "red"))
+                sleep(1)
                 continue
 
-            # Форматирование данных
             try:
-                symbol = data["symbol"]
-                data["dt"] = parse_dt(data["dt"])
-            except KeyError:
-                log.error(colored(f"Bad format: {data}", "red"))
-                continue
+                self.process_message(message, trades_since_last_bar)
+            except Exception as e:
+                log.error(e)
 
-            # Биржа совсем закрыта
-            if "closed" in data:
-                log.info(f"{symbol} market is closed")
-                continue
+    def process_message(self, message, trades_since_last_bar):
 
-            exchange_symbol = symbol.split(".")[1]
-            is_rth = check_open_time(exchange_symbol, data["dt"])
+        # Игнорировать subscribe messages
+        if message and message.get("type") == "subscribe":
+            return
 
-            if "price" in data:
-                # TRADE
-                trades_since_last_bar[symbol] += 1
-                trade = Trade(
-                    date=data["dt"],
-                    symbol=symbol,
-                    price=Decimal(data["price"]),
-                    rth=is_rth,
-                )
-                self.on_event("trade", trade.date, trade.symbol, trade)
+        # Случился таймаут
+        if message is None:
+            log.error(colored("Redis pubsub timeout", "red"))
+            return
 
-            elif "vol" in data:
-                # BAR
+        # Парсер JSON
+        try:
+            data = orjson.loads(message['data'])
+        except Exception as e:
+            log.error(colored(f"Bad json: {message}, {e}", "red"))
+            return
 
-                # Читерское получение quotes без настоящих данных
-                quote = BidAsk.from_redis_trade(data)
-                self.on_event("quote", quote.date, quote.symbol, quote)
+        # Форматирование данных
+        try:
+            symbol = data["symbol"]
+            data["dt"] = parse_dt(data["dt"])
+        except KeyError:
+            log.error(colored(f"Bad format: {data}", "red"))
+            return
 
-                bar = Bar.from_redis(data)
-                bar.rth = is_rth
+        # Биржа совсем закрыта
+        if "closed" in data:
+            log.info(f"{symbol} closed market bar")
+            return
 
-                # Если пришел новый бар, биржа работает, объем не нулевой,
-                # но сделок с прошлого бара не приходило, то эмулировать сделки
-                if trades_since_last_bar[symbol] < 1 and bar.volume > 0:
-                    log.warning(colored(f"No trades for bar {bar}", "yellow"))
-                    for trade in self.bar_to_trades(bar):
-                        self.on_event("trade", trade.date, trade.symbol, trade)
+        exchange_symbol = symbol.split(".")[1]
+        is_rth = check_open_time(exchange_symbol, data["dt"])
 
-                self.on_event("bar", bar.date, bar.symbol, bar)
+        if "price" in data:
+            # TRADE
+            price = data["price"]
+            try:
+                price = Decimal(price)
+            except DecimalException:
+                log.warning(colored(f"{symbol} close price received", "yellow"))
+                return
 
-                # Сбрасываю счетчик сделок
-                trades_since_last_bar[symbol] = 0
+            trades_since_last_bar[symbol] += 1
+            trade = Trade(date=data["dt"], symbol=symbol, price=price, rth=is_rth)
+            self.on_event("trade", trade.date, trade.symbol, trade)
 
-            else:
-                log.error(colored(f"Unknown format: {data}", "red"))
+        elif "vol" in data:
+            # BAR
+
+            # Читерское получение quotes без настоящих данных
+            quote = BidAsk.from_redis_trade(data)
+            self.on_event("quote", quote.date, quote.symbol, quote)
+
+            bar = Bar.from_redis(data)
+            bar.rth = is_rth
+
+            # Если пришел новый бар, биржа работает, объем не нулевой,
+            # но сделок с прошлого бара не приходило, то эмулировать сделки
+            if trades_since_last_bar[symbol] < 1 and bar.volume > 0:
+                log.warning(colored(f"No trades for bar {bar}", "yellow"))
+                for trade in self.bar_to_trades(bar):
+                    self.on_event("trade", trade.date, trade.symbol, trade)
+
+            self.on_event("bar", bar.date, bar.symbol, bar)
+
+            # Сбрасываю счетчик сделок
+            trades_since_last_bar[symbol] = 0
+
+        else:
+            log.error(colored(f"Unknown format: {data}", "red"))
 
     def interval_event(self, dt):
         """

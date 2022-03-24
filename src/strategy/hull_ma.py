@@ -31,29 +31,24 @@ class HullMa(BaseStrategy):
     @hint
     def on_bar(self, bar: Bar) -> Signal:
 
-        if bar.date.time() < time(hour=14, minute=33):
-            return Signal.PASS
-
-        if bar.date.time() >= time(hour=20, minute=59):
-            return Signal.PASS
-
         if bar.volume == 0:
             return Signal.PASS
 
         # Класс, сохраняющий индикаторы
         bar = Bar2(**asdict(bar))
 
-        if self.data:
-            self.n2ma.add_input_value(2 * bar.close)
-            self.nma.add_input_value(bar.close)
+        if bar.rth:
+            if self.data:
+                self.n2ma.add_input_value(2 * bar.close)
+                self.nma.add_input_value(bar.close)
 
-        if self.n2ma and self.nma:
-            diff_1 = self.n2ma[-1] - self.nma[-1]
-            self.nsqrt.add_input_value(diff_1)
+            if self.n2ma and self.nma:
+                diff_1 = self.n2ma[-1] - self.nma[-1]
+                self.nsqrt.add_input_value(diff_1)
 
-        if len(self.nsqrt) > 1:
-            bar.n1 = self.nsqrt[-1]
-            bar.n2 = self.nsqrt[-2]
+            if len(self.nsqrt) > 1:
+                bar.n1 = self.nsqrt[-1]
+                bar.n2 = self.nsqrt[-2]
 
         self.data.append(bar)
 
@@ -71,12 +66,6 @@ class HullMa(BaseStrategy):
 
         if not bar.rth:
             return Signal.PASS
-
-        # if trade.date.time() < time(hour=14, minute=33):
-        #     return Signal.PASS
-        #
-        # if trade.date.time() >= time(hour=20, minute=59):
-        #     return Signal.PASS
 
         if bar.n1 > bar.n2 + 0.0005:
             return Signal.LONG

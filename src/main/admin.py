@@ -32,6 +32,10 @@ class AccountAdmin(admin.ModelAdmin):
         "uid",
         "paper",
         "username",
+        "net_value",
+        "ex_liq_sec",
+        "ex_liq_com",
+        "updated_at",
     )
     actions_on_top = False
     actions = None

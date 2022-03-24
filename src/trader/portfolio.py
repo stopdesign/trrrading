@@ -115,7 +115,7 @@ class Portfolio:
             # print(json.dumps(data, indent=None, default=str) + ",")
 
             log.info(
-                f"{hint}, amount: {amount}, "
-                f"profit: {profit:+0.2f}, "
-                f"Σ: {self.total_profit:+0.2f}"
+                f"Rebalance: {hint}, amount={amount:+0.0f}, "
+                f"profit={profit:+0.2f}, "
+                f"Σ={self.total_profit:+0.2f}"
             )

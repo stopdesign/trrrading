@@ -3,6 +3,7 @@ from datetime import timezone
 from decimal import Decimal
 from main.models import Instrument, Order, Position
 from termcolor import colored
+from storage.redis import check_open_time
 from trader import Exchange
 
 log = logging.getLogger("execution")
@@ -53,6 +54,18 @@ class Executor:
         symbols = sorted(list({s.symbol for s in self.portfolio.strategies}))
 
         for symbol in symbols:
+
+            # Проверить режим работы биржи.
+            # Если биржа не торгует, то ордер не выставляется.
+            # Если это премаркет или постмаркет, то засисит от настроек, наверное.
+            exchange_symbol = symbol.split(".")[1]
+            is_rth = check_open_time(exchange_symbol, dt)
+
+            if not is_rth:
+                # txt = f"{symbol} market is closed, {dt} signal"
+                # log.debug(colored(txt, "white"))
+                continue
+
             actual = self.get_actual_position_amount(symbol)
             target = self.portfolio.get_total_amount(symbol)
 
@@ -78,13 +91,15 @@ class Executor:
             # Посчитать ордеры в стадии исполнения
             amount_in_orders = self.get_amount_in_orders(symbol)
 
-            log.info(colored(
+            txt = colored(
                 f"APPLY {symbol}, actual: {actual}, target: {target}, "
-                f"in_orders: {amount_in_orders}", "magenta"
-            ))
+                f"in_orders: {amount_in_orders}", "cyan"
+            )
+            if amount_in_orders:
+                txt += colored(f" — ACTIVE ORDERS, SKIP", "red")
+            log.warning(colored(txt, "red"))
 
             if amount_in_orders:
-                log.warning(colored(f"Active orders: {symbol} {amount_in_orders}, SKIP", "red"))
                 continue
 
             self.create_order(dt, symbol, side, order_amount, signal_price)

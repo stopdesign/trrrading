@@ -47,12 +47,10 @@ class PortfolioStats:
         })
 
     def portfolio_info(self):
-        res = colored("Positions:", "cyan")
-        for strategy in self.portfolio.strategies:
-            amount = self.portfolio.get_amount(strategy)
-            txt = f"{strategy}, cur: {amount};"
-            res += "  " + colored(txt, "cyan")
-        log.info(res)
+        symbols = sorted(list({s.symbol for s in self.portfolio.strategies}))
+        for symbol in symbols:
+            amount = self.portfolio.get_total_amount(symbol)
+            log.info(colored(f"Target: {symbol}, {amount:+0.0f}", "cyan"))
 
     def account_info(self):
         bot_margin = 0

@@ -4,6 +4,8 @@ from main import views
 app_name = "main"
 
 urlpatterns = [
+    path("dash/", views.dashboard, name="dashboard"),
+
     path("bt/", views.backtest, name="backtest"),
     path("bt/history", views.backtest_data, name="backtest_data"),
     path("bt/config", views.config, name="config"),
