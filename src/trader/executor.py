@@ -30,7 +30,10 @@ class Executor:
 
         TODO: предупреждения про устаревшие данные
         """
-        self.latest_order_id = Order.objects.latest('id').id
+        try:
+            self.latest_order_id = Order.objects.latest('id').id
+        except Order.DoesNotExist:
+            self.latest_order_id = 0
 
         # Инструменты из конфига устанавливаются в 0
         for strategy in self.portfolio.strategies:
