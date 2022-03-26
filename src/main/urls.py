@@ -5,6 +5,9 @@ app_name = "main"
 
 urlpatterns = [
     path("dash/", views.dashboard, name="dashboard"),
+    path("dash/positions", views.positions, name="positions"),
+    path("dash/account", views.account, name="account "),
+    path("dash/orders", views.orders, name="orders "),
 
     path("bt/", views.backtest, name="backtest"),
     path("bt/history", views.backtest_data, name="backtest_data"),
@@ -17,6 +20,7 @@ urlpatterns = [
     path("tv/config", views.config, name="config"),
     path("tv/marks", views.marks, name="marks"),
     path("tv/timescale_marks", views.timescale_marks, name="timescale_marks"),
+
     # path("api/save/<int:payload_id>/", save, name="api_save"),
     # path("api/load/<int:payload_id>/", load, name="api_load"),
     # path("company_profile/", CompanyProfileView.as_view(), name="company_profile"),

@@ -7,7 +7,7 @@ from termcolor import colored
 from data_types import Hint, Bar, Trade
 from stats import PortfolioStats, StrategyStats
 from storage.redis import RedisTradingData
-from trader import Exchange, Portfolio, TelegramBotMixin, Executor
+from trader import Exchange, Portfolio, Executor
 from strategy import all_strategies, Signal
 from main.models import Account, Run
 from django.utils.timezone import make_aware
@@ -19,7 +19,7 @@ def date_to_datetime(dt):
     return datetime(dt.year, dt.month, dt.day)
 
 
-class Trader(TelegramBotMixin):
+class Trader:
     exchange: Exchange = None
     strategies: list = None
     executor: Executor = None
@@ -121,7 +121,6 @@ class Trader(TelegramBotMixin):
         self.portfolio.rebalance(hints)
 
     def start(self):
-        self.start_tg_bot()
 
         log.info(colored(" Start stream ", "green", attrs=["reverse"]))
 
@@ -142,8 +141,6 @@ class Trader(TelegramBotMixin):
             self.close_all()
             self.strategy_stats.save_all()
             self.portfolio_stats.print_summary()  # RESULTS
-
-        self.stop_tg_bot()
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """

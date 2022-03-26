@@ -1,9 +1,10 @@
 import json
+import re
 import threading
 import time
-from decimal import Decimal
-
 import yaml
+import requests as requests
+from decimal import Decimal
 from datetime import datetime
 from os.path import abspath, join, dirname
 from django.conf import settings
@@ -11,6 +12,33 @@ from django.core.management.base import BaseCommand
 from ibkr_web_api import IbApi
 from main.models import Order, Instrument, Position, Account
 from termcolor import cprint
+
+
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def send_telegram(text: str):
+    """
+    send_telegram("message text")
+    """
+
+    token = settings.TELEGRAM_TOKEN
+
+    if not token:
+        return
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = {
+        "text": ansi_escape.sub("", text),
+        "chat_id": settings.TELEGRAM_CHANNEL_ID,
+        "parse_mode": "html",
+    }
+    try:
+        r = requests.post(url, data=data, timeout=3)
+        if r.status_code != 200:
+            cprint(f"send_telegram error, {r.status_code}", "red")
+    except Exception as e:
+        cprint(f"send_telegram exception, {e}", "red")
 
 
 class Command(BaseCommand):
@@ -27,6 +55,8 @@ class Command(BaseCommand):
             return
         new_orders = Order.objects.filter(status="New")
         for order in new_orders:
+            order.status = "InProgress"
+            order.save()
             self.submit_order(ib, account, order)
 
     def check_account(self, ib, account):
@@ -108,7 +138,8 @@ class Command(BaseCommand):
                 res_data = res.json()
                 for position_data in res_data:
                     position = self.parse_position(account, position_data)
-                    updated_positions.append(position.id)
+                    if position:
+                        updated_positions.append(position.id)
             except ValueError as e:
                 print(res.text)
                 print("parsing error", e)
@@ -126,11 +157,12 @@ class Command(BaseCommand):
         # print(json.dumps(res.json(), indent=2, default=str))
 
     def parse_position(self, account, position_data):
-        conid = position_data['conid']
+        conid = position_data["conid"]
+        desc = position_data["contractDesc"]
         try:
             instrument = Instrument.objects.get(conid=conid)
         except Instrument.DoesNotExist:
-            cprint(f"unknown instrument {conid}")
+            cprint(f"Unknown instrument {conid}, {desc}", "yellow")
             return
         try:
             position = Position.objects.get(account=account, instrument=instrument)
@@ -200,13 +232,14 @@ class Command(BaseCommand):
                 cprint("ERROR: %s" % e, "red")
 
     def submit_order(self, ib, account, order):
-        order.status = "InProgress"
-        order.save()
 
         ib.reset_session()
         ib.load_redis_session()
 
         print("\n\nSUBMIT_ORDER")
+
+        # TODO: убрать блокирующую операцию до отправки ордера
+        send_telegram(f"Order {account.uid} {order}")
 
         order_data = {
             "conid": order.instrument.conid,
@@ -308,6 +341,8 @@ class Command(BaseCommand):
             uid=config["account"],
             username=config["username"],
         )
+
+        send_telegram(f"Start sync_ibkr for {account.uid}")
 
         prev_dt = datetime(1900, 1, 1)
         while not self.finished:

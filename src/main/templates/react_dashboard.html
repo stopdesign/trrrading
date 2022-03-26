@@ -1,0 +1,23 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Title of Your Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script type="text/javascript" src="{% static 'admin/js/charting_library.standalone.js' %}"></script>
+    <script type="text/javascript" src="{% static 'admin/js/bundle.js' %}"></script>
+    <style>
+        body {
+            padding: 10px;
+            background: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <div id="root">
+        Loading...
+    </div>
+    <script type="module" src="{% static 'js/index.js'%}"></script>
+</body>
+</html>

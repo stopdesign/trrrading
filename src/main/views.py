@@ -5,7 +5,7 @@ from datetime import timezone, datetime
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
-from main.models import Account, Instrument, Order
+from main.models import Account, Instrument, Order, Position
 
 
 def dt_to_ts(dt):
@@ -13,11 +13,57 @@ def dt_to_ts(dt):
 
 
 def dashboard(request):
-    return render(request, 'dashboard.html')
+    return render(request, 'react_dashboard.html')
 
 
 def backtest(request):
     return render(request, 'backtest_chart.html')
+
+
+def positions(request):
+    account_id = request.GET.get("account", 0)
+    res = []
+    for position in Position.objects.filter(account_id=account_id).prefetch_related():
+        res.append({
+            "symbol": position.instrument.ticker,
+            "amount": position.amount,
+            "avg_price": position.avg_price,
+            "unrealized_pnl": position.unrealized_pnl,
+            "updated": position.updated_at,
+        })
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
+
+
+def account(request):
+    account_id = request.GET.get("account", 0)
+    account = Account.objects.get(id=account_id)
+    res = {
+        "uid": account.uid,
+        "net_value": account.net_value,
+        "margin_used": account.margin_used,
+    }
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
+
+
+def orders(request):
+    account_id = request.GET.get("account", 0)
+    res = []
+    all_orders = Order.objects.filter(account_id=account_id).prefetch_related()
+    all_orders = all_orders.order_by("-id")[:10]
+    for order in all_orders:
+        res.append({
+            "order_id": order.order_id,
+            "local_id": order.local_id,
+            "symbol": order.instrument.ticker,
+            "amount": order.amount,
+            "filled": order.filled,
+            "status": order.status,
+            "updated": order.updated_at,
+        })
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
 
 
 def backtest_data(request):
