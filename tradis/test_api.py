@@ -27,14 +27,14 @@ def main(ib):
     # ib.load_session()
     # ib.order_details(1111)
 
-    # ib.contract_details("MCL")
+    # ib.contract_details(211651685)
 
     # ib.reset_session()
     # ib.load_session()
 
     # print()
-    res = ib.account_summary(acnt)
-    print(res.json()["netliquidation"])
+    # res = ib.account_summary(acnt)
+    # print(res.json()["netliquidation"])
     # print()
 
     # ib.portal_logout()
