@@ -8,17 +8,14 @@ const draw_order = function (ac, order) {
 
   let price = parseFloat(order["price"]);
 
-  // let range = ac.getVisiblePriceRange();
-  // let range_range = range.to - range.from;
-
   if (order["side"] === "buy") {
     color = "#080";
     icon_shape = "0xf176";
-    arrow_pos = price; // - (range_range/20);
+    arrow_pos = price - 0.2; // - (range_range/20);
   } else {
     color = "#d00";
     icon_shape = "0xf175";
-    arrow_pos = price; // + (range_range/20);
+    arrow_pos = price + 0.2; // + (range_range/20);
   }
 
   const arrow = ac.createShape(
@@ -53,16 +50,42 @@ const draw_order = function (ac, order) {
   );
 }
 
+const create_chart = (el) => {
+  // noinspection JSPotentiallyInvalidConstructorUsage
+  window.tv = new TradingView.widget({
+    debug: false,
+    fullscreen: false,
+    symbol: "A",
+    interval: "1",
+    container: el,
+    datafeed: new Datafeeds.UDFCompatibleDatafeed("http://127.0.0.1:8000/tv"),
+    library_path: "/static/admin/js/charting_library/",
+    locale: "en",
+    disabled_features: [
+      "symbol_search_hot_key",
+      "symbol_search",
+      "left_toolbar",
+      "control_bar",
+      "edit_buttons_in_legend",
+      "header_widget",
+      "pane_context_menu",
+      "scales_context_menu",
+      "legend_context_menu",
+      "timeframes_toolbar",
+      "right_bar_stays_on_scroll",
+    ],
+    width: "100%",
+    height: "500px",
+    toolbar_bg: '#f4f7f9',
+  });
+}
+
 
 const Order = ({data}) => {
 
   const clickMe = (aaa) => {
     console.log(aaa);
   }
-
-  const ac = window.tv.activeChart();
-  console.log(data);
-  // draw_order(ac, data);
 
   return html`
       <tr onClick=${() => clickMe(data.symbol)}>
@@ -78,102 +101,110 @@ const Order = ({data}) => {
 }
 
 
-const Orders = ({account}) => {
+const Orders = ({account, symbol}) => {
   const [orders, setOrders] = useState([]);
+  const [time, setTime] = useState();
 
+  let chat_is_ready = false;
+
+  // Создание графика при старте
   useEffect(() => {
 
-    // noinspection JSPotentiallyInvalidConstructorUsage
-    window.tv = new TradingView.widget({
-      debug: false,
-      fullscreen: false,
-      symbol: 'AAPL.NASDAQ',
-      interval: '5',
-      container: "tv_chart_container",
-      datafeed: new Datafeeds.UDFCompatibleDatafeed("http://127.0.0.1:8000/tv"),
-      library_path: "/static/admin/js/charting_library/",
-      locale: "en",
-      disabled_features: [
-        "symbol_search_hot_key",
-        "symbol_search",
-        "left_toolbar",
-        "control_bar",
-        "edit_buttons_in_legend",
-        "header_widget",
-        "pane_context_menu",
-        "scales_context_menu",
-        "legend_context_menu",
-        "timeframes_toolbar",
-      ],
-      width: "100%",
-      height: "500px",
-      toolbar_bg: '#f4f7f9',
-    });
+    console.error("create a chart");
+    create_chart("tv_chart_container");
 
-    window.tv.onChartReady(function () {
+    window.tv.onChartReady(() => {
       const ac = window.tv.chart();
       const ser = ac.getSeries();
-
-      ac.applyOverrides({"mainSeriesProperties.style": 0})
-      ac.applyOverrides({"mainSeriesProperties.showPriceLine": false})
-      ac.applyOverrides({"paneProperties.topMargin": '5'})
-      ac.applyOverrides({"paneProperties.bottomMargin": '5'})
 
       ser.setChartStyleProperties(0, {
         "upColor": "#999",
         "downColor": "#999",
         "barColorsOnPrevClose": false,
         "dontDrawOpen": false,
-        "thinBars": true
-      })
-      ser.setChartStyleProperties(2, {
-        "color": "#999",
-        "linestyle": 0,
-        "linewidth": 1,
-        "priceSource": "close",
-        "styleType": 1  // 1 — квадратная линия, 2 — обычная линия
       })
 
-      ac.setVisibleRange({
-        from: 1647894000,
-        to: 1648242900
-      }, {applyDefaultRightMargin: true});
+      ac.applyOverrides({"mainSeriesProperties.style": 0})
+      ac.applyOverrides({"mainSeriesProperties.showPriceLine": false})
+      ac.applyOverrides({"paneProperties.topMargin": '5'})
+      ac.applyOverrides({"paneProperties.bottomMargin": '5'})
 
-      // ac.onDataLoaded().subscribe(
-      //   null,
-      //   () => draw_orders(ac),
-      //   false
-      // );
+      // ac.setVisibleRange({
+      //   from: 1648242900,
+      //   to: 1648242900
+      // }, {applyDefaultRightMargin: true});
+
+      ac.onDataLoaded().subscribe(
+        null,
+        () => {
+          chat_is_ready = true;
+          console.log("onDataLoaded")
+        },
+        false
+      );
     });
-
 
   }, []);
 
+  // Запуск таймера при создании и остановка при уничтожении компонента
   useEffect(() => {
-    const interval = setInterval(() => fetchOrders(), 5000);
+    const interval = setInterval(() => setTime((new Date()).toISOString()), 5000);
     return () => {
       clearInterval(interval);
     };
   }, []);
 
-  const fetchOrders = () => {
-    console.log("fetchOrders")
-    fetch('http://127.0.0.1:8000/dash/orders?account=' + account)
+  // Сработал таймер
+  useEffect(() => {
+    fetchOrders(symbol);
+  }, [time]);
+
+  const all_orders = {};
+  const update_chart = (res_json) => {
+    const ac = window.tv.activeChart();
+    // console.log(res_json);
+    res_json.forEach((data) => {
+      if (!all_orders.hasOwnProperty(data.time)) {
+        console.log("draw", data);
+        draw_order(ac, data);
+        all_orders[data.time] = 1;
+      }
+    });
+  }
+
+  const fetchOrders = (symbol) => {
+    console.log("fetchOrders", symbol)
+    const symbol_str = symbol || "";
+    fetch(`http://127.0.0.1:8000/dash/orders?account=${account}&symbol=${symbol_str}`)
       .then(function (response) {
         return response.json();
       })
       .then(function (res_json) {
+        if (symbol && chat_is_ready) {
+          update_chart(res_json);
+        }
         setOrders(res_json);
       });
   }
 
+  // Изменился symbol
   useEffect(() => {
-    fetchOrders()
-  }, []);
+    console.log("useEffect fetchOrders")
+    const chartDiv = document.getElementById("tv_chart_container");
+    if (symbol) {
+      const ac = window.tv.activeChart();
+      ac.setSymbol(symbol);
+      chartDiv.style.display = 'block';
+    } else {
+      chartDiv.style.display = 'none';
+    }
+    fetchOrders(symbol);
+  }, [symbol]);
 
   return html`
       <div className="orders_and_chart">
           <div id="tv_chart_container"></div>
+          <h5>symbol = ${symbol}, time = ${time}</h5>
           <div className="orders">
               <table>
                   <thead>

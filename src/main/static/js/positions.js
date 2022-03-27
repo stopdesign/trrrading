@@ -1,16 +1,12 @@
-import {html, React} from "./deps.js";
+import {html, React, useState, useEffect} from "./deps.js";
 
 
-const Position = ({data}) => {
-
-  const clickMe = (aaa) => {
-
-    window.tv.setSymbol(aaa, "1");
-
-  }
-
+const Position = ({data, curSymbol, setSymbol}) => {
   return html`
-      <tr onClick=${() => clickMe(data.symbol)}>
+      <tr
+              onClick=${() => setSymbol(data.symbol)}
+              className=${data.symbol === curSymbol ? "active" : ""}
+      >
           <td>${data.symbol}</td>
           <td>${data.amount}</td>
           <td>${data.avg_price}</td>
@@ -20,8 +16,8 @@ const Position = ({data}) => {
 }
 
 
-const Positions = ({account}) => {
-  const [positions, setPositions] = React.useState([]);
+const Positions = ({account, symbol, setSymbol}) => {
+  const [positions, setPositions] = useState([]);
 
   const fetchPositions = () => {
     fetch('http://127.0.0.1:8000/dash/positions?account=' + account)
@@ -33,7 +29,7 @@ const Positions = ({account}) => {
       });
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchPositions();
     const interval = setInterval(() => fetchPositions(), 5000);
     return () => {
@@ -43,6 +39,7 @@ const Positions = ({account}) => {
 
   return html`
       <div className="positions_panel">
+          <p onClick=${() => setSymbol()}>reset symbol</p>
           <table className="positions">
               <thead>
               <tr>
@@ -54,7 +51,8 @@ const Positions = ({account}) => {
               </thead>
               <tbody>
               ${positions.map((pos, i) => html`
-                  <${Position} data=${pos} key=${i}/>
+                  <${Position} data=${pos} curSymbol=${symbol}
+                               setSymbol=${setSymbol} key=${i}/>
               `)}
               </tbody>
           </table>

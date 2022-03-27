@@ -49,9 +49,22 @@ def account(request):
 
 def orders(request):
     account_id = request.GET.get("account", 0)
+    symbol = request.GET.get("symbol")
     res = []
-    all_orders = Order.objects.filter(account_id=account_id).prefetch_related()
-    all_orders = all_orders.order_by("-id")[:20]
+    if symbol:
+        symbol = symbol.split(".")[0]
+        try:
+            instrument = Instrument.objects.get(symbol=symbol)
+            all_orders = Order.objects.filter(
+                account_id=account_id,
+                instrument=instrument
+            )
+            all_orders = all_orders.prefetch_related().order_by("-id")[:20]
+        except Instrument.DoesNotExist:
+            all_orders = []
+    else:
+        all_orders = Order.objects.filter(account_id=account_id)
+        all_orders = all_orders.prefetch_related().order_by("-id")[:20]
     for order in all_orders:
         if order.avg_fill_price:
             price = float(order.avg_fill_price)
@@ -175,14 +188,19 @@ def time(request):
 
 def history(request):
 
+    symbol = request.GET.get("symbol")
+
+    if symbol == "A":
+        res = {"s": "no_data", "nextTime": 1722108800}
+        content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
+        return HttpResponse(content, content_type="application/json")
+
     r = redis.Redis(
         host=settings.TREDIS_HOST,
         port=settings.TREDIS_PORT,
         db=settings.TREDIS_DB,
         password=settings.TREDIS_PASSWORD,
     )
-
-    symbol = request.GET.get("symbol")
 
     from_ts = str(request.GET.get("from")).encode()
     to_ts = str(request.GET.get("to")).encode()

@@ -7,6 +7,7 @@ body {
     font-size: 14px;
     line-height: 1.6;
     color: #444;
+    cursor: default;
 }
 
 .dashboard {
@@ -63,6 +64,9 @@ body {
 }
 .positions td:last-child {
     padding-right: 20px;
+}
+.positions .active td {
+    background: #f0f5fa;
 }
 
 
