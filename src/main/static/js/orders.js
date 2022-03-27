@@ -10,44 +10,54 @@ const draw_order = function (ac, order) {
 
   if (order["side"] === "buy") {
     color = "#080";
-    icon_shape = "0xf176";
+    icon_shape = "0xf0d8";
     arrow_pos = price - 0.2; // - (range_range/20);
   } else {
     color = "#d00";
-    icon_shape = "0xf175";
+    icon_shape = "0xf0d7";
     arrow_pos = price + 0.2; // + (range_range/20);
   }
 
-  const arrow = ac.createShape(
-    {time: order["time"], price: arrow_pos},
+  const arrow_bg = ac.createShape(
+    {time: order["time"], price: price},
     {
       shape: 'icon',
-      overrides: {color: color, size: 17, scale: 1.1},
+      overrides: {color: "#fff", size: 26, scale: 1},
       icon: icon_shape,
       zOrder: "top",
       disableSelection: true,
     }
   );
-  const icon_bg = ac.createShape(
+  const arrow = ac.createShape(
     {time: order["time"], price: price},
     {
       shape: 'icon',
-      overrides: {color: "#fff", size: 12, scale: 1},
-      icon: '0xf111',
+      overrides: {color: color, size: 20, scale: 1},
+      icon: icon_shape,
       zOrder: "top",
       disableSelection: true,
     }
   );
-  const icon = ac.createShape(
-    {time: order["time"], price: price},
-    {
-      shape: 'icon',
-      overrides: {color: color, size: 6, scale: 1},
-      icon: '0xf111',
-      zOrder: "top",
-      disableSelection: true,
-    }
-  );
+  // const icon_bg = ac.createShape(
+  //   {time: order["time"], price: price},
+  //   {
+  //     shape: 'icon',
+  //     overrides: {color: "#fff", size: 12, scale: 1},
+  //     icon: '0xf111',
+  //     zOrder: "top",
+  //     disableSelection: true,
+  //   }
+  // );
+  // const icon = ac.createShape(
+  //   {time: order["time"], price: price},
+  //   {
+  //     shape: 'icon',
+  //     overrides: {color: color, size: 6, scale: 1},
+  //     icon: '0xf111',
+  //     zOrder: "top",
+  //     disableSelection: true,
+  //   }
+  // );
 }
 
 const create_chart = (el) => {
@@ -81,19 +91,18 @@ const create_chart = (el) => {
 }
 
 
-const Order = ({data}) => {
-
-  const clickMe = (aaa) => {
-    console.log(aaa);
-  }
-
+const Order = ({data, curOrder, setOrder}) => {
   return html`
-      <tr onClick=${() => clickMe(data.symbol)}>
+      <tr onClick=${() => setOrder(data)}
+          className=${data.id === curOrder.id ? "active" : ""}
+      >
           <td>${data["order_id"]}</td>
           <td>${data["local_id"]}</td>
           <td>${data.symbol}</td>
+          <td>${data.side}</td>
           <td>${data.amount}</td>
           <td>${data.filled}</td>
+          <td>${data.price}</td>
           <td>${data.status}</td>
           <td>${data.created}</td>
       </tr>
@@ -104,6 +113,8 @@ const Order = ({data}) => {
 const Orders = ({account, symbol}) => {
   const [orders, setOrders] = useState([]);
   const [time, setTime] = useState();
+  const [selectedOrder, setSelectedOrder] = useState({});
+  const [selectionOnChart, setSelectionOnChart] = useState({});
 
   let chat_is_ready = false;
 
@@ -162,7 +173,7 @@ const Orders = ({account, symbol}) => {
   const all_orders = {};
   const update_chart = (res_json) => {
     const ac = window.tv.activeChart();
-    // console.log(res_json);
+    console.warn("update chart");
     res_json.forEach((data) => {
       if (!all_orders.hasOwnProperty(data.time)) {
         console.log("draw", data);
@@ -189,6 +200,7 @@ const Orders = ({account, symbol}) => {
 
   // Изменился symbol
   useEffect(() => {
+    setSelectedOrder({});
     console.log("useEffect fetchOrders")
     const chartDiv = document.getElementById("tv_chart_container");
     if (symbol) {
@@ -201,10 +213,22 @@ const Orders = ({account, symbol}) => {
     fetchOrders(symbol);
   }, [symbol]);
 
+  // Выбрали новый order
+  useEffect(() => {
+    console.log("selectedOrder", selectedOrder.id, selectionOnChart);
+    if (selectedOrder && selectedOrder.time) {
+      const ac = window.tv.activeChart();
+      const id = ac.createShape({time: selectedOrder.time}, {shape: 'vertical_line'});
+      if (selectionOnChart) {
+        ac.removeEntity(selectionOnChart);
+      }
+      setSelectionOnChart(id);
+    }
+  }, [selectedOrder])
+
   return html`
       <div className="orders_and_chart">
           <div id="tv_chart_container"></div>
-          <h5>symbol = ${symbol}, time = ${time}</h5>
           <div className="orders">
               <table>
                   <thead>
@@ -212,15 +236,22 @@ const Orders = ({account, symbol}) => {
                       <td>order_id</td>
                       <td>local_id</td>
                       <td>symbol</td>
+                      <td>side</td>
                       <td>amount</td>
                       <td>filled</td>
+                      <td>price</td>
                       <td>status</td>
                       <td>created</td>
                   </tr>
                   </thead>
                   <tbody>
                   ${orders.map((data, i) => html`
-                      <${Order} data=${data} key=${i}/>
+                      <${Order}
+                              data=${data}
+                              curOrder=${selectedOrder}
+                              setOrder=${setSelectedOrder}
+                              key=${i}
+                      />
                   `)}
                   </tbody>
               </table>

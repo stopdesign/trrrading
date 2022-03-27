@@ -103,4 +103,6 @@ body {
 .orders td:last-child {
     padding-right: 20px;
 }
-
+.orders .active td {
+    background: #f0f5fa;
+}

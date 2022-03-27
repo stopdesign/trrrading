@@ -72,6 +72,7 @@ def orders(request):
             price = float(order.signal_price)
         created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S")
         res.append({
+            "id": order.id,
             "order_id": order.order_id,
             "local_id": order.local_id,
             "symbol": order.instrument.ticker,
