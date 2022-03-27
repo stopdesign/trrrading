@@ -1,0 +1,102 @@
+body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    font-family: "Menlo", "Roboto Mono", monospace;
+    /*font-family: "Roboto", "Lucida Grande", "DejaVu Sans", "Bitstream Vera Sans", Verdana, Arial, sans-serif;*/
+    font-size: 14px;
+    line-height: 1.6;
+    color: #444;
+}
+
+.dashboard {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+}
+
+.left_sidebar {
+    border-right: 5px solid #eee;
+    width: 500px;
+}
+
+.main {
+    width: 100%;
+}
+
+.health_panel {
+    border-bottom: 5px solid #eee;
+    padding: 0 20px 20px 20px;
+}
+
+/* Account */
+.account_panel {
+    border-bottom: 5px solid #eee;
+    padding: 10px 20px;
+}
+.account_panel p {
+    margin: 10px 0;
+    font-size: 16px;
+}
+
+
+/* Positions */
+.positions_panel {
+
+}
+.positions {
+    width: 100%;
+    border-collapse: collapse;
+}
+.positions thead td {
+    color: #999;
+    font-weight: normal;
+}
+.positions td {
+    padding: 10px;
+    text-align: right;
+    border-bottom: 1px solid #ddd;
+}
+.positions td:first-child {
+    text-align: left;
+    padding-left: 20px;
+}
+.positions td:last-child {
+    padding-right: 20px;
+}
+
+
+/* Orders */
+
+.orders_and_chart {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.orders {
+    border-top: 3px solid #eee;
+    margin-top: 20px;
+    overflow-y: scroll;
+}
+
+.orders table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.orders thead td {
+    color: #999;
+}
+.orders td {
+    padding: 10px;
+    text-align: right;
+    border-bottom: 1px solid #ddd;
+}
+.orders td:first-child {
+    text-align: left;
+    padding-left: 20px;
+}
+.orders td:last-child {
+    padding-right: 20px;
+}
+

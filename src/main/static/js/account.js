@@ -1,8 +1,8 @@
 import {html, React} from "./deps.js";
 
 
-const Account = ({ account }) => {
-  const [values, setValues] = React.useState();
+const Account = ({account}) => {
+  const [values, setValues] = React.useState({});
 
   React.useEffect(() => {
     const interval = setInterval(() => fetchData(), 5000);
@@ -25,15 +25,12 @@ const Account = ({ account }) => {
     fetchData()
   }, []);
 
-  return (
-    html`
-        <div>
-            <h4>Account</h4>
-            <ul>
-                ${JSON.stringify(values)}
-            </ul>
-        </div>`
-  );
+  return html`
+      <div className="account_panel">
+          <p>Account: ${values.uid}</p>
+          <p>Net Value: ${values["net_value"]}</p>
+      </div>
+  `;
 }
 
 

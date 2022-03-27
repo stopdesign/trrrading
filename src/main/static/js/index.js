@@ -1,16 +1,8 @@
-'use strict'
-
 import {React, ReactDOM, html} from "./deps.js";
-import Positions from "./positions.js";
-import Account from "./account.js";
-import Orders from "./orders.js";
+import Dashboard from "./dashboard.js";
 
 
 ReactDOM.render(
-  html`
-      <${Account} account=5 key="1"/>
-      <${Positions} account=5 key="2"/>
-      <${Orders} account=5 key="3"/>
-  `,
+  html`<${Dashboard} account=1 />`,
   document.getElementById("root")
 );

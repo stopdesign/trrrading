@@ -5,9 +5,13 @@ import htm from "https://unpkg.com/htm@latest?module";
 
 const html = htm.bind(React.createElement);
 
+const {useEffect, useState} = React;
+
 export {
-    React,
-    ReactDOM,
-    PropTypes,
-    html
+  React,
+  ReactDOM,
+  PropTypes,
+  html,
+  useEffect,
+  useState,
 }

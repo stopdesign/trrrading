@@ -51,8 +51,13 @@ def orders(request):
     account_id = request.GET.get("account", 0)
     res = []
     all_orders = Order.objects.filter(account_id=account_id).prefetch_related()
-    all_orders = all_orders.order_by("-id")[:10]
+    all_orders = all_orders.order_by("-id")[:20]
     for order in all_orders:
+        if order.avg_fill_price:
+            price = float(order.avg_fill_price)
+        else:
+            price = float(order.signal_price)
+        created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S")
         res.append({
             "order_id": order.order_id,
             "local_id": order.local_id,
@@ -60,7 +65,10 @@ def orders(request):
             "amount": order.amount,
             "filled": order.filled,
             "status": order.status,
-            "updated": order.updated_at,
+            "price": price,
+            "side": order.action.lower(),
+            "time": dt_to_ts(order.created_at),
+            "created": created_at,
         })
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
