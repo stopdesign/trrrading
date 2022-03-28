@@ -1,4 +1,4 @@
-import {html, useEffect, useState} from "./deps.js";
+import {React, html, useEffect, useState} from "./deps.js";
 
 
 const draw_order = function (ac, order) {
@@ -38,27 +38,8 @@ const draw_order = function (ac, order) {
       disableSelection: true,
     }
   );
-  // const icon_bg = ac.createShape(
-  //   {time: order["time"], price: price},
-  //   {
-  //     shape: 'icon',
-  //     overrides: {color: "#fff", size: 12, scale: 1},
-  //     icon: '0xf111',
-  //     zOrder: "top",
-  //     disableSelection: true,
-  //   }
-  // );
-  // const icon = ac.createShape(
-  //   {time: order["time"], price: price},
-  //   {
-  //     shape: 'icon',
-  //     overrides: {color: color, size: 6, scale: 1},
-  //     icon: '0xf111',
-  //     zOrder: "top",
-  //     disableSelection: true,
-  //   }
-  // );
 }
+
 
 const create_chart = (el) => {
   // noinspection JSPotentiallyInvalidConstructorUsage
@@ -93,7 +74,7 @@ const create_chart = (el) => {
 
 const Order = ({data, curOrder, setOrder}) => {
   return html`
-      <tr onClick=${() => setOrder(data)}
+      <tr onClick=${() => setOrder(data.id === curOrder.id ? {} : data)}
           className=${data.id === curOrder.id ? "active" : ""}
       >
           <td>${data["order_id"]}</td>
@@ -110,13 +91,34 @@ const Order = ({data, curOrder, setOrder}) => {
 }
 
 
+const draw_orders = (orders) => {
+  const ac = window.tv.chart();
+  const range = ac.getVisibleRange();
+
+  // Удалить все ордеры с графика
+  ac.getAllShapes().forEach(({id, name}) => {
+    if (name === "icon") {
+      ac.removeEntity(id);
+    }
+  });
+
+  // Нарисовать все видимые ордеры
+  for (const order of orders) {
+    if (range.from < order["time"] && order["time"] < range.to) {
+      // console.log("DRAW", order.time)
+      draw_order(ac, order);
+    }
+  }
+}
+
+
 const Orders = ({account, symbol}) => {
   const [orders, setOrders] = useState([]);
   const [time, setTime] = useState();
   const [selectedOrder, setSelectedOrder] = useState({});
-  const [selectionOnChart, setSelectionOnChart] = useState({});
+  const [selectionOnChart, setSelectionOnChart] = useState();
 
-  let chat_is_ready = false;
+  const [dataLoaded, setDataLoaded] = useState();
 
   // Создание графика при старте
   useEffect(() => {
@@ -148,8 +150,8 @@ const Orders = ({account, symbol}) => {
       ac.onDataLoaded().subscribe(
         null,
         () => {
-          chat_is_ready = true;
-          console.log("onDataLoaded")
+          // console.log("onDataLoaded")
+          setDataLoaded((new Date()).toISOString())
         },
         false
       );
@@ -159,7 +161,7 @@ const Orders = ({account, symbol}) => {
 
   // Запуск таймера при создании и остановка при уничтожении компонента
   useEffect(() => {
-    const interval = setInterval(() => setTime((new Date()).toISOString()), 5000);
+    const interval = setInterval(() => setTime((new Date()).toISOString()), 5500);
     return () => {
       clearInterval(interval);
     };
@@ -170,31 +172,26 @@ const Orders = ({account, symbol}) => {
     fetchOrders(symbol);
   }, [time]);
 
-  const all_orders = {};
-  const update_chart = (res_json) => {
-    const ac = window.tv.activeChart();
-    console.warn("update chart");
-    res_json.forEach((data) => {
-      if (!all_orders.hasOwnProperty(data.time)) {
-        console.log("draw", data);
-        draw_order(ac, data);
-        all_orders[data.time] = 1;
-      }
-    });
-  }
+  // Изменились ордеры или прогрузился очередной кусок графика
+  useEffect(() => {
+    if (dataLoaded) {
+      draw_orders(orders);
+    } else {
+      console.warn("No chart");
+    }
+  }, [orders, dataLoaded])
 
   const fetchOrders = (symbol) => {
-    console.log("fetchOrders", symbol)
     const symbol_str = symbol || "";
     fetch(`/dash/orders?account=${account}&symbol=${symbol_str}`)
       .then(function (response) {
         return response.json();
       })
       .then(function (res_json) {
-        if (symbol && chat_is_ready) {
-          update_chart(res_json);
+        // Перезаписывать только при изменениях
+        if (JSON.stringify(orders) !== JSON.stringify(res_json)) {
+          setOrders(res_json);
         }
-        setOrders(res_json);
       });
   }
 
@@ -204,10 +201,18 @@ const Orders = ({account, symbol}) => {
     console.log("useEffect fetchOrders")
     const chartDiv = document.getElementById("tv_chart_container");
     if (symbol) {
+      // Показать график и выставить новый символ
       const ac = window.tv.activeChart();
+      // удалить всё с графика
+      ac.getAllShapes().forEach(({id, name}) => ac.removeEntity(id));
       ac.setSymbol(symbol);
       chartDiv.style.display = 'block';
+      // Дернуть перерисовку ордеров
+      if (ac && dataLoaded) {
+        draw_orders(orders);
+      }
     } else {
+      // Скрыть график
       chartDiv.style.display = 'none';
     }
     fetchOrders(symbol);
@@ -223,6 +228,12 @@ const Orders = ({account, symbol}) => {
         ac.removeEntity(selectionOnChart);
       }
       setSelectionOnChart(id);
+    } else {
+      if (selectionOnChart) {
+        const ac = window.tv.activeChart();
+        ac.removeEntity(selectionOnChart);
+        setSelectionOnChart();
+      }
     }
   }, [selectedOrder])
 
