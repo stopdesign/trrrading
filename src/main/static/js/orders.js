@@ -22,7 +22,7 @@ const draw_order = function (ac, order) {
     {time: order["time"], price: price},
     {
       shape: 'icon',
-      overrides: {color: "#fff", size: 26, scale: 1},
+      overrides: {color: "#fff", size: 36, scale: 1},
       icon: icon_shape,
       zOrder: "top",
       disableSelection: true,
@@ -32,7 +32,7 @@ const draw_order = function (ac, order) {
     {time: order["time"], price: price},
     {
       shape: 'icon',
-      overrides: {color: color, size: 20, scale: 1},
+      overrides: {color: color, size: 30, scale: 1},
       icon: icon_shape,
       zOrder: "top",
       disableSelection: true,
@@ -178,7 +178,7 @@ const Orders = ({account, symbol}) => {
       const ac = window.tv.chart();
       const to = ac.getVisibleRange().to;
       ac.setVisibleRange(
-        {from: to - 3600 * 24 * 7, to: to},
+        {from: to - 3600 * 24 * 6, to: to},
         {applyDefaultRightMargin: true}
       );
       setResized(true);
