@@ -120,6 +120,8 @@ const Orders = ({account, symbol}) => {
 
   const [dataLoaded, setDataLoaded] = useState();
 
+  const [resized, setResized] = useState(false);
+
   // Создание графика при старте
   useEffect(() => {
 
@@ -138,20 +140,16 @@ const Orders = ({account, symbol}) => {
       })
 
       ac.applyOverrides({"mainSeriesProperties.style": 0})
-      ac.applyOverrides({"mainSeriesProperties.showPriceLine": false})
-      ac.applyOverrides({"paneProperties.topMargin": '5'})
+      ac.applyOverrides({"paneProperties.topMargin": '10'})
       ac.applyOverrides({"paneProperties.bottomMargin": '5'})
-
-      // ac.setVisibleRange({
-      //   from: 1648242900,
-      //   to: 1648242900
-      // }, {applyDefaultRightMargin: true});
 
       ac.onDataLoaded().subscribe(
         null,
         () => {
-          // console.log("onDataLoaded")
-          setDataLoaded((new Date()).toISOString())
+          const range = ac.getVisibleRange();
+          if (range.to) {
+            setDataLoaded((new Date()).toISOString())
+          }
         },
         false
       );
@@ -174,6 +172,18 @@ const Orders = ({account, symbol}) => {
 
   // Изменились ордеры или прогрузился очередной кусок графика
   useEffect(() => {
+
+    if (dataLoaded && !resized) {
+      console.warn("first time");
+      const ac = window.tv.chart();
+      const to = ac.getVisibleRange().to;
+      ac.setVisibleRange(
+        {from: to - 3600 * 24 * 7, to: to},
+        {applyDefaultRightMargin: true}
+      );
+      setResized(true);
+    }
+
     if (dataLoaded) {
       draw_orders(orders);
     } else {
@@ -231,7 +241,7 @@ const Orders = ({account, symbol}) => {
     } else {
       if (selectionOnChart) {
         const ac = window.tv.activeChart();
-        ac.removeEntity(selectionOnChart);
+        ac.removeEntity(selectionOnChart);  // removeAllShapes
         setSelectionOnChart();
       }
     }

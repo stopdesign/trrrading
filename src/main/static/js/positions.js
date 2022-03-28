@@ -4,7 +4,7 @@ import {html, React, useState, useEffect} from "./deps.js";
 const Position = ({data, curSymbol, setSymbol}) => {
   return html`
       <tr
-              onClick=${() => setSymbol(data.symbol)}
+              onClick=${() => setSymbol(data.symbol === curSymbol ? "" : data.symbol)}
               className=${data.symbol === curSymbol ? "active" : ""}
       >
           <td>${data.symbol}</td>
@@ -39,7 +39,6 @@ const Positions = ({account, symbol, setSymbol}) => {
 
   return html`
       <div className="positions_panel">
-          <p onClick=${() => setSymbol()}>reset symbol</p>
           <table className="positions">
               <thead>
               <tr>
