@@ -68,7 +68,7 @@ const create_chart = (el) => {
     symbol: "A",
     interval: "1",
     container: el,
-    datafeed: new Datafeeds.UDFCompatibleDatafeed("http://127.0.0.1:8000/tv"),
+    datafeed: new Datafeeds.UDFCompatibleDatafeed("/tv"),
     library_path: "/static/admin/js/charting_library/",
     locale: "en",
     disabled_features: [
@@ -186,7 +186,7 @@ const Orders = ({account, symbol}) => {
   const fetchOrders = (symbol) => {
     console.log("fetchOrders", symbol)
     const symbol_str = symbol || "";
-    fetch(`http://127.0.0.1:8000/dash/orders?account=${account}&symbol=${symbol_str}`)
+    fetch(`/dash/orders?account=${account}&symbol=${symbol_str}`)
       .then(function (response) {
         return response.json();
       })

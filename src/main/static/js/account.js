@@ -12,7 +12,7 @@ const Account = ({account}) => {
   }, []);
 
   const fetchData = () => {
-    fetch('http://127.0.0.1:8000/dash/account?account=' + account)
+    fetch('/dash/account?account=' + account)
       .then(function (response) {
         return response.json();
       })

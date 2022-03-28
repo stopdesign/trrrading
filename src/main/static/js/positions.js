@@ -20,7 +20,7 @@ const Positions = ({account, symbol, setSymbol}) => {
   const [positions, setPositions] = useState([]);
 
   const fetchPositions = () => {
-    fetch('http://127.0.0.1:8000/dash/positions?account=' + account)
+    fetch('/dash/positions?account=' + account)
       .then(function (response) {
         return response.json();
       })
