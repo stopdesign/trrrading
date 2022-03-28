@@ -196,7 +196,7 @@ def history(request):
     symbol = request.GET.get("symbol")
 
     if symbol == "A":
-        res = {"s": "no_data", "nextTime": 1722108800}
+        res = {"s": "no_data", "nextTime": 0}  # данных нет и не будет
         content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
         return HttpResponse(content, content_type="application/json")
 
@@ -207,8 +207,9 @@ def history(request):
         password=settings.TREDIS_PASSWORD,
     )
 
-    from_ts = str(request.GET.get("from")).encode()
-    to_ts = str(request.GET.get("to")).encode()
+    from_ts = int(request.GET.get("from"))
+    to_ts = int(request.GET.get("to"))
+
     data_in_db = r.zrangebyscore(f"{symbol}:TRADES", from_ts, to_ts)
 
     res = {
@@ -226,27 +227,20 @@ def history(request):
             j = orjson.loads(line.decode('utf-8'))
             if "o" in j:
                 dt = datetime.strptime(j["dt"], "%Y-%m-%d %H:%M:%S")
-                rth = 0
-                if 14 <= dt.hour < 21 or (13 <= dt.hour < 14 and dt.minute > 30):
-                    rth = 1
+                # rth = 0
+                # if 14 <= dt.hour < 21 or (13 <= dt.hour < 14 and dt.minute > 30):
+                #     rth = 1
                 ts = dt_to_ts(dt)
-                # if rth:
                 res["t"].append(ts)
                 res["o"].append(j["o"])
                 res["h"].append(j["h"])
                 res["l"].append(j["l"])
                 res["c"].append(j["c"])
                 res["v"].append(j["vol"])
-                # else:
-                #     res["t"].append(ts)
-                #     res["o"].append(None)
-                #     res["h"].append(None)
-                #     res["l"].append(None)
-                #     res["c"].append(None)
-                #     res["v"].append(None)
-                # print(ts, line)
-    else:
-        res = {"s": "no_data", "nextTime": 1722108800}
+
+    # TODO: сделать возврат последнего интервала с данными
+    if not len(res["t"]):
+        res = {"s": "no_data", "nextTime": from_ts - 3600 * 24 * 3}
 
     content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
 
