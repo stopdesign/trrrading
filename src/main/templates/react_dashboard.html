@@ -9,6 +9,9 @@
     <script type="text/javascript" src="{% static 'admin/js/charting_library.standalone.js' %}"></script>
     <script type="text/javascript" src="{% static 'admin/js/bundle.js' %}"></script>
     <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+    <script>
+        window.account_id = {{ account_id }};
+    </script>
 </head>
 <body>
     <div id="root">

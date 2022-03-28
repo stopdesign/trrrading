@@ -13,7 +13,11 @@ def dt_to_ts(dt):
 
 
 def dashboard(request):
-    return render(request, 'react_dashboard.html')
+    try:
+        account_id = Account.objects.latest('updated_at').id
+    except Order.DoesNotExist:
+        account_id = 0
+    return render(request, 'react_dashboard.html', {"account_id": account_id})
 
 
 def backtest(request):
