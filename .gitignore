@@ -1,7 +1,8 @@
-/log
-/lib
-/www
-/data
+/log/
+/lib/
+/www/
+/res/
+/data/
 /coverage
 /node_modules
 *_local.*
@@ -26,6 +27,7 @@ reload
 
 # IDE system files
 .idea
+.vscode
 *.sublime-workspace
 *.sublime-project
 
@@ -52,3 +54,16 @@ yarn-error.log*
 
 # local config
 /src/*.yaml
+/new/tv/data/
+/new/poly_*/
+/jup/
+/ann/
+/alpaca/
+/meta/
+/new/
+/tv/
+/gogo/
+/docker/
+
+session_*.json
+ocra_*.json

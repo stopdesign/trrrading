@@ -1,3 +1,5 @@
+import glob
+import os.path
 import redis
 import orjson
 import json
@@ -21,7 +23,30 @@ def dashboard(request):
 
 
 def backtest(request):
-    return render(request, 'backtest_chart.html')
+    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
+    results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:5]
+    context = {
+        "backtest_results": results,
+    }
+    return render(request, 'backtest_chart.html', context)
+
+
+def strategies(request):
+    res = []
+    result = request.GET.get("result", "")
+    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result))
+    files = glob.glob(f"{base_dir}/*_ohlc.jsonl")
+    for file in files:
+        file = os.path.basename(file)
+        instrument, strategy, _ = file.split("_")
+        res.append({
+            "id": f"{instrument}_{strategy}",
+            "strategy": strategy,
+            "instrument": instrument,
+        })
+    res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
 
 
 def positions(request):
@@ -34,6 +59,42 @@ def positions(request):
             "avg_price": position.avg_price,
             "unrealized_pnl": position.unrealized_pnl,
             "updated": position.updated_at,
+        })
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
+
+
+def bt_events(request):
+    # ?result=2022-04-13_078181&strategy=COPX.ARCA_ChannelBreakout3
+    result_id = request.GET.get("result")
+    strategy_id = request.GET.get("strategy")
+
+    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
+    ohlc_file = f"{base_dir}/{strategy_id}_events.jsonl"
+
+    content = open(ohlc_file).read()
+
+    if content:
+        data = orjson.loads("[" + content.strip().replace("\n", ",") + "]")
+    else:
+        data = []
+
+    res = []
+
+    for i, order in enumerate(data):
+        res.append({
+            "id": i,
+            "order_id": i,
+            "local_id": i,
+            "symbol": strategy_id,
+            "amount": order["amount"],
+            "filled": order["amount"],
+            "status": "fulled",
+            "price": order["price"],
+            "profit": order["profit"],
+            "side": order["side"],
+            "time": order["time"],
+            "created": order["dt"],
         })
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
@@ -74,7 +135,7 @@ def orders(request):
             price = float(order.avg_fill_price)
         else:
             price = float(order.signal_price)
-        created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S")
+        created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S") if order.created_at else None
         res.append({
             "id": order.id,
             "order_id": order.order_id,
@@ -85,7 +146,7 @@ def orders(request):
             "status": order.status,
             "price": price,
             "side": order.action.lower(),
-            "time": dt_to_ts(order.created_at),
+            "time": dt_to_ts(order.created_at) if order.created_at else None,
             "created": created_at,
         })
     content = json.dumps(res, indent=None, default=str)
@@ -93,11 +154,25 @@ def orders(request):
 
 
 def backtest_data(request):
+    symbol = request.GET.get("symbol")
 
-    f = open("res_URA.ARCA_ChannelBreakout3")
-    # f = open("res_URA.ARCA_HullMa")
+    if symbol.split("#")[0] == "A":
+        res = {"s": "no_data", "nextTime": 0}  # данных нет и не будет
+        content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
+        return HttpResponse(content, content_type="application/json")
 
-    data = json.load(f)
+    result_id = symbol[:17]
+    strategy_id = symbol.split("#")[0][18:]
+
+    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
+    ohlc_file = f"{base_dir}/{strategy_id}_ohlc.jsonl"
+
+    content = open(ohlc_file).read()
+
+    if content:
+        data = orjson.loads("[" + content.strip().replace("\n", ",") + "]")
+    else:
+        data = []
 
     res = {
         "t": [],
@@ -114,12 +189,12 @@ def backtest_data(request):
 
     symbol = request.GET.get("symbol")
 
-    if symbol == "indicator":
+    if "indicator" in symbol:
         for line in data:
             if from_ts < line["ts"] < to_ts:
                 res["t"].append(line["ts"])
-                res["o"].append(line["up"])
-                res["c"].append(line["dn"])
+                res["o"].append(line.get("up") or line.get("n1"))
+                res["c"].append(line.get("dn") or line.get("n2"))
     elif symbol == "profit":
         for line in data:
             if from_ts < line["ts"] < to_ts:
@@ -136,8 +211,10 @@ def backtest_data(request):
                 res["c"].append(line["close"])
                 res["v"].append(int(line["rth"]))
 
+    # if not len(res["t"]):
+    #     res = {"s": "no_data", "nextTime": 1722108800}
     if not len(res["t"]):
-        res = {"s": "no_data", "nextTime": 1722108800}
+        res = {"s": "no_data", "nextTime": from_ts - 3600 * 24 * 3}
 
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
@@ -167,8 +244,8 @@ def symbols(request):
         instrument_type = "stock"
     data = {
       "name": symbol,
-      "exchange-traded": "NasdaqNM",
-      "exchange-listed": "NasdaqNM",
+      "exchange-traded": "",
+      "exchange-listed": "",
       "timezone": "America/New_York",
       "minmovement": 1,
       "minmovement2": 0,
@@ -176,7 +253,7 @@ def symbols(request):
       "session": session,
       "has_intraday": True,
       "has_no_volume": True,
-      "description": f"{symbol} Inc.",
+      "description": f"{symbol}",
       "type": instrument_type,
       "supported_resolutions": ["1", "5", "15", "30", "1H", "2H", "3H", "4H", "1D", "1W"],
       "pricescale": 100,

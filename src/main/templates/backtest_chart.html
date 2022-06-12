@@ -2,64 +2,21 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport"
-          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Document</title>
+    <meta charset="UTF-8"/>
+    <title>Backtest</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="shortcut icon" href="{% static 'favicon.png' %}">
     <script type="text/javascript" src="{% static 'admin/js/charting_library.standalone.js' %}"></script>
     <script type="text/javascript" src="{% static 'admin/js/bundle.js' %}"></script>
-    <script type="text/javascript" src="{% static 'admin/js/tv_bt.js' %}"></script>
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-        }
-    </style>
+    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+    <script>
+        window.backtest_results = {{ backtest_results|safe }};
+    </script>
 </head>
 <body>
-
-<script>
-        window.orders = [
-
-          {"amount": "-479", "side": "sell", "time": 1645315200, "dt": "2022-02-20 00:00:00", "price": "20.85"},
-
-{"amount": "476", "side": "buy", "time": 1645559435, "dt": "2022-02-22 19:50:35", "price": "20.98"},
-{"amount": "-473", "side": "sell", "time": 1645644845, "dt": "2022-02-23 19:34:05", "price": "21.10"},
-{"amount": "469", "side": "buy", "time": 1645714040, "dt": "2022-02-24 14:47:20", "price": "21.32"},
-{"amount": "-466", "side": "sell", "time": 1645729745, "dt": "2022-02-24 19:09:05", "price": "21.44"},
-{"amount": "452", "side": "buy", "time": 1645813625, "dt": "2022-02-25 18:27:05", "price": "22.09"},
-{"amount": "-421", "side": "sell", "time": 1646075360, "dt": "2022-02-28 19:09:20", "price": "23.70"},
-{"amount": "415", "side": "buy", "time": 1646081120, "dt": "2022-02-28 20:45:20", "price": "24.04"},
-{"amount": "-420", "side": "sell", "time": 1646153165, "dt": "2022-03-01 16:46:05", "price": "23.78"},
-{"amount": "417", "side": "buy", "time": 1646162840, "dt": "2022-03-01 19:27:20", "price": "23.97"},
-{"amount": "-409", "side": "sell", "time": 1646317940, "dt": "2022-03-03 14:32:20", "price": "24.42"},
-{"amount": "436", "side": "buy", "time": 1646416205, "dt": "2022-03-04 17:50:05", "price": "22.89"},
-{"amount": "-419", "side": "sell", "time": 1646673545, "dt": "2022-03-07 17:19:05", "price": "23.81"},
-{"amount": "410", "side": "buy", "time": 1646754500, "dt": "2022-03-08 15:48:20", "price": "24.39"},
-{"amount": "-419", "side": "sell", "time": 1646761265, "dt": "2022-03-08 17:41:05", "price": "23.85"},
-{"amount": "404", "side": "buy", "time": 1646769320, "dt": "2022-03-08 19:55:20", "price": "24.75"},
-{"amount": "-406", "side": "sell", "time": 1646850695, "dt": "2022-03-09 18:31:35", "price": "24.62"},
-{"amount": "395", "side": "buy", "time": 1646856860, "dt": "2022-03-09 20:14:20", "price": "25.31"},
-{"amount": "-389", "side": "sell", "time": 1646929610, "dt": "2022-03-10 16:26:50", "price": "25.65"},
-{"amount": "380", "side": "buy", "time": 1646938535, "dt": "2022-03-10 18:55:35", "price": "26.30"},
-{"amount": "-383", "side": "sell", "time": 1647009995, "dt": "2022-03-11 14:46:35", "price": "26.07"},
-{"amount": "382", "side": "buy", "time": 1647022505, "dt": "2022-03-11 18:15:05", "price": "26.12"},
-{"amount": "-386", "side": "sell", "time": 1647028475, "dt": "2022-03-11 19:54:35", "price": "25.84"},
-{"amount": "426", "side": "buy", "time": 1647360740, "dt": "2022-03-15 16:12:20", "price": "23.47"},
-{"amount": "-422", "side": "sell", "time": 1647441365, "dt": "2022-03-16 14:36:05", "price": "23.67"},
-{"amount": "419", "side": "buy", "time": 1647457040, "dt": "2022-03-16 18:57:20", "price": "23.82"},
-{"amount": "-396", "side": "sell", "time": 1647610670, "dt": "2022-03-18 13:37:50", "price": "25.25"},
-{"amount": "387", "side": "buy", "time": 1647612245, "dt": "2022-03-18 14:04:05", "price": "25.78"},
-{"amount": "-379", "side": "sell", "time": 1647880325, "dt": "2022-03-21 16:32:05", "price": "26.38"},
-{"amount": "0", "side": null, "time": 1647907140, "dt": "2022-03-21 23:59:00", "price": "26.80"},
-        ]
-
-</script>
-
-<div id="tv_chart_container"></div>
-
+    <div id="root">
+        <div style="padding: 20px">Loading...</div>
+    </div>
+    <script type="module" src="{% static 'js/index_bt.js'%}"></script>
 </body>
 </html>
-
-

@@ -1,9 +1,9 @@
 function initOnReady() {
   var widget = window.tv = new TradingView.widget({
     debug: false,
-    fullscreen: true,
-    symbol: 'URA.ARCA',
-    interval: '15',
+    fullscreen: false,
+    symbol: 'COPX.ARCA',
+    interval: '1',
     container: "tv_chart_container",
 
     datafeed: new Datafeeds.UDFCompatibleDatafeed("http://127.0.0.1:8000/bt"),
@@ -49,6 +49,7 @@ function initOnReady() {
     enable_publishing: false,
     allow_symbol_change: true,
     width: '100%',
+    height: "600px",
 
 
     custom_indicators_getter: function (PineJS) {
@@ -367,10 +368,14 @@ function initOnReady() {
         color = "#080";
         icon_shape = "0xf176";
         arrow_pos = price * 0.995;
-      } else {
+      } else if (order["side"] === "sell") {
         color = "#d00";
         icon_shape = "0xf175";
         arrow_pos = price * 1.005;
+      } else {
+        color = "#000";
+        icon_shape = "0xf175";
+        arrow_pos = null;
       }
 
       // const level = ac.createShape(
@@ -385,16 +390,18 @@ function initOnReady() {
       //   }
       // );
 
-      const arrow = ac.createShape(
-        { time: order["time"], price: arrow_pos },
-        {
-          shape: 'icon',
-          overrides: {color: color, size: 20, scale: 1.1},
-          icon: icon_shape,
-          zOrder: "top",
-          disableSelection: true,
-        }
-      );
+      if (arrow_pos) {
+        const arrow = ac.createShape(
+          {time: order["time"], price: arrow_pos},
+          {
+            shape: 'icon',
+            overrides: {color: color, size: 20, scale: 1.1},
+            icon: icon_shape,
+            zOrder: "top",
+            disableSelection: true,
+          }
+        );
+      }
 
       const icon_bg = ac.createShape(
         { time: order["time"], price: price },
@@ -431,7 +438,7 @@ function initOnReady() {
   widget.onChartReady(function () {
     // widget.activeChart().createStudy('DepositAndDrawdown', false, true);
     widget.activeChart().createStudy('FFFFF', false, true);
-    widget.activeChart().createStudy('PROFIT', false, true);
+    // widget.activeChart().createStudy('PROFIT', false, true);
     widget.activeChart().createStudy('Colorer', false, false);
 
     const ac = widget.chart();

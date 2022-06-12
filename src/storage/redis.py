@@ -72,7 +72,7 @@ class RedisTradingData:
         self.symbols = symbols
         self.dt_start = dt_start
         self.dt_end = dt_end
-        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=3))
+        self.dt_from = kwargs.get("dt_from", self.dt_start - timedelta(days=5))
         self.on_event = on_event
         self.backtest = backtest
         self.dt_last = None

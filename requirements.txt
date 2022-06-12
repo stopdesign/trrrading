@@ -5,13 +5,14 @@ termcolor==1.1.0
 pandas-market-calendars==3.4
 aiogram==2.14.3
 #TA-Lib==0.4.20
-talipp==1.6.0
+talipp==1.7.1
 scipy==1.7.0
 pytz==2021.1
 PyYAML==5.4.1
 click==8.0.1
 orjson==3.6.6
 cryptography==36.0.2
+coloredlogs
 
 #psycopg2
 

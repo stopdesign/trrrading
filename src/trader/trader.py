@@ -1,12 +1,13 @@
 import json
 import logging
+import os
 from copy import copy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from termcolor import colored
 from data_types import Hint, Bar, Trade
 from stats import PortfolioStats, StrategyStats
-from storage.redis import RedisTradingData
+from storage import RedisTradingData, Polygon
 from trader import Exchange, Portfolio, Executor
 from strategy import all_strategies, Signal
 from main.models import Account, Run
@@ -48,7 +49,7 @@ class Trader:
         self.exchange = Exchange()
 
         # Добывает данные, запускает события
-        self.trading_data = RedisTradingData(
+        self.trading_data = Polygon(
             symbols=self.symbols,
             dt_start=self.dt_start,
             dt_end=self.dt_end,
@@ -56,11 +57,16 @@ class Trader:
             backtest=self.backtest,
         )
 
+        # Это нужно до прогрева индикаторов,
+        # чтобы сохранились индикаторы в процессе прогрева.
+        self.strategy_stats = StrategyStats(self.strategies)
+
         # Прогреть индикторы прогоном исторических данных.
         # На этом этапе еще нет портфолио, только сигналы и Hint.
         self.trading_data.warm_up()
 
         self.portfolio = Portfolio(self.exchange, self.strategies, self.target_margin)
+        self.strategy_stats.portfolio = self.portfolio
 
         # Позиции выставляются по прогретым сигналам.
         self.init_positions()
@@ -88,8 +94,6 @@ class Trader:
 
         self.portfolio_stats = PortfolioStats(self, self.portfolio, self.target_margin)
 
-        self.strategy_stats = StrategyStats(self.strategies, self.portfolio)
-
         self.portfolio_stats.portfolio_info()
         # self.portfolio_stats.account_info()
 
@@ -114,8 +118,8 @@ class Trader:
             hint = Hint(
                 strategy=strategy,
                 signal=strategy.prev_signal,
-                signal_dt=self.dt_start,
-                signal_price=Decimal("nan"),
+                signal_dt=strategy.prev_signal_dt,
+                signal_price=Decimal("nan"),  # TODO: добыть цену
             )
             hints.append(hint)
         self.portfolio.rebalance(hints)
@@ -139,8 +143,19 @@ class Trader:
 
         if self.backtest:
             self.close_all()
-            self.strategy_stats.save_all()
+            self.save_backtest_data()
             self.portfolio_stats.print_summary()  # RESULTS
+
+    def save_backtest_data(self):
+        dt = datetime.utcnow()  # server time
+        day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        ts = (dt - day).total_seconds()
+        dir_name = f"{day:%Y-%m-%d}_{ts:06.0f}/"
+        path = os.path.join(os.path.dirname(__file__), "../../res", dir_name)
+        path = os.path.abspath(path)
+        os.makedirs(path)
+        self.strategy_stats.save_ohlc(path)
+        self.portfolio_stats.save_events(path)
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """
@@ -183,7 +198,7 @@ class Trader:
                 # После добавления нового бара в стратегию происходит
                 # сохранение бара с индикаторами и профитом
                 # TODO: обработать прерывание торгов и close all
-                if strategy.data and dt > self.dt_start:
+                if strategy.data:  # and dt > self.dt_start:
                     self.strategy_stats.append(strategy, dt)
 
         # FIXME: эта штука срезает первый bar в реальной торговле

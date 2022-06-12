@@ -10,6 +10,7 @@ def hint(func):
         signal = func(obj, *args, **kwargs)
         if signal != Signal.PASS and obj.prev_signal != signal:
             obj.prev_signal = signal
+            obj.prev_signal_dt = args[0].date
             return signal
         return None
     return inner
@@ -24,6 +25,7 @@ class BaseStrategy:
         self.params = kwargs
         self.data = []
         self.prev_signal = Signal.PASS
+        self.prev_signal_dt = None
         self.on_start()
 
     def __repr__(self):

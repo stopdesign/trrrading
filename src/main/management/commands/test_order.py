@@ -1,30 +1,41 @@
 import json
+from os.path import abspath, dirname, join
 from secrets import token_hex
-from time import sleep
 
+import redis
+import yaml
+from django.conf import settings
 from django.core.management.base import BaseCommand
-from ibkr_web_api import IbApi
-from main.models import Order, Instrument, Position, Account
+from ibkr_web_api import IBThinClient, RedisStorage
+from main.models import Account, Instrument, Order, Position
 from termcolor import cprint
-
-
-# username = "vysoch218"
-username = "gr5g2ry0"
-password = ""
-paper = True
-
-ib = IbApi(username, password, paper, debug=False)
 
 
 class Command(BaseCommand):
     finished = None
     ib = None
 
-    def submit_order(self):
-        ib.reset_session()
+    def add_arguments(self, parser):
+        parser.add_argument("broker", type=str)
+
+    def new_api_order(self, config):
+
+        username = config["username"]
+        secret = config["secret"]
+        redis_config = config["redis"]
+        account_uid = config["account"]
+
+        redis_client = redis.Redis(**redis_config)
+        rs = RedisStorage(username, redis_client, secret)
+
+        ib = IBThinClient(username, storage=rs)
+
+        #######################################################
+
         ib.load_session()
 
-        print("\n\nSUBMIT_ORDER")
+        print()
+        print("SUBMIT_ORDER")
 
         order_id = token_hex(4)
 
@@ -34,7 +45,7 @@ class Command(BaseCommand):
         order_data = {
             "conid": 265598,
             "cOID": order_id,
-            "secType": "265598:STK",
+            "secType": "265598:STK",  # Без этого тоже работает
             "orderType": "MKT",
             # "price": 180,
             "side": "BUY",
@@ -44,54 +55,33 @@ class Command(BaseCommand):
             "useAdaptive": False,
         }
         cprint(json.dumps(order_data, indent=2, default=str), "white")
-        data = {"orders": [order_data]}
-        url = "/portal.proxy/v1/portal/iserver/account/DU1492107/orders"
-        res = ib.request(url, "POST", data=data, is_json=True)
-        print("CREATE Order HTTP status code:", res.status_code)
-        print(res.text)
-        # res_json = res.json()
-        print("\n\n-----\n\n")
-
-        res_json = res.json()
-
-        # print(json.dumps(res_json, indent=2, default=str))
-
-        if "error" in res_json:
-            cprint(f"ERROR: {res_json['error']}", "red")
-            cprint(f"RAW ERROR: {res_json}", "white")
-            return
-
-        if messages := res_json[0].get("message"):
-            cprint(f"WARNING: {messages}", "yellow")
-
-        # TODO: проверить, не было ли ошибок
-
-        # Если просят подтвердить
-        if confirmation_id := res_json[0].get("id"):
-            # Подтверждение ордера
-            url = f"/portal.proxy/v1/portal/iserver/reply/{confirmation_id}"
-            res = ib.request(url, "POST", data={"confirmed": True}, is_json=True)
-            print("CONFIRM Order HTTP status code:", res.status_code)
-            print(res.text)
-            res_json = res.json()
-            print(json.dumps(res_json, indent=2, default=str))
-
-        if "error" in res_json:
-            cprint(f"ERROR: {res_json['error']}", "red")
-            cprint(f"RAW ERROR: {res_json}", "white")
-            return
+        
+        res = ib.accounts.place_order(account_uid, order_data, confirm=True)
+        
+        if res.json:
+            print(json.dumps(res.json, indent=2))
+        else:
+            print(res)
 
     def new_db_order(self):
         account = Account.objects.get(id=1)
         instrument = Instrument.objects.get(symbol="MES")
 
-        order = Order.market_order(account, None, instrument, Order.Side.buy, 1)
+        order = Order.market_order(account, None, instrument, Order.Side.sell, 1)
         order.save()
 
         # order = Order.limit_order(account, instrument, Order.Side.buy, 2, 4400, outside_rth=False)
         # order.save()
 
-    def handle(self, *args, **options):
+    def handle(self, *args, **kwargs):
+
+        conf_dir = join(dirname(settings.BASE_DIR), "bot_config")
+
+        broker_config_path = abspath(join(conf_dir, kwargs.get("broker")))
+
+        # Загрузка конфига
+        config = yaml.full_load(open(broker_config_path))
+
+        # self.new_api_order(config)
 
         self.new_db_order()
-

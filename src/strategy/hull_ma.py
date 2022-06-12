@@ -1,5 +1,5 @@
 import math
-from datetime import time
+from datetime import time, datetime
 from talipp.indicators import WMA
 from strategy import BaseStrategy, Signal, hint
 from data_types import Bar, Trade
@@ -20,6 +20,10 @@ class HullMa(BaseStrategy):
     nma = None
     nsqrt = None
 
+    padding = 0.0
+    tf = 15
+    tf_bar_date = datetime(2000, 1, 1)
+
     def on_start(self):
         n_half = round(self.length / 2)
         n_sqrt = round(math.sqrt(self.length))
@@ -37,18 +41,32 @@ class HullMa(BaseStrategy):
         # Класс, сохраняющий индикаторы
         bar = Bar2(**asdict(bar))
 
-        if bar.rth:
-            if self.data:
+        if self.data and bar.rth:
+            bar_cnt = False
+            # bar_cnt = len(self.data) % self.tf == 0
+
+            # is_tf = False
+            is_tf = bar.date.minute % self.tf == 0
+
+            timeout = False
+            if (bar.date - self.tf_bar_date).total_seconds() > self.tf * 60:
+                timeout = True
+
+            # докинуть данных
+            if is_tf or timeout or bar_cnt:
+                self.tf_bar_date = bar.date
+
                 self.n2ma.add_input_value(2 * bar.close)
                 self.nma.add_input_value(bar.close)
 
-            if self.n2ma and self.nma:
-                diff_1 = self.n2ma[-1] - self.nma[-1]
-                self.nsqrt.add_input_value(diff_1)
+                if self.n2ma and self.nma:
+                    diff = self.n2ma[-1] - self.nma[-1]
+                    self.nsqrt.add_input_value(diff)
 
-            if len(self.nsqrt) > 1:
-                bar.n1 = self.nsqrt[-1]
-                bar.n2 = self.nsqrt[-2]
+        # записать индикаторы в bar
+        if len(self.nsqrt) > 2:
+            bar.n1 = self.nsqrt[-1]
+            bar.n2 = self.nsqrt[-3]
 
         self.data.append(bar)
 
@@ -62,15 +80,17 @@ class HullMa(BaseStrategy):
         bar = self.data[-1] if self.data else None
 
         if not bar or not bar.n1:
+            return Signal.SHORT
+
+        if not (trade.rth and bar.rth):
             return Signal.PASS
 
-        if not bar.rth:
-            return Signal.PASS
+        price_delta = 0
 
-        if bar.n1 > bar.n2 + 0.0005:
+        if bar.n1 > bar.n2 + self.padding and trade.price > bar.n1 + price_delta:
             return Signal.LONG
 
-        if bar.n1 < bar.n2 - 0.0005:
+        if bar.n1 < bar.n2 - self.padding and trade.price < bar.n2 - price_delta:
             return Signal.SHORT
 
         return Signal.PASS
