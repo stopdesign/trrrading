@@ -14,6 +14,9 @@ class Bar:
     volume: int = None
     rth: bool = None
 
+    def __repr__(self):
+        return f"Bar({self.symbol}, date={self.date}, rth={self.rth})"
+
     @classmethod
     def from_redis(cls, data: dict):
         return cls(

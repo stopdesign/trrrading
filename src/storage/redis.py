@@ -278,7 +278,7 @@ class RedisTradingData:
             # Если пришел новый бар, биржа работает, объем не нулевой,
             # но сделок с прошлого бара не приходило, то эмулировать сделки
             if trades_since_last_bar[symbol] < 1 and bar.volume > 0:
-                log.warning(colored(f"No trades for bar {bar}", "yellow"))
+                log.warning(colored(f"No trades for {bar}", "yellow"))
                 for trade in self.bar_to_trades(bar):
                     self.on_event("trade", trade.date, trade.symbol, trade)
 
