@@ -1,20 +1,21 @@
 import json
-import yaml
-import sys
 import logging
-import orjson
-import redis
-import pandas_market_calendars as mcal
-from time import sleep
-from random import shuffle
-from functools import cache
+import sys
 from collections import Counter
-from termcolor import cprint
 from datetime import datetime, timedelta, timezone
-from os.path import abspath, join, dirname
-from ibkr_web_api import IbApi
+from functools import cache
+from os.path import abspath, dirname, join
+from random import shuffle
+from time import sleep
 
-log = logging.getLogger("loader")
+import orjson
+import pandas_market_calendars as mcal
+import redis
+import yaml
+from ibkr_web_api import IBThinClient, RedisStorage
+from termcolor import cprint
+
+log = logging.getLogger("get_bars")
 
 
 logging.basicConfig(
@@ -23,8 +24,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
-PORTAL_URL = "https://ndcdyn.interactivebrokers.com/portal.proxy/v1/portal"
-HISTORY_URL = PORTAL_URL + "/iserver/marketdata/history"
+DT_FMT = "%Y-%m-%d %H:%M:%S"
+
 
 EXCHANGE_SCHEDULE = {
     "NASDAQ": "NASDAQ",
@@ -75,9 +76,7 @@ def update_dash(instruments, csv_path, redis_client):
         for n in range(300):
             # Запросить данные для этого интервала
             data = redis_client.zrangebyscore(
-                key,
-                dt_to_ts(cur_hour_interval),
-                dt_to_ts(cur_hour_interval) + 3599
+                key, dt_to_ts(cur_hour_interval), dt_to_ts(cur_hour_interval) + 3599
             )
             stats = get_stats_for_hour(data)
             dash_csv_data += (
@@ -120,16 +119,15 @@ def replace_data(instrument, line, ts, redis_client):
     Запись в базу с заменой старых данных.
     """
     key = get_key(instrument)
-    line_str = json.dumps(line, indent=None, separators=(',', ':'), default=str)
-    dt = ts_to_dt(ts*1000)
-    cprint(f"{key}, {ts}, {dt}, {line_str}", "white")
+    line_str = json.dumps(line, indent=None, separators=(",", ":"), default=str)
+    cprint(f"{key}, {ts}, {line_str}", "white")
     redis_client.zremrangebyscore(key, ts, ts)
     redis_client.zadd(key, {line_str: ts})
 
     symbol = "{symbol}.{exchange}".format(**instrument)
     line["conid"] = instrument["conid"]
     line["symbol"] = symbol
-    line_str = json.dumps(line, indent=None, separators=(',', ':'), default=str)
+    line_str = json.dumps(line, indent=None, separators=(",", ":"), default=str)
     redis_client.publish(f"{symbol}:BARS", line_str)
 
 
@@ -169,7 +167,7 @@ def check_open_time(exchange, cur_interval):
 
 def format_valid_interval(interval):
     return {
-        "dt": datetime.strftime(interval["dt"], "%Y-%m-%d %H:%M:%S"),
+        "dt": datetime.strftime(interval["dt"], DT_FMT),
         "o": interval["o"],
         "h": interval["h"],
         "l": interval["l"],
@@ -180,12 +178,11 @@ def format_valid_interval(interval):
 
 
 def load_intervals_from_ibkr(ib, instrument, period, data_grid):
+
     # Запрос в IBKR
-    q = f"?conid={instrument['conid']}&period={period}min&bar=1min&outsideRth=true"
     try:
-        ib.reset_session()
-        ib.load_redis_session()
-        res_json = ib.iserver_request(HISTORY_URL + q, "GET")
+        conid = instrument["conid"]
+        response = ib.market_data.history(conid, f"{period}min", rth=False)
     except Exception as e:
         cprint(f"ERROR requests {e}", "red")
         raise e
@@ -200,8 +197,7 @@ def load_intervals_from_ibkr(ib, instrument, period, data_grid):
     # во все ячейки сетки, когда биржа уже была открыта.
 
     try:
-        data = res_json.get("data")
-        # print(data)
+        data = response.json.get("data")
 
         mnt = timedelta(minutes=1)
         prev_dt = None
@@ -213,7 +209,7 @@ def load_intervals_from_ibkr(ib, instrument, period, data_grid):
 
             # Если перед этим интервалом был гэп — навставлять EMPTY
             if dt and prev_dt and dt - prev_dt > mnt:
-                cprint("large gap", "blue")
+                cprint("large gap", "yellow")
                 for gap_dt in dt_range(prev_dt + mnt, dt - mnt):
                     if check_open_time(instrument["exchange"], gap_dt):
                         # cprint(f"{gap_dt} open, but no data", "yellow")
@@ -221,7 +217,7 @@ def load_intervals_from_ibkr(ib, instrument, period, data_grid):
                         if gap_ts in data_grid:
                             interval["dt"] = gap_dt
                             data_grid[gap_ts]["new"] = {
-                                "dt": datetime.strftime(gap_dt, "%Y-%m-%d %H:%M:%S"),
+                                "dt": datetime.strftime(gap_dt, DT_FMT),
                                 "empty": 1,
                             }
                             data_grid[gap_ts]["t"] = gap_ts * 1000
@@ -236,7 +232,7 @@ def load_intervals_from_ibkr(ib, instrument, period, data_grid):
 
         # print('\n\n\n')
     except Exception as e:
-        cprint(f"ERROR: {res_json} {e}", "yellow")
+        cprint(f"ERROR: {response} {e}", "yellow")
         raise e
 
     return data_grid
@@ -256,12 +252,12 @@ def fill_gaps(ib, instrument, data_grid):
     last_open_dt = datetime.utcnow() - timedelta(days=10)  # далеко в прошлом
     for score, line in data_grid.items():
         if line["is_it_open"]:
-            last_open_dt = datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S")
+            last_open_dt = datetime.strptime(line["dt"], DT_FMT)
 
     # Первый ключ плохих данных, которые нужно перезагружать
     first_bad_dt = None
     for score, line in data_grid.items():
-        dt = datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S")
+        dt = datetime.strptime(line["dt"], DT_FMT)
         delta = (last_open_dt - dt).total_seconds() // 60
         if delta > 1000:
             # Сшилком далеко в прошлое, не рассматриваем
@@ -271,19 +267,20 @@ def fill_gaps(ib, instrument, data_grid):
             break
 
         if not line.get("old") or ("error" in line.get("old")):
-            first_bad_dt = datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S")
+            first_bad_dt = datetime.strptime(line["dt"], DT_FMT)
             break
 
-    print()
-    print("NOW UTC  ", datetime.utcnow().replace(microsecond=0))
-    print("First bad", first_bad_dt)
-    print("Last open", last_open_dt, dt_to_ts(last_open_dt))
+    # print()
+    # print("NOW UTC  ", datetime.utcnow().replace(microsecond=0))
+    # print("First bad", first_bad_dt)
+    # print("Last open", last_open_dt, dt_to_ts(last_open_dt))
 
     if first_bad_dt:
         # Хотим загрузить какие-то недогруженные данные.
         # Запас +5 нужен, чтобы поймать gap.
         period = int((last_open_dt - first_bad_dt).total_seconds() // 60) + 5
-        cprint(f"GET IBKR DATA, period: {period}", "blue")
+        # symbol = "{symbol}.{exchange}".format(**instrument)
+        # cprint(f"Get {symbol}, period: {period}", "blue")
         try:
             data_grid = load_intervals_from_ibkr(ib, instrument, period, data_grid)
         except Exception as e:
@@ -304,6 +301,10 @@ def fill_gaps(ib, instrument, data_grid):
 
 def update_instrument(ib, interval_dt, symbol, redis_client):
 
+    key = get_key(symbol)
+
+    cprint(f"{key}, {interval_dt}", "blue")
+
     # IBKR позволяет грузить данные только на 1000 интервалов назад,
     # но в них не входят интервалы закрытой биржи, поэтому делаю запас.
     cur_minute = datetime.utcnow().replace(second=0, microsecond=0)
@@ -314,13 +315,12 @@ def update_instrument(ib, interval_dt, symbol, redis_client):
     for cur_interval in dt_range(start, interval_dt):
         is_it_open = check_open_time(symbol["exchange"], cur_interval)
         data_grid[dt_to_ts(cur_interval)] = {
-            "dt": datetime.strftime(cur_interval, "%Y-%m-%d %H:%M:%S"),
+            "dt": datetime.strftime(cur_interval, DT_FMT),
             "is_it_open": is_it_open,
         }
 
     # Интервалы в базе данных от start до конца
-    key = get_key(symbol)
-    data_in_db = redis_client.zrangebyscore(key, dt_to_ts(start), 10 ** 10)
+    data_in_db = redis_client.zrangebyscore(key, dt_to_ts(start), 10**10)
 
     # Положить интервалы из базы в сетку
     for line in data_in_db:
@@ -330,7 +330,7 @@ def update_instrument(ib, interval_dt, symbol, redis_client):
         except orjson.JSONDecodeError:
             log.error(f"JSONDecodeError: {line}")
             return False
-        dt = datetime.strptime(line_data["dt"], "%Y-%m-%d %H:%M:%S")
+        dt = datetime.strptime(line_data["dt"], DT_FMT)
         ts = dt_to_ts(dt)
         if ts in data_grid:
             data_grid[ts]["old"] = line_data
@@ -350,11 +350,11 @@ def update_instrument(ib, interval_dt, symbol, redis_client):
         if "old" in line:
             # Но теперь есть другие данные
             old_line = line["old"]
-            old_line.pop('late', None)
-            old_line.pop('fix', None)
-            old_line.pop('avg', None)
-            old_line.pop('cnt', None)
-            old_line.pop('rth', None)
+            old_line.pop("late", None)
+            old_line.pop("fix", None)
+            old_line.pop("avg", None)
+            old_line.pop("cnt", None)
+            old_line.pop("rth", None)
             if "new" in line and line["new"] != old_line:
                 new_line = line["new"]
                 new_line["fix"] = 1
@@ -364,7 +364,7 @@ def update_instrument(ib, interval_dt, symbol, redis_client):
         else:
             if new_line := line.get("new"):
                 # Если данные пришли не real-time, то ставлю флаг LATE
-                if datetime.strptime(line["dt"], "%Y-%m-%d %H:%M:%S") < interval_dt:
+                if datetime.strptime(line["dt"], DT_FMT) < interval_dt:
                     new_line["late"] = 1
                 replace_data(symbol, new_line, score, redis_client)
             else:
@@ -410,7 +410,7 @@ def loader(ib, dt_start, instruments, redis_client):
             if dt - dt_start > timedelta(seconds=timeout):
                 cprint(f"ERROR интервал долго не грузится", "red")
                 line_data = {
-                    "dt": datetime.strftime(interval_dt, "%Y-%m-%d %H:%M:%S"),
+                    "dt": datetime.strftime(interval_dt, DT_FMT),
                     "error": 2,
                 }
                 replace_data(symbol, line_data, dt_to_ts(interval_dt), redis_client)
@@ -421,7 +421,7 @@ def loader(ib, dt_start, instruments, redis_client):
             if dt.minute != dt_start.minute:
                 cprint("ERROR пора грузить новый интервал", "red")
                 line_data = {
-                    "dt": datetime.strftime(interval_dt, "%Y-%m-%d %H:%M:%S"),
+                    "dt": datetime.strftime(interval_dt, DT_FMT),
                     "error": 3,
                 }
                 replace_data(symbol, line_data, dt_to_ts(interval_dt), redis_client)
@@ -433,61 +433,54 @@ def loader(ib, dt_start, instruments, redis_client):
             sleep(sleep_time)
 
 
-def main(ib, instruments, redis_config, dashboard_csv_path):
+def main(ib, instruments, redis_client, dashboard_csv_path):
     base_dir = abspath(dirname(__file__))
     csv_path = abspath(join(base_dir, dashboard_csv_path))
 
     prev_dt = datetime(2000, 1, 1)
-    while True:
-        dt = datetime.utcnow()
-        if dt.minute != prev_dt.minute and dt.second > 10:
-            # Начать загрузку нового минутного интервала
-            redis_client = redis.Redis(
-                host=redis_config["host"],
-                port=redis_config["port"],
-                db=redis_config["db"],
-                password=redis_config["password"],
-            )
-            prev_dt = dt
-            loader(ib, dt, instruments, redis_client)
-            update_dash(instruments, csv_path, redis_client)
-            redis_client.close()
-            print()
-            print("-------- конец итерации ---------", datetime.utcnow())
-            print()
-        else:
+
+    while dt := datetime.utcnow():
+
+        if not (dt.minute != prev_dt.minute and dt.second > 10):
             sleep(1)
+            continue
+
+        prev_dt = dt
+
+        try:
+            # Обновление данных сессии
+            ib.load_session()
+        except Exception as e:
+            cprint(f"ERROR load_session {e}", "yellow")
+            log.exception(e)
+
+        # Начать загрузку нового минутного интервала
+        loader(ib, dt, instruments, redis_client)
+
+        update_dash(instruments, csv_path, redis_client)
+
+        print("\n-------- конец итерации ---------\n")
 
 
 if __name__ == "__main__":
 
     # Загрузка конфига
-    config_path = abspath("config_local.yaml")
-    config = yaml.full_load(open(config_path))
+    config = yaml.full_load(open(abspath("config_local.yaml")))
 
     username = config["username"]
-    password = config["password"]
-    paper = config["paper"]
-    secret = config["secret"]
     redis_config = config["redis"]
-
+    secret = config["secret"]
     instruments = config["instruments"]
 
     dashboard_csv_path = config["dashboard_csv_path"]
 
-    ib = IbApi(
-        username,
-        password,
-        paper,
-        secret=secret,
-        debug=False,
-        redis_host=redis_config["host"],
-        redis_port=redis_config["port"],
-        redis_db=redis_config["db"],
-        redis_password=redis_config["password"],
-    )
+    redis_client = redis.Redis(**redis_config)
+
+    storage = RedisStorage(username, redis_client, secret)
+
+    ib = IBThinClient(username, storage)
 
     try:
-        main(ib, instruments, redis_config, dashboard_csv_path)
+        main(ib, instruments, redis_client, dashboard_csv_path)
     except KeyboardInterrupt:
         print("DONE")

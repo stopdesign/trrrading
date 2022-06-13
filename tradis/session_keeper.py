@@ -1,87 +1,63 @@
-import yaml
+import logging
+from datetime import datetime
 from os.path import abspath
-from time import sleep
-from termcolor import cprint
-from ibkr_web_api import IbApi
+
+import coloredlogs
+import redis
+import yaml
+from ibkr_web_api import IBClient
+from ibkr_web_api.alert import TelegramAlertHandler
+from ibkr_web_api.storage import RedisStorage
+from ibkr_web_api.utils.ocra import ocra_handler
+
+# # Логгер для этого файла
+log = logging.getLogger("session_keeper")
+log.setLevel(logging.INFO)
+
+coloredlogs.install(
+    "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
+)
 
 
-def main(ib):
-
-    while True:
-        # Проверить, есть жива ли SSO-сессия
-        sso = ib.sso_validate()
-
-        # Если сессия не работает — перелогин.
-        if sso.get("_ERROR") or not sso.get("USER_ID"):
-            cprint(" FULL RELOGIN ", "red", attrs=['reverse'])
-            ib.portal_logout()
-            ib.sso_logout()
-            if not ib.obtain_session():
-                print("Wait before reconnect")
-                sleep(10)
-            continue
-
-        # Тут должна быть живая сессия,
-        # проверить аунтетнификацию в iserver.
-        iserver = ib.iserver_auth_status()
-
-        # Не проверяется — перелогин.
-        if iserver.get("_ERROR") is not False:
-            print("bad iserver_status", iserver)
-            sleep(10)
-            continue
-
-        # Сессия есть, но iserver не authenticated.
-        # Попробовать оживить.
-        if not iserver.get("authenticated"):
-            print("iserver is not authenticated")
-            print("SOFT REAUTH")
-            iserver = ib.init_iserver_session()
-
-        # Если оживить не получилось — перелогин.
-        if not iserver.get("authenticated"):
-            ib.portal_logout()
-            ib.sso_logout()
-            continue
-
-        cprint(" GOOD SESSION ", "green", attrs=['reverse'])
-
-        sleep(1)
-
-        try:
-            ib.keep_session_alive()
-        except Exception as e:
-            cprint(f"Tickle exception {e}", "red")
-            sleep(3)
-
-
-if __name__ == "__main__":
+def main():
 
     # Загрузка конфига
-    config_path = abspath("config_local.yaml")
-    config = yaml.full_load(open(config_path))
+    config = yaml.full_load(open(abspath("config_local.yaml")))
 
     username = config["username"]
     password = config["password"]
     paper = config["paper"]
-    secret = config["secret"]
-    redis_config = config["redis"]
 
-    ib = IbApi(
-        username,
-        password,
-        paper,
-        secret=secret,
-        debug=False,
-        redis_host=redis_config["host"],
-        redis_port=redis_config["port"],
-        redis_db=redis_config["db"],
-        redis_password=redis_config["password"],
-    )
+    if redis_config := config.get("redis"):
+        redis_client = redis.Redis(**redis_config)
+        rs = RedisStorage(username, redis_client, config["secret"])
+    else:
+        rs = None
 
-    ib.load_session(f"session_{username}.json")
+    if telegram_config := config.get("telegram"):
+        alert = TelegramAlertHandler(**telegram_config)
+    else:
+        alert = None
 
+    ib = IBClient(username, password, paper, storage=rs, alert=alert)
+    ib._auth.ibkey_handler = ocra_handler
+
+    # TODO: add "force new session" flag?
+    ib.load_session()
+
+    # TODO: разобраться с заменой base_url
+    # ib._session.reset_state()
+    # ib._session.base_url = "https://cdcdyn.interactivebrokers.com"
+
+    ib.check_bulletins()
+
+    ib.keep_connected()
+
+
+if __name__ == "__main__":
+    dt = datetime.now()
     try:
-        main(ib)
+        main()
     except KeyboardInterrupt:
-        print("DONE")
+        pass
+    print(f"\nDone in {str(datetime.now() - dt)[:-7]}")
