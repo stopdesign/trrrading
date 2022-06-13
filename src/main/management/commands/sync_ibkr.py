@@ -1,6 +1,6 @@
 import json
+import logging
 import re
-import threading
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -14,6 +14,9 @@ from django.core.management.base import BaseCommand
 from ibkr_web_api import IBThinClient, RedisStorage
 from main.models import Account, Instrument, Order, Position
 from termcolor import cprint
+
+log = logging.getLogger("sync_ibkr")
+
 
 ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -43,7 +46,6 @@ def send_telegram(text: str):
 
 
 class Command(BaseCommand):
-    finished = None
 
     def add_arguments(self, parser):
         parser.add_argument("broker", type=str)
@@ -52,8 +54,6 @@ class Command(BaseCommand):
         """
         Найти новые ордеры, отправить их в IBKR.
         """
-        if threading.active_count() > 15:
-            return
         new_orders = Order.objects.filter(status="New")
         for order in new_orders:
             order.status = "InProgress"
@@ -68,7 +68,7 @@ class Command(BaseCommand):
         if res.status_code == 200:
             try:
                 self.parse_account(account, res.json)
-            except ValueError as e:
+            except (ValueError, TypeError, KeyError) as e:
                 print(res.text)
                 print("parsing error", e)
         else:
@@ -92,49 +92,56 @@ class Command(BaseCommand):
 
         account.save()
 
-    def check_ibkr(self, ib, account):
+    def check_orders(self, ib, account):
         """
-        Загрузить список ордеров, позиций и баланс аккаунта.
+        Загрузить список ордеров аккаунта.
         """
         res = ib.accounts.orders()
-        print("Orders", res.status_code)
-        if res.status_code == 200:
-            try:
-                for order_data in res.json.get("orders"):
-                    self.parse_order(account, order_data)
-            except ValueError as e:
-                print(res.text)
-                print("parsing error", e)
 
-        # ОТКРЫТЫЕ ПОЗИЦИИ АККАУНТА
-        res = ib.portfolio.positions_simple(account.uid)
-        print("Positions", res.status_code)
+        if res.status_code != 200:
+            print("Orders error", res)
+            return
+
+        try:
+            for order_data in res.json.get("orders"):
+                self.parse_order(account, order_data)
+        except ValueError as e:
+            print(res.text)
+            print("parsing error", e)
+
+    def check_positions(self, ib, account):
+        """
+        Загрузить список открытых позиций аккаунта.
+        """
+        res = ib.portfolio.positions_2(account.uid)
+        
+        if res.status_code != 200:
+            print("Positions error", res)
+            return
 
         updated_positions = []
-        if res.status_code == 200:
-            try:
-                for position_data in res.json:
-                    position = self.parse_position(account, position_data)
-                    if position:
-                        updated_positions.append(position.id)
-            except ValueError as e:
-                print(res.text)
-                print("parsing error", e)
+        try:
+            for position_data in res.json:
+                position = self.parse_position(account, position_data)
+                if position:
+                    updated_positions.append(position.id)
+        except ValueError as e:
+            print(res.text)
+            print("parsing error", e)
 
-            # Если данные пришли, то удалить все позиции, которых нет в данных.
-            if updated_positions:
-                not_updated_positions = Position.objects.filter(
-                    account=account, amount__gt=0
-                ).exclude(id__in=updated_positions)
-                for position in not_updated_positions:
-                    position.amount = 0
-                    position.avg_price = None
-                    position.unrealized_pnl = None
-                    position.save()
+        # Если данные пришли, то удалить все позиции, которых нет в данных.
+        if updated_positions:
+            positions = Position.objects.filter(account=account, amount__gt=0)
+            not_updated_positions = positions.exclude(id__in=updated_positions)
+            for position in not_updated_positions:
+                position.amount = 0
+                position.avg_price = None
+                position.unrealized_pnl = None
+                position.save()
 
     def parse_position(self, account, position_data):
         conid = position_data["conid"]
-        desc = position_data["contractDesc"]
+        desc = position_data["description"]
         try:
             instrument = Instrument.objects.get(conid=conid)
         except Instrument.DoesNotExist:
@@ -236,10 +243,11 @@ class Command(BaseCommand):
             order.status = "Sent"
             order.save()
 
-            # Досрочная проверка открытых позиций
-            self.check_ibkr(ib, account)
-
             cprint(f"Order OK: {json.dumps(res.json, indent=2)}", "blue")
+
+            # Досрочная проверка ордеров и позиций
+            self.check_orders(ib, account)
+            self.check_positions(ib, account)
 
         else:
             order.status = "Error"
@@ -272,18 +280,21 @@ class Command(BaseCommand):
         send_telegram(f"Start sync_ibkr for {username} {account.uid}")
 
         prev_dt = datetime(2000, 1, 1)
-        while not self.finished:
+        while dt := datetime.utcnow().replace(microsecond=0):
             try:
-                dt = datetime.utcnow().replace(microsecond=0)
-                # Каждую секунду что-то проверять
-                if dt.second != prev_dt.second:
-                    self.check_new(ib, account)
-                    if dt.second % 15 == 0:
-                        ib.load_session()
-                        self.check_ibkr(ib, account)
-                        self.check_account(ib, account)
-                time.sleep(0.1)
+                if dt.second == prev_dt.second:
+                    time.sleep(0.2)
+                    continue
                 prev_dt = dt
+                self.check_new(ib, account)
+                if dt.second % 15 == 0:
+                    ib.load_session()
+                    self.check_orders(ib, account)
+                    self.check_positions(ib, account)
+                    self.check_account(ib, account)
             except KeyboardInterrupt:
                 break
+            except Exception as e:
+                log.exception(e)
+
         print("\nDone")

@@ -133,8 +133,10 @@ def orders(request):
     for order in all_orders:
         if order.avg_fill_price:
             price = float(order.avg_fill_price)
-        else:
+        elif order.signal_price:
             price = float(order.signal_price)
+        else:
+            price = "-"
         created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S") if order.created_at else None
         res.append({
             "id": order.id,
