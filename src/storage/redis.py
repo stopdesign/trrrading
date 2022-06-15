@@ -246,7 +246,12 @@ class RedisTradingData:
 
         # Биржа совсем закрыта
         if "closed" in data:
-            log.info(f"{symbol} closed market bar")
+            log.info(f"{symbol}, {data['dt']} closed market bar")
+            return
+
+        # Биржа открыта, но пришел пустой бар        
+        if "empty" in data:
+            log.info(f"{symbol}, {data['dt']} empty bar")
             return
 
         exchange_symbol = symbol.split(".")[1]
