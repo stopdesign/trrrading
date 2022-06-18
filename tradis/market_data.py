@@ -1,0 +1,332 @@
+import json
+import logging
+import sys
+from datetime import datetime, timedelta, timezone
+from os.path import abspath
+from time import sleep
+
+import pandas as pd
+import pandas_market_calendars as mcal
+import redis
+import yaml
+from ibkr_web_api import IBThinClient, RedisStorage
+from termcolor import colored, cprint
+
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(asctime).19s - %(levelname).1s - %(name)s - %(message)s",
+)
+
+log = logging.getLogger("get_bars")
+
+
+pd.options.display.width = 300
+pd.options.display.max_rows = 1500
+pd.options.display.max_columns = None
+pd.options.display.max_colwidth = None
+pd.options.display.expand_frame_repr = False
+
+
+DT_FMT = "%Y-%m-%d %H:%M:%S"
+
+IBKR_TO_MCAL = {
+    "NASDAQ": "NASDAQ",
+    "NYMEX": "NYSE",
+    "NYSE": "NYSE",
+    "ARCA": "NYSE",
+    "GLOBEX": "CME_Rate",
+}
+
+
+class IBError(Exception):
+    pass
+
+
+def get_key(instrument):
+    # Всё правильно, в базу бары складываются с ключом TRADES
+    return "{symbol}.{exchange}:TRADES".format(**instrument)
+
+
+class DataMiner:
+    ib: IBThinClient
+    rc: redis.Redis
+    data_delay: int = 0
+
+    def __init__(self, ib: IBThinClient, rc: redis.Redis) -> None:
+        self.rc = rc
+        self.ib = ib
+        self.ib.load_session()
+
+    def reload_session(self):
+        self.ib.load_session()
+
+    def update_instrument(self, instrument):
+        # Сделать минутную сетку
+        grid = self.get_grid(instrument)
+
+        # Положить в неё данные из базы.
+        grid = self.load_redis_data(grid, instrument)
+
+        # Если есть пробелы — запросить данные из IBKR, начиная с первого пробела.
+        grid = self.load_ibkr_data(grid, instrument)
+
+        # Сравнить данные из базы и из IBKR, обновить при различиях.
+        self.update_db(grid, instrument)
+
+    def get_grid(self, instrument):
+        """
+        Минутная сетка с разметкой основной и расширенной биржевой сессии.
+        Возвращает сетку, где есть N рабочих минут до now включительно.
+        Нерабочие минуты включаются в сетку, но их количество не учитывается.
+        """
+        working_minutes_cnt = 1000
+
+        exchange = instrument["exchange"]
+        calendar = mcal.get_calendar(IBKR_TO_MCAL[exchange])
+
+        # Запас, чтобы покрыть 1000 минут с учетом возможных выходных.
+        today = datetime.today().date()
+        dt_1 = today - timedelta(days=10)
+        dt_2 = today + timedelta(days=10)
+
+        # Минутная сетка шкалы времени
+        df = pd.DataFrame(pd.date_range(dt_1, dt_2, freq="1T", tz="UTC"))
+
+        # Расписание нужной биржи (все доступные интервалы)
+        schedule = calendar.schedule(dt_1, dt_2, market_times="all")
+
+        # Минутные интервалы ETH
+        times = calendar.regular_market_times
+        if "pre" in times and "post" in times:
+            schedule[["market_open", "market_close"]] = schedule[["pre", "post"]]
+        open = mcal.date_range(schedule, "1T", closed="left", force_close=1)
+
+        df["open"] = df[0].isin(open)
+
+        df.set_index(0, inplace=True)
+
+        # Обрезать всё после now
+        df = df[: datetime.utcnow().replace(tzinfo=timezone.utc)]
+
+        # Нужное количество интервалов (с конца), где биржа открыта
+        start_dt = df[df["open"]].iloc[-working_minutes_cnt].name
+        df = df.loc[start_dt:]
+
+        # Unix timestamp, seconds
+        df["ts"] = df.index.view("int64") // 10**9
+
+        return df
+
+    def _validate_db_bar(self, bar):
+        """
+        Хорошим считается бар, в котором есть dt и цена или флаг closed.
+        """
+        bar = str(bar)
+        return '{"dt":' in bar and ('"o":' in bar or '"closed":' in bar)
+
+    def load_redis_data(self, grid: pd.DataFrame, instrument: dict):
+        """
+        Данные загружаются из Redis и складываются в поля сетки.
+        """
+        start_ts = int(grid.ts[0])
+
+        key = get_key(instrument)
+        db_data = self.rc.zrangebyscore(key, start_ts, 10**10, withscores=1)
+        db_data = [[int(d[1]), d[0].decode()] for d in db_data]
+
+        grid["db"] = grid.ts.map(dict(db_data))
+
+        # Статус интервала из базы
+        grid["final"] = grid.apply(self._validate_db_bar, axis=1)
+
+        return grid
+
+    def load_ibkr_data(self, grid: pd.DataFrame, instrument: dict):
+
+        # TODO: найти первый интервал для загрузки и посчитать period
+        period = "1000min"
+
+        conid = instrument["conid"]
+        res = self.ib.market_data.history(conid, period=period, rth=False)
+
+        # Валидация ответа
+        if res.error or res.exception:
+            raise IBError(res.error or "exception")
+        if not res.json:
+            raise IBError("no_json")
+        if not res.json.get("data"):
+            raise IBError("no_data")
+
+        self.data_delay = res.json.get("mktDataDelay") or 0
+
+        if self.data_delay > 0:
+            log.debug(f"Data delay: {self.data_delay} seconds")
+            self.data_delay += 100
+
+        ib_data = [[bar["t"] // 1000, bar] for bar in res.json["data"]]
+
+        # Засунуть данные IB в сетку, матчинг по полю ts
+        grid["ib"] = grid.ts.map(dict(ib_data))
+
+        return grid
+
+    def _empty_bar_fsm(self, empty_bar_state, row):
+        """
+        Empty bar validation FSM.
+        """
+        if row.ib:
+            empty_bar_state = "has_data"
+        if empty_bar_state and not row.ib:
+            if not row.open:
+                empty_bar_state = "closed"
+            elif empty_bar_state == "closed":
+                empty_bar_state = "empty_ok"
+        return empty_bar_state
+
+    def update_db(self, grid: pd.DataFrame, instrument: dict):
+        """
+        closed — биржа закрыта
+        empty  — биржа открыта, но сделок сегодня еще не было
+        fix    — интервал был перезаписан
+        error  — ошибка
+        """
+        # Замена всякой хуйни на None
+        grid = grid.where(pd.notnull(grid), None)
+
+        # FSM for possibility of empty bar state
+        empty_bar_state = None
+
+        for row in grid.itertuples():
+
+            # Empty bar FSM needs full grid (with final bars)
+            empty_bar_state = self._empty_bar_fsm(empty_bar_state, row)
+
+            if row.final:
+                continue
+
+            if not row.open and row.ib:
+                log.error(f"IBKR bar data on closed market {row.ib}")
+
+            late = row.ts < (grid.ts[-1] - self.data_delay)
+
+            if not row.open:
+                # Биржа закрыта
+                bar = {"closed": 1}
+            elif row.ib:
+                # Есть нормальный интервал
+                b = row.ib
+                bar = dict(o=b["o"], h=b["h"], l=b["l"], c=b["c"], vol=b["v"])
+                if late:
+                    bar["late"] = 1
+            elif empty_bar_state == "empty_ok":
+                # Корректные условия для EMPTY
+                bar = {"empty": 1}
+            else:
+                # Данные должны быть, но их нет
+                if late and empty_bar_state:
+                    if empty_bar_state:
+                        bar = {"error": 1}
+                    else:
+                        # похоже, интервал слишком старый и не влез в лимит
+                        log.debug(f"Skip old empty bar: {row}")
+                        continue
+                else:
+                    bar = {"delay": 1}
+
+            if row.db:
+                if "error" in bar:
+                    log.debug(f"Don't rewrite with error. Old: {row.db}")
+                    continue
+                elif "delay" in row.db:
+                    log.debug(f"Don't mark delay as a fix. Old: {row.db}")
+                else:
+                    bar["fix"] = 1
+
+            self.save_bar(instrument, bar, row)
+
+    def save_bar(self, instrument, bar, row):
+        """
+        Запись в базу с заменой старых данных.
+        """
+        # Добавить дату
+        dt_str = row.Index.strftime(DT_FMT)
+        bar = dict(dt=dt_str, **bar)
+
+        key = get_key(instrument)
+        bar_str = json.dumps(bar, separators=(",", ":"))
+
+        # Не сохранять такую же строку повторно (не учитывая флаг fix)
+        # FIXME: выглядит тупо
+        if str(row.db).replace(',"fix":1', "") == bar_str.replace(',"fix":1', ""):
+            return
+
+        log.info(colored(f"{key} {bar_str}, old: {row.db}", "white"))
+
+        self.rc.zremrangebyscore(key, row.ts, row.ts)
+        self.rc.zadd(key, {bar_str: row.ts})
+
+        symbol = "{symbol}.{exchange}".format(**instrument)
+        bar["conid"] = instrument["conid"]
+        bar["symbol"] = symbol
+        bar_str = json.dumps(bar, separators=(",", ":"))
+        self.rc.publish(f"{symbol}:BARS", bar_str)
+
+
+def main(ib: IBThinClient, redis_client, instruments):
+
+    prev_dt = datetime(2000, 1, 1)
+    while dt := datetime.utcnow():
+
+        if not (dt.minute != prev_dt.minute and dt.second > 10):
+            sleep(1)
+            continue
+
+        prev_dt = dt
+        try:
+            dm = DataMiner(ib, redis_client)
+            for instrument in instruments:
+                log.info(colored(f"Update {instrument}", "blue"))
+                for _ in range(3):  # несколько попыток загрузки
+                    try:
+                        dm.update_instrument(instrument)
+                        log.debug("Success")
+                        break
+                    except IBError as e:
+                        log.error(f"IB data error: {e}")
+                        dm.reload_session()
+                    except Exception as e:
+                        log.error(f"Update exception: {e}")
+                        log.exception(e)
+                    sleep(1)
+
+        except Exception as e:
+            log.error(cprint(f"ERROR in DataMiner: {e}", "red"))
+            log.exception(e)
+
+        log.info("Done\n")
+
+
+if __name__ == "__main__":
+    dt = datetime.now()
+
+    # Загрузка конфига
+    config = yaml.full_load(open(abspath("config_local.yaml")))
+
+    instruments = config["instruments"]
+
+    username = config["username"]
+    redis_config = config["redis"]
+    secret = config["secret"]
+
+    redis_client = redis.Redis(**redis_config)
+    rs = RedisStorage(username, redis_client, secret)
+
+    ib = IBThinClient(username, rs)
+
+    try:
+        main(ib, redis_client, instruments)
+    except KeyboardInterrupt:
+        pass
+
+    print(f"\nDone in {str(datetime.now() - dt)[:-7]}")
