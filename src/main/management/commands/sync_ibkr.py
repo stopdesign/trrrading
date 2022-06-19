@@ -65,16 +65,14 @@ class Command(BaseCommand):
         Загрузить список ордеров, позиций и баланс аккаунта.
         """
         res = ib.portfolio.summary(account.uid)
-        if res.status_code == 200:
-            try:
-                self.parse_account(account, res.json)
-            except (ValueError, TypeError, KeyError) as e:
-                print(res.text)
-                print("parsing error", e)
-        else:
-            print(res.status_code)
+        if res.status_code != 200:
+            print("Portfolio summary error", res)
+            return
+        try:
+            self.parse_account(account, res.json)
+        except (ValueError, TypeError, KeyError) as e:
             print(res.text)
-            cprint(f"check_accounts ERROR", "red")
+            print("parsing error", e)
 
     def parse_account(self, account, res_data):
         net_value = res_data.get("netliquidation")["amount"]

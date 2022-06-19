@@ -4,6 +4,9 @@ from main import views
 app_name = "main"
 
 urlpatterns = [
+    path("md/", views.data_inspector, name="data_inspector"),
+    path("md/dash.csv", views.market_data_status_api, name="market_data_status_api"),
+
     path("dash/", views.dashboard, name="dashboard"),
     path("dash/positions", views.positions, name="positions"),
     path("dash/account", views.account, name="account"),
