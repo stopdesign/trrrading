@@ -24,6 +24,7 @@ class Trader:
     exchange: Exchange = None
     strategies: list = None
     executor: Executor = None
+    run: Run = None
 
     def __init__(self, broker_conf, strategy_conf, backtest):
         dt_now = datetime.utcnow().replace(microsecond=0)
@@ -49,7 +50,7 @@ class Trader:
         self.exchange = Exchange()
 
         # Добывает данные, запускает события
-        self.trading_data = Polygon(
+        self.trading_data = RedisTradingData(
             symbols=self.symbols,
             dt_start=self.dt_start,
             dt_end=self.dt_end,
@@ -135,8 +136,10 @@ class Trader:
             # для торговли крутится до прерывания
             self.trading_data.start_listen()
         except KeyboardInterrupt:
-            self.run.finished_at = datetime.now(tz=timezone.utc)
-            self.run.save()
+            if self.run:
+                # run есть только у живой торговли
+                self.run.finished_at = datetime.now(tz=timezone.utc)
+                self.run.save()
             log.info(colored(" Stop stream ", "red", attrs=["reverse"]))
         except Exception as e:
             log.exception(e)
