@@ -30,6 +30,15 @@ class Signal(Enum):
         return sides.get(self.value)
 
     @DynamicClassAttribute
+    def abbr(self):
+        sides = {
+            Signal.LONG.value: "B",
+            Signal.SHORT.value: "S",
+            Signal.CLOSE.value: "C",
+        }
+        return sides.get(self.value)
+
+    @DynamicClassAttribute
     def numeric(self):
         sides = {
             Signal.LONG.value: 1,

@@ -80,7 +80,7 @@ class HullMa(BaseStrategy):
         bar = self.data[-1] if self.data else None
 
         if not bar or not bar.n1:
-            return Signal.SHORT
+            return Signal.PASS
 
         if not (trade.rth and bar.rth):
             return Signal.PASS

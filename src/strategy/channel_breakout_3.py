@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from datetime import time
+from datetime import time, datetime
 from talipp.indicators import DonchianChannels
 from strategy import BaseStrategy, Signal, hint
 from data_types import Bar, Trade
@@ -27,13 +27,7 @@ class ChannelBreakout3(BaseStrategy):
 
         skip = False
 
-        # if bar.date.time() < time(hour=14, minute=33):
-        #     skip = True
-        #
-        # if bar.date.time() > time(hour=20, minute=59):
-        #     skip = True
-
-        # print(bar.rth, bar.date)
+        # print(bar.rth, bar.date, bar)
 
         if not bar.rth:
             skip = True
@@ -50,6 +44,10 @@ class ChannelBreakout3(BaseStrategy):
         if self.don and not skip:
             bar.up = self.don[-1].ub
             bar.dn = self.don[-1].lb
+        else:
+            if self.data and bar.rth:
+                bar.up = self.data[-1].up
+                bar.dn = self.data[-1].dn
 
         self.data.append(bar)
 
@@ -62,10 +60,13 @@ class ChannelBreakout3(BaseStrategy):
         """
         bar = self.data[-1] if self.data else None
 
+        # if trade.date > datetime(2022, 4, 4):
+        #     print(trade, bar)
+
         if not bar or not bar.dn:
             return Signal.PASS
 
-        if not bar.rth:
+        if not (trade.rth and bar.rth):
             return Signal.PASS
 
         if trade.price > bar.up - self.padding:

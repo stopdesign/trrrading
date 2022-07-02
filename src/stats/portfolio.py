@@ -1,6 +1,7 @@
+import json
+import os.path
 import logging
 import numpy as np
-import scipy.stats
 from decimal import Decimal
 from termcolor import cprint, colored
 
@@ -57,6 +58,18 @@ class PortfolioStats:
         log.info(colored(f"Net Value:   {self.prev_net_value:6.0f}", "blue"))
         log.info(colored(f"Margin Used: {bot_margin:6.0f}\n", "blue"))
 
+    def save_events(self, base_dir):
+        for strategy in self.portfolio.strategies:
+            strategy_name = type(strategy).__name__
+            file_name = f"{strategy.symbol}_{strategy_name}_events.jsonl"
+            path = os.path.join(base_dir, file_name)
+            txt = ""
+            events = self.portfolio.events[strategy]
+            for event in events:
+                txt += json.dumps(event, default=str) + "\n"
+            with open(path, "w") as f:
+                f.write(txt)
+
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
 
@@ -82,8 +95,7 @@ class PortfolioStats:
         if self.deposits and len(self.deposits) > 1:
             x = np.arange(len(self.deposits))
             y = np.array(self.deposits, dtype=float)
-            slope, _, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-            r2 = r_value ** 2
+            r2 = np.corrcoef(x, y)[0, 1] ** 2
             gp = float(self.gross_profit)
             rel_slpg = self.slippage / (gp + self.slippage) * 100 if gp else 0
         else:

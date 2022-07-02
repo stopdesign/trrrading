@@ -40,7 +40,7 @@ def get_calendar_and_schedule(exchange):
     calendar = mcal.get_calendar(EXCHANGE_SCHEDULE[exchange])
 
     # нужно покрыть вперед и назад все возможные выходные
-    start = datetime.utcnow() - timedelta(days=100)
+    start = datetime.utcnow() - timedelta(days=200)
     end = datetime.utcnow() + timedelta(days=100)
 
     # TODO: убрать хардкодинг
@@ -62,7 +62,8 @@ def check_open_time(exchange, cur_interval):
     try:
         return calendar.open_at_time(schedule, cur_interval_utc)
     except ValueError as e:
-        print(schedule)
+        log.error(f"Schedule error for {exchange} at {cur_interval}")
+        log.warning(schedule)
         raise e
 
 

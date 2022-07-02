@@ -28,7 +28,7 @@ class Command(BaseCommand):
         parser.add_argument('--start', type=valid_date, dest="dt_start")
         parser.add_argument('--end', type=valid_date, dest="dt_end")
 
-    def handle(self, *args, **kwargs):
+    def handle(self, **kwargs):
 
         dt = datetime.utcnow()
 
@@ -42,7 +42,7 @@ class Command(BaseCommand):
         strategy_config = yaml.full_load(open(strategy_config_path))
 
         if kwargs["dt_start"]:
-            broker_config["start"] = kwargs["dt_start"].date()
+            broker_config["dt_start"] = kwargs["dt_start"].date()
 
         if kwargs["dt_end"]:
             broker_config["dt_end"] = kwargs["dt_end"].date()

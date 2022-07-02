@@ -82,8 +82,6 @@ TEMPLATES = [
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 
-# DEFAULT_FILE_STORAGE = 'project.helpers.services.ASCIIFileSystemStorage'
-
 STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
 
 # Collect static files from the frontend build directory (if available)

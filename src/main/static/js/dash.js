@@ -58,11 +58,11 @@ function draw_chart(el, data, symbol) {
       '#ffffff',  // hour
       '#40aabd',  // ok
       '#000000',  // error
-      '#d5d5d5',  // closed
-      '#777777',  // empty
-      '#ddeeee',  // delay
-      '#ff8e3f',  // fix
-      '#da5ee0',  // late
+      '#d5d5d5',  // closed - светло-серый
+      '#777777',  // empty  - темно-серый
+      '#ddeeee',  // delay  - голубой
+      '#ff8e3f',  // fix    - оранжевый
+      '#da5ee0',  // late   - magenta
       '#f5f5f5',  // no_data
       '#00ff00',
       '#0000ff',

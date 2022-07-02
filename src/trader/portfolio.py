@@ -6,6 +6,7 @@ from data_types import Margin, Position
 from main.views import dt_to_ts
 from strategy import Signal
 from trader import Exchange
+from termcolor import colored
 
 log = logging.getLogger("portfolio")
 
@@ -20,12 +21,14 @@ class Portfolio:
 
     def __init__(self, exchange, strategies, target_margin: Decimal):
         self.__positions = {}
+        self.events = {}
         self.exchange = exchange
         self.strategies = strategies
         self.target_margin = target_margin
         self.total_profit = Decimal(0)
         for strategy in self.strategies:
             self.__positions[strategy] = Position(strategy.symbol)
+            self.events[strategy] = []
 
     def get_amount(self, strategy) -> Decimal:
         return self.__positions[strategy].amount
@@ -101,21 +104,35 @@ class Portfolio:
                 price = self.exchange.get_price(hint.symbol, side)
                 amount = Decimal(0)
 
-            assert not price.is_nan()
+            if hint.signal == Signal.PASS:
+                log.warning(f"Maybe there was no signal? {hint}")
+
+            assert not price.is_nan(), f"no price for signal {hint.signal}"
             assert not amount.is_nan()
 
             profit = self.__positions[hint.strategy].update(amount, price)
             self.total_profit += profit
 
-            # ts = dt_to_ts(hint.signal_dt)
-            # data = {
-            #   'amount': amount, 'side': hint.signal.side,
-            #   'time': ts, 'dt': hint.signal_dt, 'price': "%0.2f" % price
-            # }
-            # print(json.dumps(data, indent=None, default=str) + ",")
+            data = {
+                'dt': hint.signal_dt,
+                'time': dt_to_ts(hint.signal_dt),
+                'side': hint.signal.side,
+                'amount': abs(amount),
+                'profit': profit,
+                'price': price,
+            }
+            self.events[hint.strategy].append(data)
+
+            profit_colored = ""
+            if profit > 0:
+                profit_colored = colored(f"{profit:+0.2f}", "green")
+            elif profit < 0:
+                profit_colored = colored(f"{profit:+0.2f}", "red")
+            else:
+                profit_colored = colored("~0.00", "blue")
 
             log.info(
-                f"Rebalance: {hint}, amount={amount:+0.0f}, "
-                f"profit={profit:+0.2f}, "
-                f"Σ={self.total_profit:+0.2f}"
+                f"{hint}, amount: {amount:+0.0f}, "
+                f"profit: {profit_colored}, "
+                f"Σ: {self.total_profit:+0.2f}"
             )

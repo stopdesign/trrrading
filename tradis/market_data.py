@@ -319,7 +319,7 @@ if __name__ == "__main__":
     redis_config = config["redis"]
     secret = config["secret"]
 
-    redis_client = redis.Redis(**redis_config)
+    redis_client = redis.Redis(socket_timeout=5, **redis_config)
     rs = RedisStorage(username, redis_client, secret)
 
     ib = IBThinClient(username, rs)

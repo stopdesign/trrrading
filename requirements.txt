@@ -1,18 +1,17 @@
-aiohttp==3.7.4.post0
+aiohttp==3.8.1
 PyJWT==2.1.0
 requests==2.25.1
 termcolor==1.1.0
 pandas-market-calendars==3.4
 aiogram==2.14.3
-#TA-Lib==0.4.20
-talipp==1.7.1
-scipy==1.7.0
 pytz==2021.1
 PyYAML==5.4.1
 click==8.0.1
 orjson==3.6.6
 cryptography==36.0.2
 coloredlogs
+oath==1.4.4
+talipp==1.7.1
 
 #psycopg2
 
@@ -23,9 +22,14 @@ django-xff==1.3.0
 django-health-check==3.16.1
 django-cors-headers==3.11.0
 
-#tortoise-orm[asyncpg]
-
 # serve static
 whitenoise==5.2.0
 
 shortuuid==1.0.1
+
+redis
+
+# старая платформа
+tortoise-orm==0.19.1
+ib-insync==0.9.70
+stocktrends==0.1.5
