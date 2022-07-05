@@ -78,9 +78,17 @@ class PortfolioStats:
         # Посчитать итоговый Net Value — это просто cash_initial плюс весь профит
         net = self.portfolio.get_virtual_net_value() + self.cash_initial
 
+        for events in self.portfolio.events.values():
+            for event in events:
+                if event["profit"] > 0:
+                    self.gross_profit += event["profit"]
+                else:
+                    self.gross_loss += event["profit"]
+                self.trades_count[event["side"]] += 1
+
         pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
         p = net - self.cash_initial
-        trades = self.trades_count["buy"] + self.trades_count["sell"]
+        trades = sum(self.trades_count.values())
 
         # Не уверен, что это можно считать ROI, но это профит
         # на единицу задействованных в торговле денег.

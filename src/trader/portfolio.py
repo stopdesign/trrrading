@@ -90,6 +90,8 @@ class Portfolio:
             amount = Decimal("nan")
             price = Decimal("nan")
 
+            side = hint.signal.side
+
             if hint.signal == Signal.LONG:
                 price = self.exchange.get_price(hint.symbol, "buy")
                 amount = +Decimal(floor(cash_per_strategy / price))
@@ -116,7 +118,7 @@ class Portfolio:
             data = {
                 'dt': hint.signal_dt,
                 'time': dt_to_ts(hint.signal_dt),
-                'side': hint.signal.side,
+                'side': side,
                 'amount': abs(amount),
                 'profit': profit,
                 'price': price,

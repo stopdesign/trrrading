@@ -1,5 +1,6 @@
-import sys
 import logging.config
+import sys
+
 import coloredlogs
 
 try:
@@ -7,6 +8,7 @@ try:
 except:
     LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
+FMT = "%(asctime).19s • %(levelname).1s • %(name)s %(lineno)d • %(message)s"
 
 conf = {
     "version": 1,
@@ -14,7 +16,7 @@ conf = {
     "formatters": {
         "coloredlogs": {
             "()": coloredlogs.ColoredFormatter,
-            "fmt": "%(asctime).19s • %(levelname).1s • %(name)s • %(message)s",
+            "fmt": FMT,
             "datefmt": LOG_DATE_FMT,
         },
     },

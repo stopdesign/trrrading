@@ -19,14 +19,14 @@ def valid_date(s):
 
 
 class Command(BaseCommand):
-
     def add_arguments(self, parser):
-        parser.add_argument('broker', type=str)
-        parser.add_argument('strategy', type=str)
+        parser.add_argument("broker", type=str)
+        parser.add_argument("strategy", type=str)
 
-        parser.add_argument('--backtest', action=argparse.BooleanOptionalAction)
-        parser.add_argument('--start', type=valid_date, dest="dt_start")
-        parser.add_argument('--end', type=valid_date, dest="dt_end")
+        parser.add_argument("-b", "--backtest", action="store_true")
+        parser.add_argument("-r", "--replay", action="store_true")
+        parser.add_argument("-s", "--start", type=valid_date, dest="dt_start")
+        parser.add_argument("-e", "--end", type=valid_date, dest="dt_end")
 
     def handle(self, **kwargs):
 
@@ -48,8 +48,9 @@ class Command(BaseCommand):
             broker_config["dt_end"] = kwargs["dt_end"].date()
 
         backtest = bool(kwargs.get("backtest"))
+        replay = bool(kwargs.get("replay"))
 
-        trader = Trader(broker_config, strategy_config, backtest)
+        trader = Trader(broker_config, strategy_config, backtest, replay)
         trader.start()
 
         print(f"Done in {str(datetime.utcnow() - dt)[:-7]}")

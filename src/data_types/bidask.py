@@ -16,8 +16,9 @@ class BidAsk:
         return cls(
             date=data["dt"],
             symbol=data["symbol"],
-            bid=Decimal(data["av_bid"]),
-            ask=Decimal(data["av_ask"]),
+            # FIXME: плохо хардкодить количество знаков, но str тоже плохо
+            bid=Decimal(data["av_bid"]).quantize(Decimal("1.00")),
+            ask=Decimal(data["av_ask"]).quantize(Decimal("1.00")),
         )
 
     @classmethod
@@ -25,6 +26,6 @@ class BidAsk:
         return cls(
             date=data["dt"],
             symbol=data["symbol"],
-            bid=Decimal(data["l"]),
-            ask=Decimal(data["h"]),
+            bid=Decimal(data["l"]).quantize(Decimal("1.00")),
+            ask=Decimal(data["h"]).quantize(Decimal("1.00")),
         )

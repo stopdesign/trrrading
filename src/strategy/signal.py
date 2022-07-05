@@ -32,7 +32,7 @@ class Signal(Enum):
     @DynamicClassAttribute
     def abbr(self):
         sides = {
-            Signal.LONG.value: "B",
+            Signal.LONG.value: "L",
             Signal.SHORT.value: "S",
             Signal.CLOSE.value: "C",
         }
