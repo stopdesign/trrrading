@@ -3,6 +3,7 @@
 /www/
 /res/
 /data/
+/config/
 /coverage
 /node_modules
 *_local.*

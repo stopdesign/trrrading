@@ -1,4 +1,5 @@
 import logging
+import os
 from csv import QUOTE_NONNUMERIC, DictReader
 from datetime import datetime, timezone
 from time import sleep
@@ -28,6 +29,9 @@ class PolygonAdapter(BaseSource):
         self.offline = offline
         self.api_key = api_key
         self.path = path
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}(offline={self.offline})"
 
     def load_from_api(self, symbol, dt_1, dt_2):
         ts_1 = dt_to_ts(dt_1) * 1000
@@ -78,10 +82,10 @@ class PolygonAdapter(BaseSource):
 
         return data
 
-    def load_from_file(self, symbol, dt_1, dt_2):
+    def load_from_path(self, symbol, dt_1, dt_2, path):
         data = []
         ts_1, ts_2 = dt_to_ts(dt_1), dt_to_ts(dt_2)
-        with open(f"{self.path}{symbol}.csv") as f:
+        with open(f"{path}{symbol}.csv") as f:
             csv = f.readlines()
             fields = csv.pop(0).strip().split(",")
             reader = DictReader(csv, fields, quoting=QUOTE_NONNUMERIC)
@@ -89,6 +93,16 @@ class PolygonAdapter(BaseSource):
                 row["t"] = int(row["t"])
                 if ts_1 <= row["t"] <= ts_2:
                     data.append(row)
+        return data
+
+    def load_from_file(self, symbol, dt_1, dt_2):
+        data = []
+        date_x = datetime(2022, 1, 1)
+        path = os.path.abspath(self.path)
+        if dt_1 < date_x or dt_2 < date_x:
+            data += self.load_from_path(symbol, dt_1, dt_2, f"{path}/pre_2022/")
+        if dt_1 >= date_x or dt_2 >= date_x:
+            data += self.load_from_path(symbol, dt_1, dt_2, f"{path}/2022/")
         return data
 
     def load(self, symbols, dt_1, dt_2):

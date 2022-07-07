@@ -28,6 +28,10 @@ class TradisAdapter(BaseSource):
 
         self.redis = redis_client
 
+    def __str__(self) -> str:
+        host = self.redis.get_connection_kwargs().get("host")
+        return f"{self.__class__.__name__}(host={host})"
+
     def format_message(self, message):
 
         # Игнорировать subscribe messages

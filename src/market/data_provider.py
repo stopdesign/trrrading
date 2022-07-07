@@ -69,8 +69,6 @@ class DataProvider:
         """
         Получение исторических данных и запуск
         событий по ним для прогрева индикаторов.
-
-        Всегда работает с источником исторических данных.
         """
 
         records = self.history.load(self.symbols, self.dt_prior, self.dt_start)
