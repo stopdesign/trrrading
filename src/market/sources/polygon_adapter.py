@@ -12,10 +12,7 @@ log = logging.getLogger("polygon_adapter")
 
 
 BASE_URL = f"https://api.polygon.io/v2/aggs/ticker"
-API_KEY = ""
 LIMIT = 50000
-
-PATH = "/Users/gregory/projects/life/trrrading/new/poly_1000/"
 
 
 def ts_to_dt(ts):
@@ -27,8 +24,10 @@ def dt_to_ts(dt):
 
 
 class PolygonAdapter(BaseSource):
-    def __init__(self, offline=True, api_key=None):
+    def __init__(self, offline=True, api_key=None, path=None):
         self.offline = offline
+        self.api_key = api_key
+        self.path = path
 
     def load_from_api(self, symbol, dt_1, dt_2):
         ts_1 = dt_to_ts(dt_1) * 1000
@@ -40,7 +39,7 @@ class PolygonAdapter(BaseSource):
         while True:
             url = f"{BASE_URL}/{symbol}/range/1/minute/{ts_1}/{ts_2}"
             params = {
-                "apiKey": API_KEY,
+                "apiKey": self.api_key,
                 "adjusted": False,
                 "sort": "asc",
                 "limit": limit,
@@ -82,7 +81,7 @@ class PolygonAdapter(BaseSource):
     def load_from_file(self, symbol, dt_1, dt_2):
         data = []
         ts_1, ts_2 = dt_to_ts(dt_1), dt_to_ts(dt_2)
-        with open(f"{PATH}{symbol}.csv") as f:
+        with open(f"{self.path}{symbol}.csv") as f:
             csv = f.readlines()
             fields = csv.pop(0).strip().split(",")
             reader = DictReader(csv, fields, quoting=QUOTE_NONNUMERIC)

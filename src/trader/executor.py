@@ -3,7 +3,7 @@ from datetime import timezone
 from decimal import Decimal
 from main.models import Instrument, Order, Position
 from termcolor import colored
-from storage.redis import check_open_time
+# from storage.redis import check_open_time
 from trader import Exchange
 
 log = logging.getLogger("execution")
@@ -62,7 +62,8 @@ class Executor:
             # Если биржа не торгует, то ордер не выставляется.
             # Если это премаркет или постмаркет, то засисит от настроек, наверное.
             exchange_symbol = symbol.split(".")[1]
-            is_rth = check_open_time(exchange_symbol, dt)
+            # is_rth = check_open_time(exchange_symbol, dt)
+            is_rth = True  # FIXME
 
             if not is_rth:
                 # txt = f"{symbol} market is closed, {dt} signal"

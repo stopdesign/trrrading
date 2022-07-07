@@ -4,16 +4,27 @@ import os
 from copy import copy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from termcolor import colored
-from data_types import Hint, Bar, Trade
-from stats import PortfolioStats, StrategyStats
-from storage import RedisTradingData, Polygon
-from trader import Exchange, Portfolio, Executor
-from strategy import all_strategies, Signal
-from main.models import Account, Run
+
+import redis
+from data_types import Bar, Hint, Trade
 from django.utils.timezone import make_aware
+from main.models import Account, Run
+from market import DataProvider, PolygonAdapter, TradisAdapter
+from stats import PortfolioStats, StrategyStats
+from strategy import Signal, all_strategies
+from termcolor import colored
+
+from trader import Exchange, Executor, Portfolio
 
 log = logging.getLogger("trader")
+
+
+REDIS_CONF = {
+    "decode_responses": True,
+    "socket_keepalive": True,
+    "socket_timeout": 300,
+    "health_check_interval": 3,
+}
 
 
 def date_to_datetime(dt):
@@ -21,42 +32,61 @@ def date_to_datetime(dt):
 
 
 class Trader:
+    """
+    Есть три режима: live, backtest, replay.
+    Реальная торговля идет от now до остановки скрипта.
+    Бэктест идет от dt_start до dt_end.
+    Replay идет от dt_start до dt_end, но через feed.
+    """
+
+    data_provider: DataProvider = None
     exchange: Exchange = None
     strategies: list = None
     executor: Executor = None
     run: Run = None
 
-    def __init__(self, broker_conf, strategy_conf, backtest):
+    def __init__(self, config, backtest, replay):
         dt_now = datetime.utcnow().replace(microsecond=0)
         txt = f"Init Trader(backtest={backtest}) at {dt_now}"
         log.info(colored(txt, "white"))
 
         self.backtest = backtest
-        self.symbols = sorted(list({c["symbol"] for c in strategy_conf}))
-        self.target_margin = Decimal(broker_conf.get("target_margin"))
+        self.replay = replay
 
-        self.init_strategies(strategy_conf)
+        run_config = config["backtest"] if backtest else config["live"]
+        strategies = config["strategies"]
+        sources = config["sources"]
 
-        # У бэктеста есть начало и конец, а реальная
-        # торговля идет от now до остановки скрипта
-        if self.backtest:
-            self.dt_start = date_to_datetime(broker_conf.get("dt_start"))
-            self.dt_end = date_to_datetime(broker_conf.get("dt_end")) + timedelta(1)
-        else:
-            self.dt_start = datetime.utcnow().replace(microsecond=0)
-            self.dt_end = None
+        self.target_margin = Decimal(run_config["target_margin"])
 
-        # Exchange занимается стаканом и ценами
-        self.exchange = Exchange()
+        self.symbols = sorted(list({c["symbol"] for c in strategies}))
+
+        self.init_strategies(strategies)
+
+        self.config_start_end(run_config)
+
+        # Сколько данных до старта нужно для прогрева индикаторов
+        self.dt_prior = self.dt_start - timedelta(days=10)
+
+        # Инициализация источников данных
+        self.config_sources(run_config, sources)
+
+        log.info(f"Start: {self.dt_start}, end: {self.dt_end}")
+        log.info(f"History: {self.history_source}, feed: {self.feed_source}")
 
         # Добывает данные, запускает события
-        self.trading_data = RedisTradingData(
+        self.data_provider = DataProvider(
             symbols=self.symbols,
+            history=self.history_source,
+            feed=self.feed_source,
+            dt_prior=self.dt_prior,
             dt_start=self.dt_start,
             dt_end=self.dt_end,
             on_event=self.on_event,
-            backtest=self.backtest,
         )
+
+        # Exchange занимается стаканом и ценами
+        self.exchange = Exchange()
 
         # Это нужно до прогрева индикаторов,
         # чтобы сохранились индикаторы в процессе прогрева.
@@ -64,7 +94,7 @@ class Trader:
 
         # Прогреть индикторы прогоном исторических данных.
         # На этом этапе еще нет портфолио, только сигналы и Hint.
-        self.trading_data.warm_up()
+        self.data_provider.warm_up()
 
         self.portfolio = Portfolio(self.exchange, self.strategies, self.target_margin)
         self.strategy_stats.portfolio = self.portfolio
@@ -78,18 +108,16 @@ class Trader:
             log.info(colored(f"Strategy: {strategy.info} => {amnt}", "grey"))
 
         # Инициализируется механизм выставления ордера на бирже
-        if not self.backtest:
-            # TODO: Можно вынести все объекты БД в Executor.
-            # TODO: Это границы будущего API с базой.
+        if not (self.backtest or self.replay):
             account = Account.objects.get(
-                uid=broker_conf["account"],
-                username=broker_conf["username"],
+                uid=run_config["account"],
+                username=run_config["username"],
             )
             self.run = Run.objects.create(
                 account=account,
-                start_dt=make_aware(self.dt_start),
-                broker_config=json.dumps(broker_conf, indent=2, default=str),
-                strategy_config=json.dumps(strategy_conf, indent=2, default=str),
+                start_dt=make_aware(self.dt_start, timezone=timezone.utc),
+                broker_config=json.dumps(run_config, indent=2, default=str),
+                strategy_config=json.dumps(strategies, indent=2, default=str),
             )
             self.executor = Executor(self.exchange, self.portfolio, self.run)
 
@@ -97,6 +125,57 @@ class Trader:
 
         self.portfolio_stats.portfolio_info()
         # self.portfolio_stats.account_info()
+
+    def config_start_end(self, conf):
+        if self.backtest:
+            self.dt_start = date_to_datetime(conf["dt_start"])
+            self.dt_end = date_to_datetime(conf["dt_end"]) + timedelta(1)
+        elif self.replay:
+            if conf.get("dt_start"):
+                self.dt_start = date_to_datetime(conf["dt_start"])
+            else:
+                self.dt_start = date_to_datetime(datetime.utcnow().date())
+            if conf.get("dt_end"):
+                self.dt_end = date_to_datetime(conf["dt_end"]) + timedelta(1)
+            else:
+                self.dt_end = None
+        else:
+            self.dt_start = datetime.utcnow().replace(microsecond=0)
+            self.dt_end = None
+
+    def config_sources(self, run_config, sources):
+        history = run_config["history"]
+        feed = run_config.get("feed")
+
+        history_conf = sources.get(history)
+
+        if not history_conf:
+            raise ValueError(f"Bad history source config: {history}")
+
+        if "redis" in history:
+            redis_client = redis.Redis(**(REDIS_CONF | history_conf))
+            self.history_source = TradisAdapter(redis_client)
+        elif "polygon" in history:
+            self.history_source = PolygonAdapter(**history_conf)
+        else:
+            raise ValueError(f"Unknown history source: {history}")
+
+        if self.backtest:
+            self.feed_source = None
+            return
+
+        feed_conf = sources.get(feed)
+
+        if not feed_conf:
+            raise ValueError(f"Bad feed source config: {feed}")
+
+        if "redis" in feed:
+            redis_client = redis.Redis(**(REDIS_CONF | feed_conf))
+            self.feed_source = TradisAdapter(redis_client)
+        elif "polygon" in feed:
+            self.feed_source = PolygonAdapter(**feed_conf)
+        else:
+            raise ValueError(f"Unknown feed source: {feed}")
 
     def init_strategies(self, strategy_conf):
         """
@@ -127,29 +206,36 @@ class Trader:
 
     def start(self):
 
-        log.info(colored(" Start stream ", "green", attrs=["reverse"]))
+        log.info(colored(" Start ", "green", attrs=["reverse", "bold"]))
 
         self.portfolio_stats.snapshot()
 
-        try:
-            # Для бэктеста это заканчивается,
-            # для торговли крутится до прерывания
-            self.trading_data.start_listen()
-        except KeyboardInterrupt:
-            if self.run:
-                # run есть только у живой торговли
-                self.run.finished_at = datetime.now(tz=timezone.utc)
-                self.run.save()
-            log.info(colored(" Stop stream ", "red", attrs=["reverse"]))
-        except Exception as e:
-            log.exception(e)
-
         if self.backtest:
+            self.data_provider.backtest()
             self.close_all()
             self.save_backtest_data()
+
+        else:
+            try:
+                self.data_provider.listen()
+            except KeyboardInterrupt:
+                pass
+            except Exception as e:
+                log.exception(e)
+
+            if not self.replay:
+                self.run.finished_at = datetime.now(tz=timezone.utc)
+                self.run.save()
+
+        log.info(colored(" Stop ", "red", attrs=["reverse", "bold"]))
+
+        if self.backtest:
             self.portfolio_stats.print_summary()  # RESULTS
 
     def save_backtest_data(self):
+        """
+        FIXME: ебаный код какой-то
+        """
         dt = datetime.utcnow()  # server time
         day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
         ts = (dt - day).total_seconds()
@@ -251,4 +337,5 @@ class Trader:
         if self.backtest:
             return
 
-        self.executor.apply_targets(dt)
+        if self.executor:
+            self.executor.apply_targets(dt)

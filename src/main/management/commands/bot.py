@@ -10,6 +10,9 @@ from trader import Trader
 log = logging.getLogger("run")
 
 
+DEF_CONFIG = "../config/bot.yaml"
+
+
 def valid_date(s):
     try:
         return datetime.strptime(s, "%Y-%m-%d")
@@ -20,9 +23,7 @@ def valid_date(s):
 
 class Command(BaseCommand):
     def add_arguments(self, parser):
-        parser.add_argument("broker", type=str)
-        parser.add_argument("strategy", type=str)
-
+        parser.add_argument("--config", type=str, dest="config", default=DEF_CONFIG)
         parser.add_argument("-b", "--backtest", action="store_true")
         parser.add_argument("-r", "--replay", action="store_true")
         parser.add_argument("-s", "--start", type=valid_date, dest="dt_start")
@@ -32,25 +33,24 @@ class Command(BaseCommand):
 
         dt = datetime.utcnow()
 
-        conf_dir = join(dirname(settings.BASE_DIR), "bot_config")
-
-        broker_config_path = abspath(join(conf_dir, kwargs.get("broker")))
-        strategy_config_path = abspath(join(conf_dir, kwargs.get("strategy")))
-
-        # Загрузка конфига
-        broker_config = yaml.full_load(open(broker_config_path))
-        strategy_config = yaml.full_load(open(strategy_config_path))
+        conf_dir = join(dirname(settings.BASE_DIR))
+        config_path = abspath(join(conf_dir, kwargs.get("config")))
+        config = yaml.full_load(open(config_path))
 
         if kwargs["dt_start"]:
-            broker_config["dt_start"] = kwargs["dt_start"].date()
+            config["backtest"]["dt_start"] = kwargs["dt_start"].date()
+            config["live"]["dt_start"] = kwargs["dt_start"].date()
 
         if kwargs["dt_end"]:
-            broker_config["dt_end"] = kwargs["dt_end"].date()
+            config["backtest"]["dt_end"] = kwargs["dt_end"].date()
+            config["live"]["dt_end"] = kwargs["dt_end"].date()
 
         backtest = bool(kwargs.get("backtest"))
         replay = bool(kwargs.get("replay"))
 
-        trader = Trader(broker_config, strategy_config, backtest, replay)
+        assert not (backtest and replay), "Can't combine replay and backtest"
+
+        trader = Trader(config, backtest, replay)
         trader.start()
 
-        print(f"Done in {str(datetime.utcnow() - dt)[:-7]}")
+        print(f"Done in {str(datetime.utcnow() - dt)[:-6]}")

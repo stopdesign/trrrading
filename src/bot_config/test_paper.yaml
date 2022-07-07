@@ -1,5 +1,0 @@
-
-- symbol: MES.GLOBEX
-  strategy: ChannelBreakout3
-  length: 2
-  short: Off
