@@ -6,6 +6,7 @@ from time import sleep
 
 import requests
 from termcolor import cprint
+import pandas as pd
 
 from .base_source import BaseSource
 
@@ -116,6 +117,20 @@ class PolygonAdapter(BaseSource):
             else:
                 data = self.load_from_api(ss, dt_1, dt_2)
 
+            # Заполнение пробелов в данных
+            df = pd.DataFrame(data)
+            df['dt'] = pd.to_datetime(df["t"], unit="s")
+            df = df.set_index("dt")
+            
+            df1 = df.resample('1T').ffill()
+
+            df1["v"] = df["v"]
+            df1["v"].fillna(0, inplace=True)
+
+            df1["t"] = df1.index.astype(int) // 10**9
+
+            data = df1.to_dict("records")
+            
             for line in data:
                 payload = {
                     "dt": ts_to_dt(line["t"]),
@@ -126,6 +141,10 @@ class PolygonAdapter(BaseSource):
                     "vol": line["v"],
                     "symbol": symbol,
                 }
-                all_data.append((line["t"], symbol, payload))
+                # Удаление всех данных за пределами RTH
+                if self.schedule.is_rth(symbol, payload["dt"]):
+                    all_data.append((line["t"], symbol, payload))
+
+        log.info(f"{symbols}, {dt_1}, {dt_2}, {len(all_data)}")
 
         return sorted(all_data)

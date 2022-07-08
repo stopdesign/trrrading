@@ -10,3 +10,9 @@ class Trade:
     price: Decimal
     volume: int = None
     rth: bool = None
+
+    def __repr__(self):
+        return (
+            "Trade({0.symbol}, {0.date}, "
+            "price={0.price}, volume={0.volume}, rth={0.rth})"
+        ).format(self)

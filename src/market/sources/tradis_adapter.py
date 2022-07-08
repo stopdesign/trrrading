@@ -91,7 +91,9 @@ class TradisAdapter(BaseSource):
                 # Легкий фикс формата
                 data["symbol"] = s
                 data["dt"] = parse_dt(data["dt"])
-                all_data.append((score, s, data))
+
+                if self.schedule.is_rth(s, data["dt"]):
+                    all_data.append((score, s, data))
 
         log.info(f"{symbols}, {dt_1}, {dt_2}, {len(all_data)}")
 

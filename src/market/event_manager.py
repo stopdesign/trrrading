@@ -1,7 +1,10 @@
-from datetime import timedelta
+import logging
+from datetime import datetime, timedelta
 from typing import Callable
 
 from data_types import Bar, BidAsk, Trade
+
+log = logging.getLogger("data_provider")
 
 
 class EventManager:
@@ -9,6 +12,9 @@ class EventManager:
         self.on_event = on_event
         self.dt_last = None
         self.quotes = False
+
+        self.prev_bar_dt = datetime(2000, 1, 1)
+        self.in_the_gap = True
 
     # FIXME: сомневаюсь, что это должно быть здесь
     def bar_to_trades(self, bar: Bar) -> list[Trade]:
@@ -66,6 +72,17 @@ class EventManager:
 
             bar = Bar.from_redis(payload)
             bar.rth = payload["rth"]
+
+            bar_time_gap = (bar.date - self.prev_bar_dt).total_seconds()
+            if bar_time_gap > 100:
+                if not self.in_the_gap:
+                    if bar_time_gap < 10000:
+                        log.error(f"Large gap: {bar.date} – {bar_time_gap}")
+                self.in_the_gap = True
+            else:
+                self.in_the_gap = False
+
+            self.prev_bar_dt = bar.date
 
             for trade in self.bar_to_trades(bar):
                 self.on_event("trade", trade.date, trade.symbol, trade)

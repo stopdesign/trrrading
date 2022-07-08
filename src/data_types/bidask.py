@@ -11,6 +11,11 @@ class BidAsk:
     ask: Decimal = Decimal("nan")
     rth: bool = None
 
+    def __repr__(self):
+        return (
+            "BidAsk({0.symbol}, {0.date}, bid={0.bid}, ask={0.ask}, rth={0.rth})"
+        ).format(self)
+
     @classmethod
     def from_redis_quote(cls, data: dict):
         return cls(

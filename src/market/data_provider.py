@@ -51,6 +51,8 @@ class DataProvider:
         self.history = history
         self.feed = feed
 
+        self.history.schedule = self.schedule
+
         # Умеет отправлять сообщения о новых событиях
         self.event_manager = EventManager(on_event)
 
@@ -62,9 +64,11 @@ class DataProvider:
         # Дополнить payload информацией о расписании биржи
         if "symbol" in payload and "dt" in payload:
             payload["rth"] = self.schedule.is_rth(payload["symbol"], payload["dt"])
-
-        self.event_manager.notify(payload)
-
+            if payload["rth"]:
+                self.event_manager.notify(payload)
+        else:
+            log.warning(f"Unknown payload format: {payload}")
+        
     def warm_up(self):
         """
         Получение исторических данных и запуск
