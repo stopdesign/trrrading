@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from time import sleep
 
+import json
 import orjson
 from termcolor import colored
 
@@ -65,11 +66,15 @@ class TradisAdapter(BaseSource):
 
         # Биржа открыта, но пришел пустой бар
         if "empty" in data:
-            log.info(f"{symbol}, {data['dt']} empty bar")
+            # log.info(f"{symbol}, {data['dt']} empty bar")
             return
 
         if not ("price" in data or "vol" in data):
-            log.error(colored(f"Unknown format: {data}", "red"))
+            try:
+                dump = json.dumps(data, default=str)
+            except:
+                dump = str(data)
+            log.error(colored(f"Unknown format: {dump}", "red"))
             return
 
         return data

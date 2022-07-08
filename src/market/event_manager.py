@@ -73,14 +73,16 @@ class EventManager:
             bar = Bar.from_redis(payload)
             bar.rth = payload["rth"]
 
-            bar_time_gap = (bar.date - self.prev_bar_dt).total_seconds()
-            if bar_time_gap > 100:
+            bar_time_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60)
+            if bar_time_gap > 1:
                 if not self.in_the_gap:
-                    if bar_time_gap < 10000:
-                        log.error(f"Large gap: {bar.date} – {bar_time_gap}")
+                    log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
                 self.in_the_gap = True
             else:
                 self.in_the_gap = False
+
+            if bar_time_gap < 0:
+                log.error(f"Negative gap: {bar.date}, {bar_time_gap} min")
 
             self.prev_bar_dt = bar.date
 
