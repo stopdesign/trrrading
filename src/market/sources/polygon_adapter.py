@@ -119,18 +119,20 @@ class PolygonAdapter(BaseSource):
 
             # Заполнение пробелов в данных
             df = pd.DataFrame(data)
-            df['dt'] = pd.to_datetime(df["t"], unit="s")
+            df["dt"] = pd.to_datetime(df["t"], unit="s")
             df = df.set_index("dt")
-            
-            df1 = df.resample('1T').ffill()
+
+            df1 = df.resample("1T").ffill()
 
             df1["v"] = df["v"]
             df1["v"].fillna(0, inplace=True)
 
+            df1.loc[df1["v"] == 0, ["o", "h", "l"]] = df1["c"]
+
             df1["t"] = df1.index.astype(int) // 10**9
 
             data = df1.to_dict("records")
-            
+
             for line in data:
                 payload = {
                     "dt": ts_to_dt(line["t"]),

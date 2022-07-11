@@ -41,7 +41,7 @@ def get_dash_csv_data(redis_client):
     CSV со статусами по часам.
     """
     end = datetime.utcnow()
-    start = end - timedelta(hours=120)
+    start = end - timedelta(hours=170)
     start = start.replace(minute=0, second=0, microsecond=0)
 
     dash_csv_data = "ticker,hour," + ",".join(MD_STATES) + "\n"

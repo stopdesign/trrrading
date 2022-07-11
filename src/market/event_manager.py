@@ -22,16 +22,16 @@ class EventManager:
         Разбивает минутный бар на отдельные сделки со смещением.
         """
         trades = []
-        time_shift = 5
+        # time_shift = 6  # ломает фильтрацию интервалов по dt < dt_start
         for price in {bar.open, bar.high, bar.low, bar.close}:
             trade = Trade(
-                date=bar.date + timedelta(seconds=time_shift),
+                date=bar.date, # + timedelta(seconds=time_shift),
                 symbol=bar.symbol,
                 price=price,
                 rth=bar.rth,
             )
             trades.append(trade)
-            time_shift += 10
+            # time_shift += 10
         return trades
 
     def interval_event(self, dt):

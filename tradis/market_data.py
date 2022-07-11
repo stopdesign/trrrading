@@ -234,7 +234,7 @@ class DataMiner:
                 else:
                     bar = {"delay": 1}
 
-            if row.db:
+            if row.db and type(row.db) is str:
                 if "error" in bar:
                     log.debug(f"Don't rewrite with error. Old: {row.db}")
                     continue
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     dt = datetime.now()
 
     # Загрузка конфига
-    config = yaml.full_load(open(abspath("config_local.yaml")))
+    config = yaml.full_load(open(abspath("../config/tradis.yaml")))
 
     instruments = config["instruments"]
 

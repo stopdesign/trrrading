@@ -22,7 +22,7 @@ coloredlogs.install(
 def main():
 
     # Загрузка конфига
-    config = yaml.full_load(open(abspath("config_local.yaml")))
+    config = yaml.full_load(open(abspath("../config/tradis.yaml")))
 
     username = config["username"]
     password = config["password"]

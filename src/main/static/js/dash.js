@@ -1,7 +1,7 @@
 
 // set the dimensions and margins of the graph
-const margin = {top: 10, right: 0, bottom: 20, left: 0},
-    width = 1700 - margin.left - margin.right,
+const margin = {top: 10, right: 0, bottom: 30, left: 0},
+    width = 2400 - margin.left - margin.right,
     height = 120 - margin.top - margin.bottom;
 
 
@@ -36,13 +36,21 @@ function draw_chart(el, data, symbol) {
       .padding([0.2])
 
   const x_axis = d3.axisBottom(x)
+    .tickPadding(4)
     .tickSizeOuter(0)
+    .tickSizeInner(5)
     // .tickFormat(a => pad(new Date(a).getHours()));
     .tickFormat(a => pad(new Date(a + " UTC").getHours()));
 
-  svg.append("g")
-    .attr("transform", `translate(0, ${height})`)
-    .call(x_axis);
+  const x_axis_day = d3.axisBottom(x)
+    .tickPadding(23)
+    .tickSizeInner(0)
+    .tickFormat(a => {
+      let dt = new Date(a + " UTC");
+      if (!dt.getHours()) {
+        return dt.toLocaleDateString("en-GB", {day: "2-digit", month: "short"});
+      }
+    });
 
   // Add Y axis
   const y = d3.scaleLinear()
@@ -90,6 +98,42 @@ function draw_chart(el, data, symbol) {
         .attr("height", d => y(d[0] || 0) - y(d[1] || 0))
         .attr("width", x.bandwidth())
 
+
+  svg.append("g")
+    .attr("transform", `translate(0, ${height})`)
+    .call(x_axis)
+    .selectAll("text")
+    .attr('font-size', "10px")
+    .style('fill',  function(d) {
+      // var dt1 = new Date(d + " UTC");
+      // var dt2 = new Date(d + " UTC");
+      // dt1.setMonth(0, 0);
+      // t = Math.round((dt1 - dt2) / 8.64e7);
+      // if (t % 2) {
+      //   return "#aa5577"
+      // } else {
+      //   return "#338899"
+      // }
+      let hh = new Date(d + " UTC").getHours() * 9 + 10;
+      return "rgb(" + hh + "," + hh + ","+ hh +")";
+    });
+
+  svg.append("g")
+    .attr("transform", `translate(9, ${height})`)
+    .call(x_axis_day)
+    .selectAll("text")
+    .attr('font-size', "10px")
+    .attr('font-weight', "bold")
+    .style('fill',  function(d) {
+      var wd = (new Date(d + " UTC")).getDay();
+      if (wd === 0 || wd === 6) {
+        return "#bb5533"
+      } else {
+        return "#339977"
+      }
+      // let hh = new Date(d + " UTC").getHours() * 9 + 10;
+      // return "rgb(" + hh + "," + hh + ","+ hh +")";
+    });
 }
 
 
