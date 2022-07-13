@@ -290,9 +290,9 @@ class Trader:
                 if strategy.data:  # and dt > self.dt_start:
                     self.strategy_stats.append(strategy, dt)
 
-        # FIXME: эта штука срезает первый bar в реальной торговле
-        if dt > self.dt_start:
-            self.process_hints(hints, dt)
+        # # FIXME: эта штука срезает первый bar в реальной торговле
+        # if dt > self.dt_start:
+        #     self.process_hints(hints, dt)
 
     def on_trade(self, dt: datetime, symbol, payload: Trade):
         """

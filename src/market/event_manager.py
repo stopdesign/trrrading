@@ -86,7 +86,14 @@ class EventManager:
 
             self.prev_bar_dt = bar.date
 
-            for trade in self.bar_to_trades(bar):
-                self.on_event("trade", trade.date, trade.symbol, trade)
+            # for trade in self.bar_to_trades(bar):
+            # Теперь bar преобразуется в одну сделку с ценой close
+            trade = Trade(
+                date=bar.date,
+                symbol=bar.symbol,
+                price=bar.close,
+                rth=bar.rth,
+            )
+            self.on_event("trade", bar.date, bar.symbol, trade)
 
             self.on_event("bar", bar.date, bar.symbol, bar)
