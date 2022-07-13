@@ -39,6 +39,10 @@ IBKR_TO_MCAL = {
 }
 
 
+def dt_to_ts(dt):
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
 class IBError(Exception):
     pass
 
@@ -197,10 +201,20 @@ class DataMiner:
         # FSM for possibility of empty bar state
         empty_bar_state = None
 
+        # Иногда IBKR меняет старые данные.
+        # После закрытия торговой сессии присылают данные премаркета.
+        # Пока старые данные просто игнорируются, т.к. это ломает импорт.
+        # Лимит должен быть меньше основной сессии короткого дня.
+        min_editable_bar_dt = datetime.utcnow() - timedelta(hours=3)
+        min_editable_bar_ts = dt_to_ts(min_editable_bar_dt)
+
         for row in grid.itertuples():
 
             # Empty bar FSM needs full grid (with final bars)
             empty_bar_state = self._empty_bar_fsm(empty_bar_state, row)
+
+            if row.ts < min_editable_bar_ts:
+                continue
 
             if row.final:
                 continue
