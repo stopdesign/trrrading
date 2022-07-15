@@ -300,17 +300,16 @@ def main(ib: IBThinClient, redis_client, instruments):
         try:
             dm = DataMiner(ib, redis_client)
             for instrument in instruments:
-                log.info(colored(f"Update {instrument}", "blue"))
                 for _ in range(3):  # несколько попыток загрузки
                     try:
                         dm.update_instrument(instrument)
                         log.debug("Success")
                         break
                     except IBError as e:
-                        log.error(f"IB data error: {e}")
+                        log.error(f"IB data error: {instrument}, {e}")
                         dm.reload_session()
                     except Exception as e:
-                        log.error(f"Update exception: {e}")
+                        log.error(f"Update exception: {instrument}, {e}")
                         log.exception(e)
                     sleep(1)
 

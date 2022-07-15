@@ -38,6 +38,15 @@ class Order(models.Model):
     status = models.CharField(max_length=50, null=True)
     outside_rth = models.BooleanField(default=False)
 
+    # Настройки ордера, которые нужно пробрасывать из бота
+    order_settings = models.CharField(max_length=500, null=True)
+
+    # Всякие статусы, которые возвращаются брокером
+    system_comment = models.CharField(max_length=500, null=True)
+
+    # Строка orderDesc из IBKR
+    string_repr = models.CharField(max_length=500, null=True)
+
     # Некий слепок ордера, по которому понимаем, что он изменился в IBKR
     version = models.CharField(max_length=50, null=True)
 
@@ -87,12 +96,11 @@ class Order(models.Model):
         )
         return order
 
-    # @classmethod
-    # def ibalgo_order(cls, instrument, side, amount, cap_price):
-    #     order = cls(
-    #         order_id=token_hex(4),
-    #         status="New",
-    #     )
+    @classmethod
+    def adaptive_market_order(cls, account, run, instrument, side, amount):
+        order = cls.market_order(account, run, instrument, side, amount)
+        order.order_settings = '{"strategy": "Adaptive", "priority": "Normal"}'
+        return order
 
     def simulate_fill(self, fill_price):
         self.avg_fill_price = fill_price

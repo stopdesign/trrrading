@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from os.path import abspath, dirname, join
 
@@ -13,12 +13,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from ibkr_web_api import IBThinClient, RedisStorage
 from main.models import Account, Instrument, Order, Position
-from termcolor import cprint
 
 log = logging.getLogger("sync_ibkr")
 
 
 ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+DEF_CONFIG = "../config/bot.yaml"
 
 
 def send_telegram(text: str):
@@ -40,15 +42,14 @@ def send_telegram(text: str):
     try:
         r = requests.post(url, data=data, timeout=3)
         if r.status_code != 200:
-            cprint(f"send_telegram error, {r.status_code}", "red")
+            log.error(f"send_telegram error, {r.status_code}")
     except Exception as e:
-        cprint(f"send_telegram exception, {e}", "red")
+        log.error(f"send_telegram exception, {e}")
 
 
 class Command(BaseCommand):
-
     def add_arguments(self, parser):
-        parser.add_argument("broker", type=str)
+        parser.add_argument("--config", type=str, dest="config", default=DEF_CONFIG)
 
     def check_new(self, ib, account):
         """
@@ -66,17 +67,17 @@ class Command(BaseCommand):
         """
         res = ib.portfolio.summary(account.uid)
         if res.status_code != 200:
-            print("Portfolio summary error", res)
+            log.error(f"Portfolio summary error: {res}")
             return
         try:
             self.parse_account(account, res.json)
         except (ValueError, TypeError, KeyError) as e:
-            print(res.text)
-            print("parsing error", e)
+            log.warning(res.text)
+            log.error(f"Parsing error: {e}")
 
     def parse_account(self, account, res_data):
         net_value = res_data.get("netliquidation")["amount"]
-        print(f"Net Value: {net_value}")
+        log.info(f"Net Value: {net_value}")
         account.net_value = Decimal(net_value)
 
         cash_value = res_data.get("totalcashvalue")["amount"]
@@ -97,24 +98,37 @@ class Command(BaseCommand):
         res = ib.accounts.orders()
 
         if res.status_code != 200:
-            print("Orders error", res)
+            log.error(f"Orders error: {res}")
             return
+
+        # Проверить, что все недавние ордеры c order_id, есть в списке.
+        # Был случай, когда filled-ордер отсутствовал,
+        # но был виден по прямому запросу по orderId.
+        min_dt = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=1)
+        to_be = Order.objects.filter(created_at__gt=min_dt, order_id__isnull=False)
+        to_be = list(to_be.values_list("order_id", flat=True))
 
         try:
             for order_data in res.json.get("orders"):
                 self.parse_order(account, order_data)
+                if order_id := order_data.get("orderId"):
+                    if order_id in to_be:
+                        to_be.remove(order_id)
         except ValueError as e:
-            print(res.text)
-            print("parsing error", e)
+            log.warning(res.text)
+            log.error(f"Parsing error: {e}")
+
+        if to_be:
+            log.error(f"Some new orders are not in the list: {to_be}")
 
     def check_positions(self, ib, account):
         """
         Загрузить список открытых позиций аккаунта.
         """
         res = ib.portfolio.positions_2(account.uid)
-        
+
         if res.status_code != 200:
-            print("Positions error", res)
+            log.error(f"Positions error: {res}")
             return
 
         updated_positions = []
@@ -124,8 +138,8 @@ class Command(BaseCommand):
                 if position:
                     updated_positions.append(position.id)
         except ValueError as e:
-            print(res.text)
-            print("parsing error", e)
+            log.warning(res.text)
+            log.error(f"Parsing error: {e}")
 
         # Если данные пришли, то удалить все позиции, которых нет в данных.
         if updated_positions:
@@ -143,7 +157,9 @@ class Command(BaseCommand):
         try:
             instrument = Instrument.objects.get(conid=conid)
         except Instrument.DoesNotExist:
-            cprint(f"Unknown instrument {conid}, {desc}", "yellow")
+            if conid not in self.unknown_instruments_cache:
+                log.info(f"Unknown instrument {conid}, {desc}")
+                self.unknown_instruments_cache.append(conid)
             return
         try:
             position = Position.objects.get(account=account, instrument=instrument)
@@ -156,10 +172,6 @@ class Command(BaseCommand):
         return position
 
     def parse_order(self, account, order_data):
-        # cprint(json.dumps(order_data, indent=2, default=str), "blue")
-
-        # TODO: Если при отправке ордера произошла ошибка,
-        # TODO: то мы не знаем его id, а знаем только order_ref.
 
         # если ордер создался штатно, то у него есть orderId
         if order_id := order_data.get("orderId"):
@@ -173,20 +185,35 @@ class Command(BaseCommand):
                         order = Order.objects.get(local_id=local_id)
                     except Order.DoesNotExist:
                         pass
-            # Если ордер в базе вообще никак не найдет — создать.
+
+            # Если ордер в базе вообще никак не найден — создать.
             if not order:
                 ticker = order_data.get("ticker")
                 try:
                     instrument = Instrument.objects.get(symbol=ticker)
                 except Instrument.DoesNotExist:
-                    cprint(f"unknown instrument {ticker}")
+                    log.warning(f"Unknown instrument {ticker} in new order")
                     return
+
+                # Попытка распарсить время ордера.
+                # Настоящее время создания нам не говорят.
+                try:
+                    order_ts = int(order_data.get("lastExecutionTime_r"))
+                    order_dt = datetime.utcfromtimestamp(order_ts / 1000)
+                    order_dt = order_dt.replace(tzinfo=timezone.utc)
+                except:
+                    order_dt = None
+
                 order = Order(
                     account=account,
                     order_id=order_id,
                     local_id=local_id,
                     instrument=instrument,
+                    created_at=order_dt,
                 )
+
+            order.system_comment = order_data.get("order_cancellation_by_system_reason")
+            order.string_repr = order_data.get("orderDesc")
             order.status = order_data.get("status")
 
             order.filled = order_data.get("filledQuantity", 0)
@@ -210,10 +237,10 @@ class Command(BaseCommand):
             try:
                 order.save()
             except Exception as e:
-                cprint("ERROR: %s" % e, "red")
+                log.error(f"ERROR: {e}")
 
     def submit_order(self, ib, account, order):
-        print("\nSUBMIT_ORDER")
+        log.info("SUBMIT ORDER")
 
         # TODO: убрать блокирующую операцию до отправки ордера
         send_telegram(f"Order {account.uid} {order}")
@@ -227,12 +254,25 @@ class Command(BaseCommand):
             "tif": "GTC",
             "quantity": order.amount,
             "outsideRTH": order.outside_rth,
-            "useAdaptive": False,
+            # "useAdaptive": False,  # не работает
         }
         if order.type == Order.Type.lmt:
             order_data["price"] = float(order.limit_price)
 
-        cprint(json.dumps(order_data, indent=2, default=str), "white")
+        # Проброс Adaptive
+        if order.order_settings:
+            try:
+                conf = json.loads(order.order_settings)
+                if conf.get("strategy") == "Adaptive":
+                    order_data["tif"] = "DAY"
+                    order_data["strategy"] = "Adaptive"
+                    order_data["strategyParameters"] = {
+                        "adaptivePriority": conf.get("priority", "Normal")
+                    }
+            except Exception as e:
+                log.error(f"Bad order_settings: {order.order_settings}, {e}")
+
+        log.info(json.dumps(order_data, indent=2, default=str))
 
         res = ib.accounts.place_order(account.uid, order_data, confirm=True)
 
@@ -241,7 +281,7 @@ class Command(BaseCommand):
             order.status = "Sent"
             order.save()
 
-            cprint(f"Order OK: {json.dumps(res.json, indent=2)}", "blue")
+            log.info(f"Order OK: {json.dumps(res.json, indent=2)}")
 
             # Досрочная проверка ордеров и позиций
             self.check_orders(ib, account)
@@ -251,21 +291,22 @@ class Command(BaseCommand):
             order.status = "Error"
             order.save()
 
-            cprint(f"Order ERROR: {res}", "red")
+            log.error(f"Order ERROR: {res}")
 
     def handle(self, **kwargs):
 
-        conf_dir = join(dirname(settings.BASE_DIR), "bot_config")
+        self.unknown_instruments_cache = []
 
-        broker_config_path = abspath(join(conf_dir, kwargs.get("broker")))
+        conf_dir = join(dirname(settings.BASE_DIR))
+        config_path = abspath(join(conf_dir, kwargs.get("config")))
+        config = yaml.full_load(open(config_path))
 
-        # Загрузка конфига
-        config = yaml.full_load(open(broker_config_path))
+        username = config["live"]["username"]
+        secret = config["live"]["secret"]
+        uid = config["live"]["account"]
 
-        username = config["username"]
-        secret = config["secret"]
-        redis_config = config["redis"]
-        uid = config["account"]
+        session_source = config["live"]["session"]
+        redis_config = config["sources"][session_source]
 
         redis_client = redis.Redis(**redis_config)
         rs = RedisStorage(username, redis_client, secret)
@@ -295,4 +336,4 @@ class Command(BaseCommand):
             except Exception as e:
                 log.exception(e)
 
-        print("\nDone")
+        log.info("Done")

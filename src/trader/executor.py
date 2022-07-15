@@ -155,7 +155,7 @@ class Executor:
         log.info(colored(txt, color="cyan", attrs=["reverse"]))
 
         # Шаблон ордера
-        order = Order.market_order(
+        order = Order.adaptive_market_order(
             self.account,
             self.run,
             instrument,

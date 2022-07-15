@@ -159,6 +159,7 @@ class OrderAdmin(admin.ModelAdmin):
         "account",
         "run",
         "instrument",
+        "string_repr",
         "get_status_bool",
         "status",
         "amount",
@@ -169,9 +170,9 @@ class OrderAdmin(admin.ModelAdmin):
         "limit_price",
         "signal_price",
         "avg_fill_price",
-        "get_slippage",
-        "get_commission",
-        "get_duration",
+        # "get_slippage",
+        # "get_commission",
+        # "get_duration",
         "created_at",
         "updated_at",
     )
@@ -181,6 +182,9 @@ class OrderAdmin(admin.ModelAdmin):
         "amount",
         "filled",
         "status",
+        "system_comment",
+        "string_repr",
+        "order_settings",
     )
     list_filter = (
         "account",
@@ -199,7 +203,7 @@ class OrderAdmin(admin.ModelAdmin):
         status = None
         if obj.status in ["Filled"]:
             status = True
-        if obj.status in ["Cancelled", "Error", "Failed"]:
+        if obj.status in ["Cancelled", "Error", "Failed", "Inactive"]:
             status = False
         return status
 
