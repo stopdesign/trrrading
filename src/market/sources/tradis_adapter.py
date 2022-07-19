@@ -1,10 +1,9 @@
+import json
 import logging
 from datetime import datetime, timezone
 from time import sleep
 
-import json
 import orjson
-from termcolor import colored
 
 from .base_source import BaseSource
 
@@ -41,14 +40,14 @@ class TradisAdapter(BaseSource):
 
         # Случился таймаут
         if message is None:
-            log.error(colored("Redis pubsub timeout", "red"))
+            log.error("Redis pubsub timeout")
             return
 
         # Парсер JSON
         try:
             data = orjson.loads(message["data"])
         except Exception as e:
-            log.error(colored(f"Bad json: {message}, {e}", "red"))
+            log.error(f"Bad json: {message}, {e}")
             return
 
         # Легкий фикс формата
@@ -56,7 +55,7 @@ class TradisAdapter(BaseSource):
             symbol = data["symbol"]
             data["dt"] = parse_dt(data["dt"])
         except KeyError:
-            log.error(colored(f"Bad format: {data}", "red"))
+            log.error(f"Bad format: {data}")
             return
 
         # Биржа совсем закрыта
@@ -74,7 +73,7 @@ class TradisAdapter(BaseSource):
                 dump = json.dumps(data, default=str)
             except:
                 dump = str(data)
-            log.error(colored(f"Unknown format: {dump}", "red"))
+            log.warning(f"Unknown format: {dump}")
             return
 
         return data
@@ -120,7 +119,7 @@ class TradisAdapter(BaseSource):
             try:
                 message = pubsub.get_message(timeout=100)
             except Exception as e:
-                log.error(colored(e, "red"))
+                log.error(f"Redis pubsub get_message error: {e}")
                 sleep(1)
                 continue
 

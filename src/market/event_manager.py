@@ -4,7 +4,7 @@ from typing import Callable
 
 from data_types import Bar, BidAsk, Trade
 
-log = logging.getLogger("data_provider")
+log = logging.getLogger("event_manager")
 
 
 class EventManager:
@@ -73,6 +73,7 @@ class EventManager:
             bar = Bar.from_redis(payload)
             bar.rth = payload["rth"]
 
+            # FIXME: тут нужна поддержка разных инструментов
             bar_time_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60)
             if bar_time_gap > 1:
                 if not self.in_the_gap:

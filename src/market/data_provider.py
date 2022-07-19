@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from datetime import datetime
 from typing import Callable
 
@@ -56,6 +57,8 @@ class DataProvider:
         # Умеет отправлять сообщения о новых событиях
         self.event_manager = EventManager(on_event)
 
+        self.last_processed_dt = defaultdict(lambda: datetime.min)
+
     def on_market_event(self, payload):
         """
         Обработка данных из события, передача в event_manager
@@ -63,12 +66,22 @@ class DataProvider:
 
         # Дополнить payload информацией о расписании биржи
         if "symbol" in payload and "dt" in payload:
-            payload["rth"] = self.schedule.is_rth(payload["symbol"], payload["dt"])
+
+            # Проверить, что эти данные новее всех уже обработанных
+            dt, symbol = payload["dt"], payload["symbol"]
+
+            if self.last_processed_dt[symbol] >= dt:
+                log.warning(f"Interval has been processed: {symbol}, {dt}")
+                return
+
+            self.last_processed_dt[symbol] = dt
+
+            payload["rth"] = self.schedule.is_rth(symbol, dt)
             if payload["rth"]:
                 self.event_manager.notify(payload)
         else:
             log.warning(f"Unknown payload format: {payload}")
-        
+
     def warm_up(self):
         """
         Получение исторических данных и запуск

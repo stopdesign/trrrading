@@ -104,8 +104,10 @@ class Command(BaseCommand):
         # Проверить, что все недавние ордеры c order_id, есть в списке.
         # Был случай, когда filled-ордер отсутствовал,
         # но был виден по прямому запросу по orderId.
+        # Всё сложно... Filled могут отсутствовать после перерыва сессии.
         min_dt = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=1)
         to_be = Order.objects.filter(created_at__gt=min_dt, order_id__isnull=False)
+        to_be = to_be.exclude(status__in=["Filled"])
         to_be = list(to_be.values_list("order_id", flat=True))
 
         try:
