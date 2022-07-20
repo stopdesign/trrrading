@@ -19,6 +19,10 @@ conf = {
             "fmt": FMT,
             "datefmt": LOG_DATE_FMT,
         },
+        'verbose': {
+            "fmt": FMT,
+            "datefmt": LOG_DATE_FMT,
+        },
     },
     "handlers": {
         "console": {
@@ -27,10 +31,16 @@ conf = {
             "stream": sys.stdout,
             "formatter": "coloredlogs",
         },
+        'syslog': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.SysLogHandler',
+            'formatter': 'verbose',
+            'address': '/dev/log',
+        },
         # TODO: добавить file handler
     },
     "loggers": {
-        "": {"level": "DEBUG", "handlers": ["console"], "propagate": False},
+        "": {"level": "DEBUG", "handlers": ["console", "syslog"], "propagate": False},
         "django": {"level": "INFO", "handlers": ["console"], "propagate": False},
         # Set level to DEBUG and enable settings.DEBUG to see all SQL queries
         "django.db.backends": {
@@ -58,5 +68,3 @@ conf = {
         },
     },
 }
-LOGGING_CONFIG = None
-logging.config.dictConfig(conf)
