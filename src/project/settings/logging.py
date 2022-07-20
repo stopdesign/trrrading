@@ -68,3 +68,5 @@ conf = {
         },
     },
 }
+LOGGING_CONFIG = None
+logging.config.dictConfig(conf)
