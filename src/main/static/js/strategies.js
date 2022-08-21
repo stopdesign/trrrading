@@ -38,7 +38,10 @@ const Strategies = ({curResult, curStrategy, setStrategy}) => {
   useEffect(() => {
     fetchData();
     const interval = setInterval(() => fetchData(), 5000);
+
+    // Specify how to clean up after this effect:
     return () => {
+      console.log("Unmount Strategies")
       setStrategy(null);
       clearInterval(interval);
     };
@@ -49,8 +52,8 @@ const Strategies = ({curResult, curStrategy, setStrategy}) => {
           <table className="strategies">
               <thead>
               <tr>
-                  <td>instrument</td>
-                  <td>strategy</td>
+                  <td>Instrument</td>
+                  <td>Strategy</td>
               </tr>
               </thead>
               <tbody>

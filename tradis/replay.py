@@ -42,24 +42,27 @@ def get_key(instrument, mode=None):
 
 
 class Emulator:
-    preload_interval = 3600 * 3 - 1
-    trades_per_minute = 5
-
-    def __init__(self, redis_client, instruments, speed, start, suffix, debug):
+    
+    def __init__(self, redis_client, instruments, speed, start, end, suffix, debug):
         self.redis_client = redis_client
         self.instruments = instruments
         self.speed = speed
         self.start = start
+        self.end = end
         self.suffix = suffix
         self.debug = debug
         self.upcoming = []
         self.bars = {}
+
+        if not self.end:
+            self.end = self.start + timedelta(hours=20)
+
         self.preload_data()
 
     def preload_data(self):
 
         start_ts = dt_to_ts(self.start)
-        end_ts = start_ts + self.preload_interval
+        end_ts = dt_to_ts(self.end)
 
         print("Preload bars:")
 
@@ -96,7 +99,7 @@ class Emulator:
                 self.tick(emulated_time)
 
                 next_target_delta += 1
-            sleep(0.001)
+            sleep(0.0001)
 
     def events_for_instrument(self, emulated_time, instrument):
         """
@@ -107,28 +110,28 @@ class Emulator:
         dt_str = emulated_time.strftime("%Y-%m-%d %H:%M:%S")
         bar = self.bars[instrument["symbol"]].get(dt_str)
         if not bar:
-            sys.tracebacklimit = 1
+            sys.tracebacklimit = 0
             raise Exception(f"END OF DATA: {dt_str}, {instrument}")
 
-        key = get_key(instrument, "TRADES")
+        # key = get_key(instrument, "TRADES")
 
-        # TODO: поддержка произвольного количества, разброс цены
+        # # TODO: поддержка произвольного количества, разброс цены
 
-        if "o" in bar:
-            dt = emulated_time + timedelta(seconds=randint(3, 10))
-            self.upcoming.append(dict(dt=dt, key=key, trade=bar["o"]))
+        # if "o" in bar:
+        #     dt = emulated_time + timedelta(seconds=randint(3, 10))
+        #     self.upcoming.append(dict(dt=dt, key=key, trade=bar["o"]))
 
-        if "h" in bar:
-            dt = emulated_time + timedelta(seconds=randint(10, 40))
-            self.upcoming.append(dict(dt=dt, key=key, trade=bar["h"]))
+        # if "h" in bar:
+        #     dt = emulated_time + timedelta(seconds=randint(10, 40))
+        #     self.upcoming.append(dict(dt=dt, key=key, trade=bar["h"]))
 
-        if "l" in bar:
-            dt = emulated_time + timedelta(seconds=randint(10, 40))
-            self.upcoming.append(dict(dt=dt, key=key, trade=bar["l"]))
+        # if "l" in bar:
+        #     dt = emulated_time + timedelta(seconds=randint(10, 40))
+        #     self.upcoming.append(dict(dt=dt, key=key, trade=bar["l"]))
 
-        if "c" in bar:
-            dt = emulated_time + timedelta(seconds=randint(40, 58))
-            self.upcoming.append(dict(dt=dt, key=key, trade=bar["c"]))
+        # if "c" in bar:
+        #     dt = emulated_time + timedelta(seconds=randint(40, 58))
+        #     self.upcoming.append(dict(dt=dt, key=key, trade=bar["c"]))
 
         # Положить бар в список со смещением после закрытия бара
         key = get_key(instrument, "BARS")
@@ -159,6 +162,7 @@ class Emulator:
 
         if "bar" in event:
             bar = dict(event["bar"])
+            bar["symbol"] = event["key"].split(":")[0]
             if "late" in bar:
                 del bar["late"]
             payload = json.dumps(bar, indent=None, default=str)
@@ -180,13 +184,15 @@ class Emulator:
 
 
 @click.command()
-@click.argument("config", nargs=1, default="config_local.yaml")
+@click.argument("config", nargs=1, default="../config/tradis.yaml")
 @click.option("--start", type=dt_format, default="2022-03-02 20:00:00")
+@click.option("--end", type=dt_format, default=None)
 @click.option("--speed", type=int, default=1)
 @click.option("--suffix", type=str, default="")
 @click.option("--debug", is_flag=True, default=False)
 def main(**kwargs):
     dt_start = kwargs.get("start")
+    dt_end = kwargs.get("end")
     speed = kwargs.get("speed")
     suffix = kwargs.get("suffix")
     config_filename = kwargs.get("config")
@@ -208,7 +214,7 @@ def main(**kwargs):
 
     print(f"Historical data start point:\n{dt_start}\n")
 
-    emulator = Emulator(redis_client, instruments, speed, dt_start, suffix, debug)
+    emulator = Emulator(redis_client, instruments, speed, dt_start, dt_end, suffix, debug)
 
     try:
         emulator.start_stream()

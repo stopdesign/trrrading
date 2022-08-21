@@ -6,8 +6,7 @@
     <title>Backtest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <link rel="shortcut icon" href="{% static 'favicon.png' %}">
-    <script type="text/javascript" src="{% static 'admin/js/charting_library.standalone.js' %}"></script>
-    <script type="text/javascript" src="{% static 'admin/js/bundle.js' %}"></script>
+    <script src="{% static 'js/stats.js' %}"></script>
     <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
     <script>
         window.backtest_results = {{ backtest_results|safe }};
@@ -18,5 +17,13 @@
         <div style="padding: 20px">Loading...</div>
     </div>
     <script type="module" src="{% static 'js/index_bt.js'%}"></script>
+    <script type="text/javascript">
+        var statsPanel = new Stats();
+        document.body.appendChild(statsPanel.dom);
+        requestAnimationFrame(function loop(){
+            statsPanel.update();
+            requestAnimationFrame(loop)
+        });
+    </script>
 </body>
 </html>

@@ -77,7 +77,9 @@ class EventManager:
             bar_time_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60)
             if bar_time_gap > 1:
                 if not self.in_the_gap:
-                    log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
+                    # FIXME: убрать хардкодинг допустимых интервалов
+                    if bar_time_gap not in [3930, 1050, 5370]:
+                        log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
                 self.in_the_gap = True
             else:
                 self.in_the_gap = False

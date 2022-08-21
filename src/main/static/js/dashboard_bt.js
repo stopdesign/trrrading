@@ -1,11 +1,11 @@
 import {React, html, useState} from "./deps.js";
-import Orders from "./chart_bt.js";
+import BacktestCharts from "./d3_chart_bt.js";
 import Backtests from "./backtests.js"
 import Strategies from "./strategies.js"
 
 const DashboardBt = ({results}) => {
 
-  const [result, setResult] = useState(results[0]);
+  const [result, setResult] = useState(null);
   const [strategy, setStrategy] = useState(null);
 
   return html`
@@ -17,10 +17,12 @@ const DashboardBt = ({results}) => {
                   </div>
               </div>
               <${Backtests} curResult=${result} setResult=${setResult} results=${results} />
-              <${Strategies} curResult=${result} curStrategy=${strategy} setStrategy=${setStrategy} />
+          </div>
+          <div className="second_sidebar">
+            <${Strategies} curResult=${result} curStrategy=${strategy} setStrategy=${setStrategy} />
           </div>
           <div className="main">
-              <${Orders} curResult=${result} curStrategy=${strategy} />
+              <${BacktestCharts} curResult=${result} curStrategy=${strategy} />
           </div>
       </div>
   `;

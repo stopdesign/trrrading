@@ -34,7 +34,7 @@ class PortfolioStats:
 
         drawdown = max(Decimal(0), self.max_net_value - net)
         self.max_net_value = max(self.max_net_value, net)
-        self.cur_drawdown = drawdown / self.max_net_value * 100
+        self.cur_drawdown = drawdown / self.cash_initial * 100
         self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
         self.deposits.append(net)
 
@@ -126,7 +126,7 @@ class PortfolioStats:
             f"Profit Factor: {pf:6.2f}\n"
             f"R²:            {r2:6.2f}\n"
             f"Trades:    {trades:10.0f}\n"
-            f"Fee:         {rel_fee:+7.1f}%\n"
-            f"Slippage:    {rel_slpg:7.1f}%\n"
+            # f"Fee:         {rel_fee:+7.1f}%\n"
+            # f"Slippage:    {rel_slpg:7.1f}%\n"
         )
         cprint(txt)

@@ -3,6 +3,6 @@ import DashboardBt from "./dashboard_bt.js";
 
 
 ReactDOM.render(
-  html`<${DashboardBt} results=${window.backtest_results} />`,
+  html`<${DashboardBt} />`,
   document.getElementById("root")
 );

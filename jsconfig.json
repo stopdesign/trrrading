@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",  // "amd", "commonJS", "es2015", "es6", "esnext", "none", "system", "umd"
+    "target": "ES2022",
+    "checkJs": true,    
+    "esModuleInterop": true,
+    "noImplicitAny": false,
+    "strict": false
+  },
+  "exclude": [
+    "alpaca",
+    "data",
+    "jup",
+    "log",
+    "meta",
+    "new",
+    "res",
+    "tmp",
+    "tv",
+    "www",
+    "lib"
+  ],
+}

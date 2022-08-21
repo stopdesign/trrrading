@@ -2,17 +2,23 @@ body {
     margin: 0;
     padding: 0;
     background: #fff;
-    font-family: "Menlo", "Roboto Mono", monospace;
-    /*font-family: "Roboto", "Lucida Grande", "DejaVu Sans", "Bitstream Vera Sans", Verdana, Arial, sans-serif;*/
+
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "tnum" on,"lnum" on;
+
+    /* font-family: -apple-system,BlinkMacSystemFont,Trebuchet MS,Roboto,Ubuntu,sans-serif; */
+    font-family: -apple-system, BlinkMacSystemFont, "helvetica neue", helvetica, ubuntu, roboto, noto, "segoe ui", arial, sans-serif;
+
     font-size: 14px;
     line-height: 1.6;
-    color: #444;
+    color: #000;
     cursor: default;
 }
 
 
 .logo_panel {
-    border-bottom: 5px solid #eee;
+    /* border-bottom: 5px solid #eee; */
     padding: 0 20px 20px 20px;
     position: relative;
     height: 30px;
@@ -45,6 +51,10 @@ body {
 }
 
 .left_sidebar {
+    border-right: 5px solid #eee;
+    width: 300px;
+}
+.second_sidebar {
     border-right: 5px solid #eee;
     width: 500px;
 }
@@ -130,7 +140,7 @@ body {
 
 .strategies_panel {
     margin-top: 50px;
-    border-top: 1px solid #ddd;
+    /* border-top: 1px solid #ddd; */
 }
 .strategies {
     width: 100%;
@@ -194,3 +204,48 @@ body {
 .orders .active td {
     background: #f0f5fa;
 }
+
+
+/* d3.js */
+
+#d3_charts_info {
+    margin-left: 70px;
+}
+
+#crosshair_label_time rect {
+    fill: #555;
+}
+#crosshair_label_time text {
+    fill: #fff;
+    user-select: none;
+}
+
+rect.selection {
+    stroke: none;
+    fill: none;
+}
+svg text{
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    font-feature-settings: "tnum" on,"lnum" on;
+    font-family: -apple-system,BlinkMacSystemFont,Trebuchet MS,Roboto,Ubuntu,sans-serif;
+    /* font-family: "Helvetica Neue", sans-serif; */
+    font-size: 12px;
+ }
+ svg path.domain {
+    stroke: #aaa;
+ }
+ svg g.tick line {
+    stroke: #aaa;
+ }
+ svg rect.border {
+    stroke: #aaa;
+ }
+
+.grid-x .tick line {
+    stroke: #ccc;
+    stroke-width: 0.5;
+}
+

@@ -3,7 +3,7 @@ import logging
 import os.path
 from collections import defaultdict
 from dataclasses import asdict
-from datetime import timezone
+from datetime import datetime, timezone
 
 log = logging.getLogger("strat_stats")
 
@@ -26,7 +26,7 @@ class StrategyStats:
         last_bar["strategy"] = type(strategy).__name__
         self.__stats[strategy].append(last_bar)
 
-    def save_ohlc(self, base_dir):
+    def save_ohlc(self, base_dir, min_dt=datetime.min):
         for strategy in self.strategies:
             strategy_name = type(strategy).__name__
             file_name = f"{strategy.symbol}_{strategy_name}_ohlc.jsonl"
@@ -34,6 +34,7 @@ class StrategyStats:
             data = self.__stats[strategy]
             res = ""
             for line in data:
-                res += json.dumps(line, default=str) + "\n"
+                if line["date"] > min_dt:
+                    res += json.dumps(line, default=str) + "\n"
             with open(path, "w") as f:
                 f.write(res)

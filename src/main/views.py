@@ -105,6 +105,31 @@ def backtest(request):
     return render(request, 'backtest_chart.html', context)
 
 
+def bt_raw(request):
+
+    symbol = request.GET.get("symbol")
+    result_id = symbol[:17]
+    strategy_id = symbol.split("#")[0][18:]
+
+    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
+    ohlc_file = f"{base_dir}/{strategy_id}_ohlc.jsonl"
+
+    content = "[" + open(ohlc_file).read().replace("\n", ",\n").strip(",\n") + "]"
+
+    return HttpResponse(content, content_type="application/json")
+
+
+def results(request):
+    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
+    results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:10]
+    # res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
+    res = {
+        "results": sorted(results, reverse=True),
+    }
+    context = json.dumps(res, indent=None, default=str)
+    return HttpResponse(context, content_type="application/json")
+    
+
 def strategies(request):
     res = []
     result = request.GET.get("result", "")

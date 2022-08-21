@@ -1,6 +1,19 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
 
 import pandas_market_calendars as mcal
+import pytz
+
+
+class CustomCBOT(mcal.exchange_calendar_cme.CMEAgricultureExchangeCalendar):
+    regular_market_times = {
+        "market_open": ((None, time(8,30)),),
+        "market_close": ((None, time(13,20)),),
+    }
+
+    @property
+    def tz(self):
+        return pytz.timezone('America/Chicago')
+
 
 IBKR_TO_MCAL = {
     "NASDAQ": "NASDAQ",
@@ -8,6 +21,7 @@ IBKR_TO_MCAL = {
     "NYSE": "NYSE",
     "ARCA": "NYSE",
     "GLOBEX": "CME_Rate",
+    "CBOT": "CustomCBOT",
 }
 
 
@@ -37,7 +51,10 @@ class MarketCalendar:
         """
         Рабочие минутные интервалы от dt_1 до dt_2 в виде списка timestamps.
         """
-        calendar = mcal.get_calendar(exchange)
+        if exchange == "CustomCBOT":
+            calendar = CustomCBOT()
+        else:
+            calendar = mcal.get_calendar(exchange)
 
         # Расписание нужной биржи (все доступные интервалы)
         schedule = calendar.schedule(self.dt_1, self.dt_2)  # , market_times="all")
