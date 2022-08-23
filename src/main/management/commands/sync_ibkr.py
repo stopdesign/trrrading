@@ -47,6 +47,22 @@ def send_telegram(text: str):
         log.error(f"send_telegram exception, {e}")
 
 
+def fractions_to_float(frac_str):
+    if frac_str is None:
+        return frac_str
+    try:
+        return float(frac_str)
+    except ValueError:
+        num, denom = frac_str.split('/')
+        try:
+            leading, num = num.split(' ')
+            whole = float(leading)
+        except ValueError:
+            whole = 0
+        frac = float(num) / float(denom)
+        return whole - frac if whole < 0 else whole + frac
+
+
 class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--config", type=str, dest="config", default=DEF_CONFIG)
@@ -227,7 +243,7 @@ class Command(BaseCommand):
             order.type = order_type
 
             if order_type == Order.Type.lmt:
-                order.limit_price = order_data.get("price")
+                order.limit_price = fractions_to_float(order_data.get("price"))
 
             if side := order_data.get("side"):
                 if side == Order.Side.buy.value:
@@ -235,7 +251,7 @@ class Command(BaseCommand):
                 if side == Order.Side.sell.value:
                     order.action = Order.Side.sell
 
-            order.avg_fill_price = order_data.get("avgPrice")
+            order.avg_fill_price = fractions_to_float(order_data.get("avgPrice"))
             try:
                 order.save()
             except Exception as e:
