@@ -12,11 +12,12 @@ class Hint:
     signal_price: Decimal
 
     def __repr__(self):
+        symbol = self.symbol.split(".")[0]
         return (
-            f"Hint({self.symbol}, "
+            f"Hint({self.signal_dt}, "
+            f"{symbol}, "
             f"{type(self.strategy).__name__}, "
-            f"{self.signal.abbr}: {self.signal_price:0.2f}, "
-            f"{self.signal_dt})"
+            f"{self.signal.abbr}: {self.signal_price:6.2f})"
         )
 
     @property

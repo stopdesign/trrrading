@@ -344,6 +344,18 @@ class Command(BaseCommand):
                     continue
                 prev_dt = dt
                 self.check_new(ib, account)
+
+                # Сервер лежит, не делать запросы
+                if ib.ibkr_long_break():
+                    log.info("IBKR long break")
+                    continue
+
+                # Сервер иногда полеживает, сократить частоту запросов
+                if ib.ibkr_short_break():
+                    if dt.minute % 10 != 0 and dt.second != 0:
+                        log.info("IBKR short break")
+                        continue
+                
                 if dt.second % 15 == 0:
                     ib.load_session()
                     self.check_orders(ib, account)

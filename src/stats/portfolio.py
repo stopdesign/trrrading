@@ -94,22 +94,25 @@ class PortfolioStats:
         # на единицу задействованных в торговле денег.
         roi = p / self.cash_initial * 100
 
-        if p:
-            rel_fee = -self.fee / float(p) * 100
-        else:
-            rel_fee = float("nan")
+        # if p:
+        #     rel_fee = -self.fee / float(p) * 100
+        # else:
+        #     rel_fee = float("nan")
 
         # R2
         if self.deposits and len(self.deposits) > 1:
             x = np.arange(len(self.deposits))
             y = np.array(self.deposits, dtype=float)
-            r2 = np.corrcoef(x, y)[0, 1] ** 2
-            gp = float(self.gross_profit)
-            rel_slpg = self.slippage / (gp + self.slippage) * 100 if gp else 0
+            if len(set(y)) > 1:
+                r2 = np.corrcoef(x, y)[0, 1] ** 2
+            else:
+                r2 = float("nan")
+            # gp = float(self.gross_profit)
+            # rel_slpg = self.slippage / (gp + self.slippage) * 100 if gp else 0
         else:
-            r2 = 0
+            r2 = float("nan")
             self.max_drawdown = 0
-            rel_slpg = 0
+            # rel_slpg = 0
 
         if self.exchange.dt_last:
             end = self.exchange.dt_last.date()

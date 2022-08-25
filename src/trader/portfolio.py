@@ -1,4 +1,4 @@
-import json
+import math
 import logging
 from math import floor
 from decimal import Decimal, ROUND_DOWN
@@ -39,7 +39,7 @@ class Portfolio:
     def get_profit(self, strategy):
         net = Decimal(0)
         position = self.__positions[strategy]
-        if position.amount:
+        if position.amount and not math.isnan(position.amount):
             side = "sell" if position.amount > 0 else "buy"
             price = self.exchange.get_price(strategy.symbol, side)
             net += position.amount * (price - position.avg_price)
@@ -60,7 +60,7 @@ class Portfolio:
         net = Decimal(0)
         for strategy in self.strategies:
             position = self.__positions[strategy]
-            if position.amount:
+            if position.amount and not math.isnan(position.amount):
                 side = "sell" if position.amount > 0 else "buy"
                 price = self.exchange.get_price(strategy.symbol, side)
                 net += position.amount * (price - position.avg_price)
@@ -102,7 +102,7 @@ class Portfolio:
 
             if hint.signal == Signal.CLOSE:
                 cur_amount = self.__positions[hint.strategy].amount
-                side = "sell" if cur_amount > 0 else "buy"
+                side = "sell" if (not math.isnan(cur_amount)) and cur_amount > 0 else "buy"
                 price = self.exchange.get_price(hint.symbol, side)
                 amount = Decimal(0)
 
@@ -115,6 +115,9 @@ class Portfolio:
             profit = self.__positions[hint.strategy].update(amount, price)
             self.total_profit += profit
 
+            total_profit_rel = 100 * self.total_profit / self.target_margin
+            profit_rel = 100 * profit / self.target_margin
+
             data = {
                 'dt': hint.signal_dt,
                 'time': dt_to_ts(hint.signal_dt),
@@ -126,15 +129,16 @@ class Portfolio:
             self.events[hint.strategy].append(data)
 
             profit_colored = ""
-            if profit > 0:
-                profit_colored = colored(f"{profit:+0.2f}", "green")
-            elif profit < 0:
-                profit_colored = colored(f"{profit:+0.2f}", "red")
+            if profit_rel > 0:
+                profit_colored = colored(f"{profit_rel:+6.1f}", "green")
+            elif profit_rel < 0:
+                profit_colored = colored(f"{profit_rel:+6.1f}", "red")
             else:
-                profit_colored = colored("~0.00", "blue")
+                profit_colored = colored("   0.0", "yellow")
 
             log.info(
-                f"{hint}, amount: {amount:+0.0f}, "
-                f"profit: {profit_colored}, "
-                f"Σ: {self.total_profit:+0.2f}"
+                f"{hint}, "
+                # f"amnt: {amount:+0.0f}, "
+                f" {profit_colored}, "
+                f" {total_profit_rel:+6.1f}"
             )

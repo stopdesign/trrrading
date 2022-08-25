@@ -147,6 +147,6 @@ class PolygonAdapter(BaseSource):
                 if self.schedule.is_rth(symbol, payload["dt"]):
                     all_data.append((line["t"], symbol, payload))
 
-        log.info(f"{symbols}, {dt_1}, {dt_2}, {len(all_data)}")
+        log.info(f"{dt_1}, {dt_2}, {len(all_data)}")
 
         return sorted(all_data)

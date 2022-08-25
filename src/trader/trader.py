@@ -65,8 +65,9 @@ class Trader:
 
         self.config_start_end(run_config)
 
-        # Сколько данных до старта нужно для прогрева индикаторов
-        self.dt_prior = self.dt_start - timedelta(days=10)
+        # Сколько данных до старта нужно для прогрева индикаторов.
+        # TODO: Хорошо бы сделать какую-то автоматизацию выбора интервала.
+        self.dt_prior = self.dt_start - timedelta(days=20)
 
         # Инициализация источников данных
         self.config_sources(run_config, sources)
@@ -99,13 +100,12 @@ class Trader:
         self.portfolio = Portfolio(self.exchange, self.strategies, self.target_margin)
         self.strategy_stats.portfolio = self.portfolio
 
-        # Позиции выставляются по прогретым сигналам.
-        self.init_positions()
-
-        # Список стратегий, результаты прогрева.
-        for strategy in self.strategies:
-            amnt = self.portfolio.get_amount(strategy)
-            log.info(colored(f"Strategy: {strategy.info} => {amnt}", "grey"))
+        # Пока решил не открывать ордер по сигналу на старте для бэктеста,
+        # потому что не хочу показывать прогревочный период на графике.
+        # Для торговли нужно инициализировать позиции по прошлым сигналам,
+        # чтобы бот при первой возможности купил-продал нужное.
+        if not (self.backtest or self.replay):
+            self.init_positions()
 
         # Инициализируется механизм выставления ордера на бирже
         if not (self.backtest or self.replay):
@@ -195,17 +195,21 @@ class Trader:
         #     self.portfolio.set_initial_amount(strategy, Decimal(0))
         hints = []
         for strategy in self.strategies:
+            # TODO: Тут нужно добыть цену сигнала
+            side = strategy.prev_signal.side
+            price = self.exchange.get_price(strategy.symbol, side)
             hint = Hint(
                 strategy=strategy,
                 signal=strategy.prev_signal,
                 signal_dt=strategy.prev_signal_dt,
-                signal_price=Decimal("nan"),  # TODO: добыть цену
+                signal_price=price,
             )
             hints.append(hint)
         self.portfolio.rebalance(hints)
 
     def start(self):
 
+        print()
         log.info(colored(" Start ", "green", attrs=["reverse", "bold"]))
 
         self.portfolio_stats.snapshot()
@@ -243,7 +247,7 @@ class Trader:
         path = os.path.join(os.path.dirname(__file__), "../../res", dir_name)
         path = os.path.abspath(path)
         os.makedirs(path)
-        self.strategy_stats.save_ohlc(path)
+        self.strategy_stats.save_ohlc(path, self.dt_start)
         self.portfolio_stats.save_events(path)
 
     def on_event(self, event, dt, symbol=None, payload=None):

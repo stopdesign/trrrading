@@ -42,8 +42,8 @@ class BaseStrategy:
         return f"{self}, signal={self.prev_signal.value}, data_len={len(self.data)}"
 
     @hint
-    def on_bar(self, data):
-        pass
+    def on_bar(self, data) -> Signal:
+        return Signal.PASS
 
     @hint
     def on_quote(self, data) -> Signal:
