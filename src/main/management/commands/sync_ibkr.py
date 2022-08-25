@@ -23,7 +23,7 @@ ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 DEF_CONFIG = "../config/bot.yaml"
 
 
-def send_telegram(text: str):
+def send_telegram(text: str, silent: bool = False):
     """
     send_telegram("message text")
     """
@@ -38,6 +38,7 @@ def send_telegram(text: str):
         "text": ansi_escape.sub("", text),
         "chat_id": settings.TELEGRAM_CHANNEL_ID,
         "parse_mode": "html",
+        "disable_notification": silent,
     }
     try:
         r = requests.post(url, data=data, timeout=3)
@@ -77,7 +78,7 @@ class Command(BaseCommand):
             order.save()
             self.submit_order(ib, account, order)
 
-    def check_account(self, ib, account):
+    def check_account(self, ib, account, notify=False):
         """
         Загрузить список ордеров, позиций и баланс аккаунта.
         """
@@ -90,6 +91,9 @@ class Command(BaseCommand):
         except (ValueError, TypeError, KeyError) as e:
             log.warning(res.text)
             log.error(f"Parsing error: {e}")
+
+        if notify:
+            send_telegram(f"Net Value: {account.net_value}", silent=True)
 
     def parse_account(self, account, res_data):
         net_value = res_data.get("netliquidation")["amount"]
@@ -355,12 +359,15 @@ class Command(BaseCommand):
                     if dt.minute % 10 != 0 and dt.second != 0:
                         log.info("IBKR short break")
                         continue
+
+                # В начале часа отправлять телеграм-уведомление про баланс
+                notify = dt.minute == 0 and dt.second < 5
                 
                 if dt.second % 15 == 0:
                     ib.load_session()
                     self.check_orders(ib, account)
                     self.check_positions(ib, account)
-                    self.check_account(ib, account)
+                    self.check_account(ib, account, notify)
             except KeyboardInterrupt:
                 break
             except Exception as e:
