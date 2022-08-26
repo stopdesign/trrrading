@@ -356,12 +356,11 @@ class Command(BaseCommand):
 
                 # Сервер иногда полеживает, сократить частоту запросов
                 if ib.ibkr_short_break():
-                    if dt.minute % 10 != 0 and dt.second != 0:
-                        log.info("IBKR short break")
+                    if not (dt.minute % 10 == 0 and dt.second == 0):
                         continue
 
                 # В начале часа отправлять телеграм-уведомление про баланс
-                notify = dt.minute == 0 and dt.second < 5
+                notify = dt.minute == 10 and dt.second < 5
                 
                 if dt.second % 15 == 0:
                     ib.load_session()
