@@ -93,7 +93,9 @@ class Command(BaseCommand):
             log.error(f"Parsing error: {e}")
 
         if notify:
-            send_telegram(f"Net Value: {account.net_value}", silent=True)
+            nv = account.net_value or float("NaN")
+            nv = "{:,.2f}".format(nv).replace(",", " ")
+            send_telegram(f"Net Value: {nv}", silent=True)
 
     def parse_account(self, account, res_data):
         net_value = res_data.get("netliquidation")["amount"]
@@ -349,24 +351,30 @@ class Command(BaseCommand):
                 prev_dt = dt
                 self.check_new(ib, account)
 
+                if dt.second % 15:
+                    continue
+
                 # Сервер лежит, не делать запросы
                 if ib.ibkr_long_break():
+                    if not (dt.minute % 15 == 0 and dt.second == 0):
+                        continue
                     log.info("IBKR long break")
                     continue
 
                 # Сервер иногда полеживает, сократить частоту запросов
                 if ib.ibkr_short_break():
-                    if not (dt.minute % 10 == 0 and dt.second == 0):
+                    if not (dt.minute % 15 == 0 and dt.second == 0):
                         continue
+                    log.info("IBKR short break")
 
                 # В начале часа отправлять телеграм-уведомление про баланс
                 notify = dt.minute == 10 and dt.second < 5
                 
-                if dt.second % 15 == 0:
-                    ib.load_session()
-                    self.check_orders(ib, account)
-                    self.check_positions(ib, account)
-                    self.check_account(ib, account, notify)
+                ib.load_session()
+                self.check_orders(ib, account)
+                self.check_positions(ib, account)
+                self.check_account(ib, account, notify)
+
             except KeyboardInterrupt:
                 break
             except Exception as e:

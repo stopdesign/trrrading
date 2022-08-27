@@ -38,9 +38,9 @@ class TradisAdapter(BaseSource):
         if message and message.get("type") == "subscribe":
             return
 
-        # Случился таймаут
+        # Сервис Marker data не прислал данные вовремя
         if message is None:
-            log.error("Redis pubsub timeout")
+            log.error("Marker data timeout")
             return
 
         # Парсер JSON
@@ -66,6 +66,11 @@ class TradisAdapter(BaseSource):
         # Биржа открыта, но пришел пустой бар
         if "empty" in data:
             # log.info(f"{symbol}, {data['dt']} empty bar")
+            return
+
+        # Сервис Marker data работает, но актуальных данных в нем нет
+        if data.get("delay"):
+            log.warning(f"{symbol}, {data['dt']} delay")
             return
 
         if not ("price" in data or "vol" in data):
