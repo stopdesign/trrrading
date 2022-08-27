@@ -88,10 +88,11 @@ class DataMiner:
         exchange = instrument["exchange"]
         calendar = mcal.get_calendar(IBKR_TO_MCAL[exchange])
 
-        # Запас, чтобы покрыть 1000 минут с учетом возможных выходных.
-        today = datetime.today().date()
-        dt_1 = today - timedelta(days=10)
-        dt_2 = today + timedelta(days=10)
+        # Запас, чтобы покрыть 1000 минут с учетом выходных,
+        # иначе будет ошибка "indexer is out-of-bounds" в iloc.
+        day = datetime.today().date()
+        dt_1 = day - timedelta(days=6)
+        dt_2 = day + timedelta(days=1)
 
         # Минутная сетка шкалы времени
         df = pd.DataFrame(pd.date_range(dt_1, dt_2, freq="1T", tz="UTC"))
