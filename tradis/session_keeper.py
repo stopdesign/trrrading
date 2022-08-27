@@ -10,7 +10,7 @@ from ibkr_web_api.alert import TelegramAlertHandler
 from ibkr_web_api.storage import RedisStorage
 from ibkr_web_api.utils.ocra import ocra_handler
 
-# # Логгер для этого файла
+# Логгер для этого файла
 log = logging.getLogger("session_keeper")
 log.setLevel(logging.INFO)
 
