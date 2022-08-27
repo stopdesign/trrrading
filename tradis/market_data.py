@@ -127,8 +127,8 @@ class DataMiner:
         """
         Хорошим считается бар, в котором есть dt и цена или флаг closed.
         """
-        bar = str(bar)
-        return '{"dt":' in bar and ('"o":' in bar or '"closed":' in bar)
+        s = bar.db if type(bar.db) is str else ""
+        return '{"dt":' in s and ('"o":' in s or '"closed":' in s)
 
     def load_redis_data(self, grid: pd.DataFrame, instrument: dict):
         """
