@@ -92,14 +92,16 @@ class Command(BaseCommand):
             log.warning(res.text)
             log.error(f"Parsing error: {e}")
 
+        nv = account.net_value or float("NaN")
+        nv = "Net Value: {:,.2f}".format(nv).replace(",", " ")
+
+        log.info(nv)
+
         if notify:
-            nv = account.net_value or float("NaN")
-            nv = "{:,.2f}".format(nv).replace(",", " ")
-            send_telegram(f"Net Value: {nv}", silent=True)
+            send_telegram(nv, silent=True)
 
     def parse_account(self, account, res_data):
         net_value = res_data.get("netliquidation")["amount"]
-        log.info(f"Net Value: {net_value}")
         account.net_value = Decimal(net_value)
 
         cash_value = res_data.get("totalcashvalue")["amount"]
