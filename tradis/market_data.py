@@ -107,9 +107,11 @@ class DataMiner:
         times = calendar.regular_market_times
         if "pre" in times and "post" in times:
             schedule[["market_open", "market_close"]] = schedule[["pre", "post"]]
-        open = mcal.date_range(schedule, "1T", closed="left", force_close=1)
+        open = mcal.date_range(schedule, "1T", force_close=1)
 
-        df["open"] = df[0].isin(open)
+        # Смещение на одну минуту нужно, чтобы интервал 
+        # HH:00 был как следующие интервалы этого часа
+        df["open"] = df[0].isin(open).shift(-1)
 
         df.set_index(0, inplace=True)
 
