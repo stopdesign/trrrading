@@ -38,9 +38,9 @@ class TradisAdapter(BaseSource):
         if message and message.get("type") == "subscribe":
             return
 
-        # Сервис Marker data не прислал данные вовремя
+        # Сервис Market data не прислал данные вовремя
         if message is None:
-            log.error("Marker data timeout")
+            log.error("Market data timeout")
             return
 
         # Парсер JSON
@@ -68,7 +68,7 @@ class TradisAdapter(BaseSource):
             # log.info(f"{symbol}, {data['dt']} empty bar")
             return
 
-        # Сервис Marker data работает, но актуальных данных в нем нет
+        # Сервис Market data работает, но актуальных данных в нем нет
         if data.get("delay"):
             log.warning(f"{symbol}, {data['dt']} delay")
             return

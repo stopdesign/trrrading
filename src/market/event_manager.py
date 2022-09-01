@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Callable
 
 from data_types import Bar, BidAsk, Trade
@@ -78,7 +78,7 @@ class EventManager:
             if bar_time_gap > 1:
                 if not self.in_the_gap:
                     # FIXME: убрать хардкодинг допустимых интервалов
-                    if bar_time_gap not in [3930, 1050, 5370]:
+                    if bar_time_gap not in [3930, 1050, 5370, 4030, 1150, 5470]:
                         log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
                 self.in_the_gap = True
             else:

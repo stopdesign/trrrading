@@ -65,8 +65,11 @@ class DataMiner:
         self.ib.load_session()
 
     def update_instrument(self, instrument):
+
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
         # Сделать минутную сетку
-        grid = self.get_grid(instrument)
+        grid = self.get_grid(instrument, as_of=now)
 
         # Положить в неё данные из базы.
         grid = self.load_redis_data(grid, instrument)
@@ -77,7 +80,7 @@ class DataMiner:
         # Сравнить данные из базы и из IBKR, обновить при различиях.
         self.update_db(grid, instrument)
 
-    def get_grid(self, instrument):
+    def get_grid(self, instrument, as_of):
         """
         Минутная сетка с разметкой основной и расширенной биржевой сессии.
         Возвращает сетку, где есть N рабочих минут до now включительно.
@@ -91,8 +94,8 @@ class DataMiner:
         # Запас, чтобы покрыть 1000 минут с учетом выходных,
         # иначе будет ошибка "indexer is out-of-bounds" в iloc.
         day = datetime.today().date()
-        dt_1 = day - timedelta(days=6)
-        dt_2 = day + timedelta(days=1)
+        dt_1 = day - timedelta(days=7)
+        dt_2 = day + timedelta(days=3)
 
         # Минутная сетка шкалы времени
         df = pd.DataFrame(pd.date_range(dt_1, dt_2, freq="1T", tz="UTC"))
@@ -111,7 +114,7 @@ class DataMiner:
         df.set_index(0, inplace=True)
 
         # Обрезать всё после now
-        df = df[: datetime.utcnow().replace(tzinfo=timezone.utc)]
+        df = df[:as_of]
 
         # Нужное количество интервалов (с конца), где биржа открыта
         start_dt = df[df["open"]].iloc[-working_minutes_cnt].name
@@ -148,17 +151,16 @@ class DataMiner:
 
         return grid
 
-    def get_min_editable_bar_ts(self):
+    def get_min_editable_bar_ts(self, grid):
         """
         Интервал не слишком старый для редактирования.
 
         Иногда IBKR меняет старые данные.
         После закрытия торговой сессии присылают данные премаркета.
         Приходится это игнорировать, т.к. это ломает импорт.
-        Лимит должен быть меньше основной сессии короткого дня.
+        Лимит должен быть меньше, который покрывается API (1000 минут).
         """
-        min_editable_bar_dt = datetime.utcnow() - timedelta(hours=3)
-        return dt_to_ts(min_editable_bar_dt)
+        return int(grid.ts[-1]) - 3600 * 5
 
     def validate_ibkr_res(self, res):
         """
@@ -202,12 +204,8 @@ class DataMiner:
 
     def fill_ibkr_data(self, grid: pd.DataFrame, instrument: dict):
 
-        # Найти интервалы без окончательных данных
-        grid_not_final = grid[
-            (grid.final != True)  # интервал не финализирован в базе
-            & (grid.open == True)  # биржа открыта
-            & (grid.ts >= self.get_min_editable_bar_ts())  # не очень давно
-        ]
+        # Найти рабочие интервалы без окончательных данных
+        grid_not_final = grid[(grid.final != True) & (grid.open == True)]
 
         if grid_not_final.empty:
             # Ничего грузить не нужно, сетка заполнена
@@ -266,7 +264,7 @@ class DataMiner:
             # Empty bar FSM needs full grid (with final bars)
             empty_bar_state = self._empty_bar_fsm(empty_bar_state, row)
 
-            if row.ts < self.get_min_editable_bar_ts():
+            if row.ts < self.get_min_editable_bar_ts(grid):
                 continue
 
             if row.final:

@@ -1,8 +1,8 @@
 
 // set the dimensions and margins of the graph
-const margin = {top: 10, right: 0, bottom: 30, left: 0},
+const margin = {top: 10, right: 0, bottom: 40, left: 0},
     width = 2400 - margin.left - margin.right,
-    height = 120 - margin.top - margin.bottom;
+    height = 130 - margin.top - margin.bottom;
 
 
 function pad(num) {
@@ -119,15 +119,14 @@ function draw_chart(el, data, symbol) {
     });
 
   svg.append("g")
-    .attr("transform", `translate(9, ${height})`)
+    .attr("transform", `translate(10, ${height})`)
     .call(x_axis_day)
     .selectAll("text")
     .attr('font-size', "10px")
-    .attr('font-weight', "bold")
     .style('fill',  function(d) {
       var wd = (new Date(d + " UTC")).getDay();
       if (wd === 0 || wd === 6) {
-        return "#bb5533"
+        return "#cc5533"
       } else {
         return "#339977"
       }

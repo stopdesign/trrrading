@@ -5,5 +5,15 @@ body {
 h2 {
     font-size: 1.1em;
     font-family: "Helvetica Neue", "Helvetica", sans-serif;
-    margin: 1.5em 0 0.5em 0;
+    margin: 1.2em 0 0 0;
 }
+
+svg text{
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    font-feature-settings: "tnum" on,"lnum" on;
+    font-family: "Helvetica Neue", "Helvetica", sans-serif;
+    font-size: 10px;
+ }

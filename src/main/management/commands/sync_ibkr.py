@@ -214,11 +214,12 @@ class Command(BaseCommand):
 
             # Если ордер в базе вообще никак не найден — создать.
             if not order:
-                ticker = order_data.get("ticker")
+                conid = order_data.get("conid")
+                desc = order_data.get("description1")
                 try:
-                    instrument = Instrument.objects.get(symbol=ticker)
+                    instrument = Instrument.objects.get(conid=conid)
                 except Instrument.DoesNotExist:
-                    log.warning(f"Unknown instrument {ticker} in new order")
+                    log.warning(f"Unknown instrument {conid}, {desc} in new order")
                     return
 
                 # Попытка распарсить время ордера.
