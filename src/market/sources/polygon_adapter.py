@@ -97,6 +97,9 @@ class PolygonAdapter(BaseSource):
         return data
 
     def load_from_file(self, symbol, dt_1, dt_2):
+        """
+        Архив разделен на две части: до и после 2022
+        """
         data = []
         date_x = datetime(2022, 1, 1)
         path = os.path.abspath(self.path)
@@ -117,8 +120,12 @@ class PolygonAdapter(BaseSource):
             else:
                 data = self.load_from_api(ss, dt_1, dt_2)
 
+            if not data:
+                log.error(f"No data for {symbol}")
+                continue
+
             # Заполнение пробелов в данных
-            df = pd.DataFrame(data)
+            df = pd.DataFrame(data).drop_duplicates()
             df["dt"] = pd.to_datetime(df["t"], unit="s")
             df = df.set_index("dt")
 
