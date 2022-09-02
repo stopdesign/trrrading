@@ -9,7 +9,7 @@ const DashboardBt = ({results}) => {
   const [strategy, setStrategy] = useState(null);
 
   return html`
-      <div className="dashboard">
+      <div className="dashboard backtest">
           <div className="left_sidebar">
               <div className="logo_panel">
                   <div className="logo">

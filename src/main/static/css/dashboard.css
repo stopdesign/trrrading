@@ -52,6 +52,9 @@ body {
 
 .left_sidebar {
     border-right: 5px solid #eee;
+    width: 500px;
+}
+.backtest .left_sidebar  {
     width: 300px;
 }
 .second_sidebar {
