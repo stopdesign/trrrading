@@ -131,10 +131,10 @@ class DataMiner:
 
     def _validate_db_bar(self, bar):
         """
-        Хорошим считается бар, в котором есть dt и цена или флаг closed.
+        Хорошим считается бар, в котором есть dt и цена, флаг closed или empty.
         """
         s = bar.db if type(bar.db) is str else ""
-        return '{"dt":' in s and ('"o":' in s or '"closed":' in s)
+        return '{"dt":' in s and ('"o":' in s or '"closed":' in s or '"empty":' in s)
 
     def load_redis_data(self, grid: pd.DataFrame, instrument: dict):
         """
@@ -214,8 +214,8 @@ class DataMiner:
             return grid
 
         # Посчитать количество интервалов, которые нужно загрузить
-        first_ts = grid_not_final.ts[0]
-        to_load = grid[grid.ts >= first_ts].shape[0]
+        first_not_final_ts = grid_not_final.ts[0]
+        to_load = grid[grid.ts >= first_not_final_ts].shape[0]
         to_load = min(to_load + self.load_margin, self.load_limit)
 
         # Попытка загрузки данных из IBKR
