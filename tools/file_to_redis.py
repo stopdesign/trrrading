@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from csv import QUOTE_NONNUMERIC, DictReader
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import redis
@@ -16,11 +16,12 @@ log = logging.getLogger("polygon_adapter")
 
 
 symbols = [
-    "AAPL.NASDAQ",
+    # "AAPL.NASDAQ",
     # "MES.GLOBEX",
     # "MNQ.GLOBEX",
     # "MNTS.NASDAQ",
     "URA.ARCA",
+    "COPX.ARCA",
     "REMX.ARCA",
 ]
 
@@ -139,8 +140,8 @@ class PolygonAdapter:
 def process_trades(symbol):
     key = f"{symbol}:TRADES"
 
-    dt_1 = datetime(2022, 1, 1)
-    dt_2 = datetime.utcnow()
+    dt_1 = datetime(2022, 7, 1)
+    dt_2 = datetime.utcnow() - timedelta(hours=20)
 
     pa = PolygonAdapter(path="../../data/polygon_nyse/")
     data = pa.load([symbol], dt_1, dt_2)

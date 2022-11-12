@@ -11,14 +11,14 @@ import requests
 import socket
 import pandas_market_calendars as mcal
 from os.path import abspath, dirname
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
 from ib_insync import *
 from pathlib import Path
 from termcolor import cprint
 from contextlib import closing
 
 
-BASE_DIR = abspath(dirname(__file__) + "/../../data")
+BASE_DIR = abspath(dirname(__file__) + "/../data")
 
 BID_ASK_COLUMNS_MAP = {
     "open": "av_bid",
@@ -32,7 +32,13 @@ dt_format = click.DateTime(formats=["%Y-%m-%d"])
 # Можно пробросить порт с удаленной машины:
 # ssh -L 4001:127.0.0.1:4001 root@51.15.62.103
 
-port_tws = 7497
+# Ports by default:
+# 7497 TWS paper
+# 7496 TWS real
+# 4002 IB Gateway paper
+# 4001 IB Gateway real
+
+port_tws = 7496
 port_gw = 4001
 
 ib_params = {
@@ -57,7 +63,7 @@ def get_first_day(contract):
     date = None
     for i in range(10):
         date = ib.reqHeadTimeStamp(
-            contract, whatToShow="TRADES", useRTH=False, formatDate=2,
+            contract, whatToShow="MIDPOINT", useRTH=False, formatDate=2,
         )
         if date:
             break
@@ -73,7 +79,7 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # day_end = f"{day:%Y%m%d 23:59:59} UTC"
     # print(day, " | ", day_end, " | ", day_utc)
 
-    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT"]:
+    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT", "IDEALPRO"]:
         duration = "2 D"
     else:
         duration = "1 D"
@@ -96,6 +102,18 @@ def get_data(contract, day, data_type, timeframe="1 min"):
         t = datetime.combine(day, datetime.min.time()).astimezone(ex_tz)
         t0 = t - timedelta(days=1) + timedelta(hours=14, minutes=30)
         t1 = t + timedelta(hours=14, minutes=30)
+        only_one_day = []
+        for bar in bars:
+            dt = bar.date
+            if t0 <= dt < t1:
+                only_one_day.append(bar)
+        bars = only_one_day
+        # print(util.df(bars))
+
+    if contract.exchange in ["IDEALPRO"]:
+        t = datetime.combine(day, datetime.min.time()).replace(tzinfo=timezone.utc)
+        t0 = t
+        t1 = t + timedelta(hours=23, minutes=59, seconds=59)
         only_one_day = []
         for bar in bars:
             dt = bar.date
@@ -129,7 +147,11 @@ def get_splits(ticker):
 def download_and_save(contract, data_types=None, start=None, end=None, force=False):
     data_types = data_types or ["BID_ASK", "TRADES"]
 
-    symbol = contract.symbol
+    if contract.secType == "CASH":
+        symbol = contract.pair()
+    else:
+        symbol = contract.symbol
+
     exchange = contract.primaryExchange or contract.exchange
 
     ticker = f"{symbol}.{exchange}"
@@ -163,9 +185,19 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     cal_exchange = cal_exchange.replace("NYMEX", "CMES")
     cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
     cal_exchange = cal_exchange.replace("ECBOT", "CMES")
+    cal_exchange = cal_exchange.replace("IDEALPRO", "24/7")
 
     calendar = mcal.get_calendar(cal_exchange)
+
     schedule = calendar.schedule(start, end)
+
+    # это какой-то пиздец...
+    if contract.secType == "CASH":
+        calendar_1 = mcal.get_calendar("NYSE")
+        schedule_1 = calendar_1.schedule(start, end)
+        calendar_2 = mcal.get_calendar("TASE")
+        schedule_2 = calendar_2.schedule(start, end)
+        schedule = mcal.merge_schedules(schedules=[schedule, schedule_1, schedule_2], how='outer')
 
     splits = None
     if contract.secType == "STK":
@@ -191,8 +223,13 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     df.to_csv(f_name, sep="\t")
 
     for day, t in sorted(schedule.T.to_dict("list").items()):
-        t0 = t[0].to_pydatetime().replace(tzinfo=timezone.utc)
-        t1 = t[1].to_pydatetime().replace(tzinfo=timezone.utc)
+        if contract.secType == "CASH":
+            # Тут продолжение пиздеца
+            t0 = day.replace(tzinfo=timezone.utc)
+            t1 = day.replace(tzinfo=timezone.utc) + timedelta(days=1)
+        else:
+            t0 = t[0].to_pydatetime().replace(tzinfo=timezone.utc)
+            t1 = t[1].to_pydatetime().replace(tzinfo=timezone.utc)
 
         # d0, d1 = t0.date(), t1.date()
         middle_date = t0 + (t1 - t0) / 2
@@ -217,6 +254,8 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
                         exp_date = ced
                         break
                 contract.lastTradeDateOrContractMonth = exp_date
+                print(exp_date, middle_date)
+                print(exp_dates)
 
             # Получить данные за день
             try:
@@ -262,8 +301,8 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
 
             df.to_csv(f_name, sep="\t")
 
-            time = (datetime.now() - dt).total_seconds()
-            cprint(f"DONE: {f_name}, {len(df)} lines, {time:0.2f} s", "green")
+            omg_time = (datetime.now() - dt).total_seconds()
+            cprint(f"DONE: {f_name}, {len(df)} lines, {omg_time:0.2f} s", "green")
 
 
 def daterange(start_date, end_date):
@@ -276,9 +315,9 @@ def daterange(start_date, end_date):
 @click.option("--start", type=dt_format)
 @click.option("--end", type=dt_format)
 @click.option("--force", is_flag=True)
-@click.option("--midpoint", is_flag=True)
-@click.option("--bidask", is_flag=True, default=True)
-@click.option("--trades", is_flag=True, default=True)
+@click.option("--midpoint/--no-midpoint", is_flag=True)
+@click.option("--bidask/--no-bidask", is_flag=True, default=True)
+@click.option("--trades/--no-trades", is_flag=True, default=True)
 def main(**kwargs):
     """
     python get_ohlc_ib.py mes.globex --start 2020-12-20
@@ -327,6 +366,8 @@ def main(**kwargs):
 
         if pe in ["GLOBEX", "ECBOT", "NYMEX"]:
             contract = Future(symbol, exchange=pe, currency="USD")
+        elif pe in ["FX", "FOREX", "IDEALPRO"]:
+            contract = Forex(symbol)
         else:
             contract = Stock(symbol, "SMART", "USD", primaryExchange=pe)
 

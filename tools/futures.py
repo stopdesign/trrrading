@@ -19,7 +19,7 @@ from bisect import bisect
 import dataclasses
 
 
-BASE_DIR = abspath(dirname(__file__) + "/../../data")
+BASE_DIR = abspath(dirname(__file__) + "/../data")
 
 BID_ASK_COLUMNS_MAP = {
     "open": "av_bid",
