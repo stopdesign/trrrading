@@ -5,9 +5,13 @@ from decimal import Decimal
 @dataclass
 class Position:
     symbol: str
+    capital: Decimal
     amount: Decimal = Decimal("nan")
     avg_price: Decimal = Decimal("nan")
     profit: Decimal = Decimal(0)  # реализованный профит без учета slippage
+    max_profit: Decimal = Decimal(0)
+    cur_drawdown: Decimal = Decimal(0)  # просадка между сделками, %
+    max_drawdown: Decimal = Decimal(0)
 
     def update(self, amount: Decimal, price: Decimal):
 
@@ -41,6 +45,13 @@ class Position:
             # Записать профит
             trade_profit = amount_to_close * (self.avg_price - price)
             self.profit += trade_profit
+
+            self.max_profit = max(self.max_profit, self.profit)
+
+            # Просадка сразу считается относительно капитала,
+            # т.к. капитал когда-нибудь сможет меняться
+            self.cur_drawdown = (self.max_profit - self.profit) / self.capital
+            self.max_drawdown = max(self.max_drawdown, self.cur_drawdown)
 
             # Если amount еще остался — открыть позицию
             if delta != 0:

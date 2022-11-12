@@ -15,6 +15,7 @@ class PortfolioStats:
         self.exchange = portfolio.exchange
         self.max_net_value = Decimal("-Infinity")
         self.max_drawdown = Decimal("-Infinity")
+        self.max_trade_drawdown = Decimal("-Infinity")
         self.cur_drawdown = 0
         self.gross_profit = 0
         self.gross_loss = 0

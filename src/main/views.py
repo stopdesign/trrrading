@@ -121,7 +121,7 @@ def bt_raw(request):
 
 def results(request):
     base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
-    results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:10]
+    results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:20]
     # res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
     res = {
         "results": sorted(results, reverse=True),

@@ -27,7 +27,8 @@ class Portfolio:
         self.target_margin = target_margin
         self.total_profit = Decimal(0)
         for strategy in self.strategies:
-            self.__positions[strategy] = Position(strategy.symbol)
+            capital = self.target_margin / len(self.strategies)
+            self.__positions[strategy] = Position(strategy.symbol, capital)
             self.events[strategy] = []
 
     def get_amount(self, strategy) -> Decimal:
@@ -70,7 +71,10 @@ class Portfolio:
     def get_info(self):
         txt = ""
         for strategy in self.strategies:
-            txt += f"{strategy}, {self.__positions[strategy].profit:+0.2f}\n"
+            capital = self.__positions[strategy].capital
+            pnl = self.__positions[strategy].profit / capital * 100
+            max_dd = self.__positions[strategy].max_drawdown * 100
+            txt += f"{strategy}, PnL: {pnl:+0.1f}%, Max DD: {max_dd:0.1f}%\n"
         return txt.strip()
 
     def rebalance(self, hints):
