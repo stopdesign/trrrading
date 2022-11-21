@@ -151,7 +151,9 @@ def strategies(request):
 def positions(request):
     account_id = request.GET.get("account", 0)
     res = []
-    for position in Position.objects.filter(account_id=account_id).prefetch_related():
+    positions = Position.objects.filter(account_id=account_id).prefetch_related()
+    positions = positions.order_by("-avg_price")
+    for position in positions:
         res.append({
             "symbol": position.instrument.ticker,
             "amount": position.amount,

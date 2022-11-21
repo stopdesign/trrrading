@@ -53,6 +53,8 @@ body {
 .left_sidebar {
     border-right: 5px solid #eee;
     width: 500px;
+    display: flex;
+    flex-direction: column;
 }
 .backtest .left_sidebar  {
     width: 300px;
@@ -84,7 +86,7 @@ body {
 
 /* Positions */
 .positions_panel {
-
+    overflow-y: scroll;
 }
 .positions {
     width: 100%;
@@ -215,10 +217,14 @@ body {
     margin-left: 70px;
 }
 
-#crosshair_label_time rect {
+#crosshair_label_time rect,
+#crosshair_label_price_l rect,
+#crosshair_label_price_r rect {
     fill: #555;
 }
-#crosshair_label_time text {
+#crosshair_label_time text,
+#crosshair_label_price_l text,
+#crosshair_label_price_r text {
     fill: #fff;
     user-select: none;
 }

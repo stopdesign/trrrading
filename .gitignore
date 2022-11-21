@@ -3,9 +3,12 @@
 /www/
 /res/
 /data/
+/opt/data*
+/lean/
 /config/
 /coverage
 /node_modules
+/tradingview/
 *_local.*
 *.sqlite3*
 reload
