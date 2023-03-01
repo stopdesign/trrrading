@@ -10,6 +10,7 @@ from data_types import Bar, Hint, Trade
 from django.utils.timezone import make_aware
 from main.models import Account, Run
 from market import DataProvider, PolygonAdapter, TradisAdapter
+from market.event_manager import EventManager
 from stats import PortfolioStats, StrategyStats
 from strategy import Signal, all_strategies
 from termcolor import colored
@@ -50,6 +51,7 @@ class Trader:
         txt = f"Init Trader(backtest={backtest}) at {dt_now}"
         log.info(colored(txt, "white"))
 
+        self.config = config
         self.backtest = backtest
         self.replay = replay
 
@@ -60,6 +62,8 @@ class Trader:
         self.target_margin = Decimal(run_config["target_margin"])
 
         self.symbols = sorted(list({c["symbol"] for c in strategies}))
+
+        # self.symbols.append("SPY.ARCA")
 
         self.init_strategies(strategies)
 
@@ -125,6 +129,13 @@ class Trader:
 
         self.portfolio_stats.portfolio_info()
         # self.portfolio_stats.account_info()
+
+    def reset_settings(self, dt):
+        print(colored("\nRESET\n", "magenta"))
+        print(self.portfolio.get_info())
+        print()
+
+        self.dt_start = dt
 
     def config_start_end(self, conf):
         if self.backtest:
@@ -256,6 +267,8 @@ class Trader:
         """
         # if dt > self.dt_start and not self.backtest:
         #     log.info(f"EVENT {event} {symbol} {payload}")
+        # if event == "day":
+        #     print("\n\n\n")
 
         if event == "bar":
             self.on_bar(dt, symbol, payload)
@@ -277,6 +290,7 @@ class Trader:
         """
         hints = []
 
+        # В стратегию подаются бары всех символов 
         for strategy in self.strategies:
             if strategy.symbol == symbol:
                 if signal := strategy.on_bar(copy(payload)):
@@ -288,6 +302,8 @@ class Trader:
                     )
                     hints.append(hint)
 
+        for strategy in self.strategies:
+            if strategy.symbol == symbol:
                 # После добавления нового бара в стратегию происходит
                 # сохранение бара с индикаторами и профитом
                 # TODO: обработать прерывание торгов и close all

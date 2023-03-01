@@ -7,7 +7,8 @@ from datetime import timezone, datetime, timedelta
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
-from main.models import Account, Instrument, Order, Position
+from django.core.cache import cache
+from main.models import Account, Contract, Order, Position
 
 
 MD_STATES = ["ok", "error", "closed", "empty", "delay", "fix", "late", "none"]
@@ -122,7 +123,7 @@ def bt_raw(request):
 def results(request):
     base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
     results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:20]
-    # res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
+    # res = sorted(res, key=lambda r: (r["contract"], r["strategy"]))
     res = {
         "results": sorted(results, reverse=True),
     }
@@ -137,13 +138,13 @@ def strategies(request):
     files = glob.glob(f"{base_dir}/*_ohlc.jsonl")
     for file in files:
         file = os.path.basename(file)
-        instrument, strategy, _ = file.split("_")
+        contract, strategy, _ = file.split("_")
         res.append({
-            "id": f"{instrument}_{strategy}",
+            "id": f"{contract}_{strategy}",
             "strategy": strategy,
-            "instrument": instrument,
+            "contract": contract,
         })
-    res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
+    res = sorted(res, key=lambda r: (r["contract"], r["strategy"]))
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
 
@@ -155,7 +156,7 @@ def positions(request):
     positions = positions.order_by("-avg_price")
     for position in positions:
         res.append({
-            "symbol": position.instrument.ticker,
+            "symbol": position.contract.ticker,
             "amount": position.amount,
             "avg_price": position.avg_price,
             "unrealized_pnl": position.unrealized_pnl,
@@ -190,10 +191,11 @@ def bt_events(request):
             "symbol": strategy_id,
             "amount": order["amount"],
             "filled": order["amount"],
-            "status": "fulled",
+            "status": "filled",
             "price": order["price"],
             "profit": order["profit"],
             "side": order["side"],
+            "signal": order["signal"],
             "time": order["time"],
             "created": order["dt"],
         })
@@ -204,10 +206,18 @@ def bt_events(request):
 def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
+    last_connected = cache.get("last_connected", "---")[:19]
     res = {
         "uid": account.uid,
+        "daily_pnl": account.daily_pnl,
+        "unrealized_pnl": account.unrealized_pnl,
+        "realized_pnl": account.realized_pnl,
         "net_value": account.net_value,
         "margin_used": account.margin_used,
+        "cash_value": account.cash_value,
+        "ex_liq_sec": account.ex_liq_sec,
+        "ex_liq_com": account.ex_liq_com,
+        "last_connected": last_connected,
     }
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
@@ -220,13 +230,13 @@ def orders(request):
     if symbol:
         symbol = symbol.split(".")[0]
         try:
-            instrument = Instrument.objects.get(symbol=symbol)
+            contract = Contract.objects.get(symbol=symbol)
             all_orders = Order.objects.filter(
                 account_id=account_id,
-                instrument=instrument
+                contract=contract
             )
             all_orders = all_orders.prefetch_related().order_by("-id")[:20]
-        except Instrument.DoesNotExist:
+        except Contract.DoesNotExist:
             all_orders = []
     else:
         all_orders = Order.objects.filter(account_id=account_id)
@@ -243,7 +253,7 @@ def orders(request):
             "id": order.id,
             "order_id": order.order_id,
             "local_id": order.local_id,
-            "symbol": order.instrument.ticker,
+            "symbol": order.contract.ticker,
             "amount": order.amount,
             "filled": order.filled,
             "status": order.status,
@@ -340,11 +350,11 @@ def symbols(request):
     symbol = request.GET.get("symbol")
     if "GLOBEX" in symbol:
         session = "24x7"
-        instrument_type = "futures"
+        contract_type = "futures"
     else:
         # session = "24x7"
         session = "0930-1600"
-        instrument_type = "stock"
+        contract_type = "stock"
     data = {
       "name": symbol,
       "exchange-traded": "",
@@ -357,7 +367,7 @@ def symbols(request):
       "has_intraday": True,
       "has_no_volume": True,
       "description": f"{symbol}",
-      "type": instrument_type,
+      "type": contract_type,
       "supported_resolutions": ["1", "5", "15", "30", "1H", "2H", "3H", "4H", "1D", "1W"],
       "pricescale": 100,
       "ticker": symbol,
@@ -389,6 +399,12 @@ def history(request):
 
     from_ts = int(request.GET.get("from"))
     to_ts = int(request.GET.get("to"))
+
+    # dt = datetime(2022, 12, 6)  #  datetime.utcnow() - timedelta(hours=170)
+    # ts = dt_to_ts(dt)
+    # # to_ts = ts
+    # # print(from_ts, to_ts, ts)
+    # from_ts = ts
 
     data_in_db = r.zrangebyscore(f"{symbol}:TRADES", from_ts, to_ts)
 
@@ -430,9 +446,9 @@ def history(request):
 def marks(request):
 
     account = Account.objects.get(id=1)
-    instrument = Instrument.objects.get(symbol="MES")
+    contract = Contract.objects.get(symbol="MES")
 
-    orders = Order.objects.filter(account=account, instrument=instrument)
+    orders = Order.objects.filter(account=account, contract=contract)
 
     times = [1647364100]
     ids = [123]

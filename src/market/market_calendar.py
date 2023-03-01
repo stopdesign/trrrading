@@ -65,9 +65,13 @@ class MarketCalendar:
         #     schedule[["market_open", "market_close"]] = schedule[["pre", "post"]]
 
         # Минутные интервалы RTH
-        open = mcal.date_range(schedule, "1T", closed="left", force_close=1)
+        open = mcal.date_range(schedule, "1T", force_close=1)
 
-        return set(open.view("int64") // 10**9)
+        # Смещение на одну минуту нужно, чтобы интервал 
+        # HH:00 был как следующие интервалы этого часа
+        res = {dt - 60 for dt in set(open.view("int64") // 10**9)}
+
+        return res
 
     def is_rth(self, symbol, dt) -> bool:
         ex = IBKR_TO_MCAL[symbol.split(".")[1]]

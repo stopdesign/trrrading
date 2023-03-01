@@ -31,7 +31,7 @@ const Positions = ({account, symbol, setSymbol}) => {
 
   useEffect(() => {
     fetchPositions();
-    const interval = setInterval(() => fetchPositions(), 5000);
+    const interval = setInterval(() => fetchPositions(), 3000);
     return () => {
       clearInterval(interval);
     };

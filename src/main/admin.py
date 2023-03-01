@@ -6,7 +6,7 @@ from django.db.models import Count
 from project.admin import admin_site
 from project.helpers.admin_decorators import short_description, boolean
 from .models import (
-    Exchange, Instrument, Order, Position, Trade, OrderEvent, Account, Run
+    Exchange, Order, Position, Trade, OrderEvent, Account, Run, Contract
 )
 
 
@@ -46,7 +46,7 @@ class OrderInline(admin.TabularInline):
     fields = (
         "order_id",
         "local_id",
-        "instrument",
+        "contract",
         "status",
         "amount",
         "filled",
@@ -107,12 +107,12 @@ class ExchangeAdmin(admin.ModelAdmin):
     actions = None
 
 
-@admin.register(Instrument, site=admin_site)
-class InstrumentAdmin(admin.ModelAdmin):
+@admin.register(Contract, site=admin_site)
+class ContractAdmin(admin.ModelAdmin):
     list_display = (
         "symbol",
+        "local_symbol",
         "main_exchange",
-        "description",
         "conid",
         "min_tick",
         "sec_type",
@@ -158,7 +158,7 @@ class OrderAdmin(admin.ModelAdmin):
         "local_id",
         "account",
         "run",
-        "instrument",
+        "contract",
         "string_repr",
         "get_status_bool",
         "status",
@@ -177,7 +177,7 @@ class OrderAdmin(admin.ModelAdmin):
         "updated_at",
     )
     fields = (
-        "instrument",
+        "contract",
         "action",
         "amount",
         "filled",
@@ -188,7 +188,7 @@ class OrderAdmin(admin.ModelAdmin):
     )
     list_filter = (
         "account",
-        "instrument",
+        "contract",
         "status",
         "created_at",
     )
@@ -255,7 +255,7 @@ class OrderAdmin(admin.ModelAdmin):
 class PositionAdmin(admin.ModelAdmin):
     list_display = (
         "account",
-        "instrument",
+        "contract",
         "amount",
         "avg_price",
         "unrealized_pnl",

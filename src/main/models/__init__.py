@@ -1,5 +1,5 @@
 from .exchange import Exchange
-from .instrument import Instrument
+from .contract import Contract
 from .order import Order
 from .position import Position
 from .trade import Trade
@@ -8,6 +8,7 @@ from .account import Account
 from .run import Run
 
 __all__ = [
-    "Account", "Exchange", "Instrument",
-    "Order", "Position", "Trade", "OrderEvent", "Run",
+    "Account", "Exchange",
+    "Order", "Position", "Trade",
+    "OrderEvent", "Run", "Contract",
 ]

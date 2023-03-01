@@ -1,3 +1,4 @@
+from collections import namedtuple
 from typing import Optional
 from .signal import Signal
 
@@ -19,20 +20,21 @@ def hint(func):
 class BaseStrategy:
 
     def __init__(self, **kwargs):
-        kwargs.pop("strategy", None)
+        self.name = kwargs.pop("strategy", None)
         self.symbol = kwargs.get("symbol")
         self.length = kwargs.get("length")
-        self.params = kwargs
+        self.params = namedtuple(self.name, kwargs.keys())(*kwargs.values())
         self.data = []
         self.prev_signal = Signal.PASS
         self.prev_signal_dt = None
         self.on_start()
 
     def __repr__(self):
-        params = ""
-        for key, value in self.params.items():
-            params += f" {key}={value},"
-        return f"{type(self).__name__}({params.strip().strip(',')})"
+        return str(self.params)
+    
+    @property
+    def market_system(self):
+        return f"{self.symbol}_{self.name}"
 
     def on_start(self):
         pass

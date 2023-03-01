@@ -56,7 +56,7 @@ class DataMiner:
     ib: IBThinClient
     rc: redis.Redis
     data_delay: int = 0
-    load_margin: int = 5
+    load_margin: int = 100  
     load_limit: int = 1000
 
     def __init__(self, ib: IBThinClient, rc: redis.Redis) -> None:
@@ -115,8 +115,9 @@ class DataMiner:
 
         df.set_index(0, inplace=True)
 
-        # Обрезать всё после now
-        df = df[:as_of]
+        # Обрезать всё после now.
+        # Делается запас, чтобы не обрабатывалась открытая минута.
+        df = df[:as_of - timedelta(seconds=65)]
 
         # Нужное количество интервалов (с конца), где биржа открыта
         start_dt = df[df["open"]].iloc[-working_minutes_cnt].name

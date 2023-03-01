@@ -19,22 +19,34 @@ class StrategyStats:
         self.__stats = defaultdict(list)
 
     def append(self, strategy, dt):
-        profit = self.portfolio.get_profit(strategy) if self.portfolio else 0
+        if self.portfolio:
+            cash = float(self.portfolio.target_margin / len(self.portfolio.strategies))
+            profit = self.portfolio.get_profit(strategy)
+            profit_rel = 100.0 * profit / cash if cash else 0
+        else:
+            cash = 0
+            profit = 0
+            profit_rel = 0
         last_bar = asdict(strategy.data[-1])
         last_bar["ts"] = dt_to_ts(dt)
         last_bar["profit"] = profit
-        last_bar["strategy"] = type(strategy).__name__
-        self.__stats[strategy].append(last_bar)
+        last_bar["profit_rel"] = f"{profit_rel:0.4f}"
+        last_bar["strategy"] = strategy.name
+        self.__stats[strategy.market_system].append(last_bar)
 
     def save_ohlc(self, base_dir, min_dt=datetime.min):
         for strategy in self.strategies:
-            strategy_name = type(strategy).__name__
-            file_name = f"{strategy.symbol}_{strategy_name}_ohlc.jsonl"
+            file_name = f"{strategy.market_system}_ohlc.jsonl"
             path = os.path.join(base_dir, file_name)
-            data = self.__stats[strategy]
+            data = self.__stats[strategy.market_system]
             res = ""
+            # FIXME: переписать. 
+            # Смысл в том, что данные добавляются не по порядку,
+            # Но сохранить нужно по порядку и не все.
+            strat_min_dt = min_dt
             for line in data:
-                if line["date"] > min_dt:
+                if line["date"] > strat_min_dt:
                     res += json.dumps(line, default=str) + "\n"
+                    strat_min_dt = line["date"]
             with open(path, "w") as f:
                 f.write(res)

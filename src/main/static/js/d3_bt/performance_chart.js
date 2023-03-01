@@ -21,6 +21,8 @@ export class PerformanceChart {
   constructor(chartArea, data) {
 
     this.bisectDate = d3.bisector(function (d) { return d.date }).left
+    this.bisectTime = d3.bisector(function (d) { return d.time }).left
+    this.bisectIdx = d3.bisector(function (d) { return d.idx }).left
 
     this.chartArea = d3.select(chartArea)
     this.data = data
@@ -100,39 +102,75 @@ export class PerformanceChart {
       .y0(0)
       .y1(d => this.yDrawdownScale(d.drawdown))
 
-    this.resample()
+    this.resample(this.data)
 
     this.data = this.calcDrawdown(this.data)
 
     this.draw(this.data)
   }
 
-  resample() {
+  resample(data) {
 
-    var data = this.data
+    let prevBar
 
-    var bisect = d3.bisector(function (d) { return d.time }).left
-
-    // const getInterval = dt => dt.getDay()
-    const getInterval = dt => dt.getHours()
-
-    const small = [data[0]]
-    let prevBar = data[0]
+    const isSameInterval = (dt_1, dt_2, rule) => {
+      if (rule == "10m") {
+        const i1 = Math.floor(dt_1.getTime() / (1000 * 60 * 10))
+        const i2 = Math.floor(dt_2.getTime() / (1000 * 60 * 10))
+        return i1 === i2
+      }
+      if (rule == "1h") {
+        return dt_1.getHours() == dt_2.getHours()
+      }
+      if (rule == "1d") {
+        return dt_1.getDay() == dt_2.getDay()
+      }
+    }
+    
+    this.data_10m = []
+    prevBar = data[0]
     for (const bar of data) {
-      if (getInterval(prevBar.date) != getInterval(bar.date)) {
-        small.push({
+      if (!isSameInterval(prevBar.date, bar.date, "10m")) {
+        this.data_10m.push({
           date: bar.date,
           time: bar.time,
           drawdown: bar.drawdown,
-          idx: data[bisect(data, bar.time, 1)].idx,
+          idx: data[this.bisectTime(data, bar.time, 1)].idx,
           net_value: bar.net_value,
         })
       }
       prevBar = bar
     }
-    small.push(data.at(-1))
 
-    this.data = small
+    this.data_1h = []
+    prevBar = this.data_10m[0]
+    for (const bar of this.data_10m) {
+      if (!isSameInterval(prevBar.date, bar.date, "1h")) {
+        this.data_1h.push({
+          date: bar.date,
+          time: bar.time,
+          drawdown: bar.drawdown,
+          idx: data[this.bisectTime(data, bar.time, 1)].idx,
+          net_value: bar.net_value,
+        })
+      }
+      prevBar = bar
+    }
+
+    this.data_1d = []
+    prevBar = this.data_1h[0]
+    for (const bar of this.data_1h) {
+      if (!isSameInterval(prevBar.date, bar.date, "1d")) {
+        this.data_1d.push({
+          date: bar.date,
+          time: bar.time,
+          drawdown: bar.drawdown,
+          idx: data[this.bisectTime(data, bar.time, 1)].idx,
+          net_value: bar.net_value,
+        })
+      }
+      prevBar = bar
+    }
 
   }
 
@@ -196,10 +234,10 @@ export class PerformanceChart {
     this.verticalScale(data)
 
     // нарисовать оси
-    this.xAxis(this.gx)
+    // this.xAxis(this.gx)
     this.yAxis(this.gy)
 
-    this.xAxisGrid(this.gxGrid)
+    // this.xAxisGrid(this.gxGrid)
   }
 
   drawLine(data) {
@@ -225,29 +263,37 @@ export class PerformanceChart {
     })
   }
 
-  zoomToRange(range, dates) {
+  zoomToRange(range) {
 
-    // TODO: Сейчас range задается датами, 
-    // но при одинаковых системах отсчета в data и stats
-    // можно будет сделать отсечку по индексу
+    const dataSize = range[1] - range[0]
 
-    // Часть данных, входящая в отображаемый диапазон
-    const i0 = Math.max(0, this.bisectDate(this.data, dates[0]) - 2)
-    const i1 = this.bisectDate(this.data, dates[1]) + 1
+    let small
 
-    let dataZoomed = this.data.slice(i0, i1)
-
-    dataZoomed = this.calcDrawdown(dataZoomed)
-
-    // const dataRange = d3.extent(dataZoomed, d => d.idx)
-
-    // console.log(dataRange)
+    if (dataSize > 100000) {
+      const i0 = Math.max(0, this.bisectIdx(this.data_1d, range[0]) - 2)
+      const i1 = this.bisectIdx(this.data_1d, range[1]) + 2
+      small = this.data_1d.slice(i0, i1)
+    } else if (dataSize > 20000) {
+      const i0 = Math.max(0, this.bisectIdx(this.data_1h, range[0]) - 2)
+      const i1 = this.bisectIdx(this.data_1h, range[1]) + 2
+      small = this.data_1h.slice(i0, i1)
+    } else if (dataSize > 2000) {
+      const i0 = Math.max(0, this.bisectIdx(this.data_10m, range[0]) - 2)
+      const i1 = this.bisectIdx(this.data_10m, range[1]) + 2
+      small = this.data_10m.slice(i0, i1)
+    } else {
+      const i0 = Math.max(0, this.bisectIdx(this.data, range[0]) - 2)
+      const i1 = this.bisectIdx(this.data, range[1]) + 2
+      small = this.data.slice(i0, i1)
+    }
 
     this.xScaleZoomed.domain(range)
 
-    this.drawLine(dataZoomed)
+    small = this.calcDrawdown(small)
 
-    this.drawAxes(dataZoomed)
+    this.drawLine(small)
+
+    this.drawAxes(small)
 
   }
 

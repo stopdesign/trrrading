@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 Добавить данные этого контракта в общий список.
 """
 
-BASE = "/Users/gregory/projects/life/trrrading/data/ECBOT"
+BASE = "/Users/gregory/projects/life/trrrading/data/COMEX"
 
 
 def dt_to_ts(dt):
@@ -57,7 +57,7 @@ def get_best_contract_data(symbol, contracts):
 
         best_path = path = f"{BASE}/{symbol}/{best_contract}/TRADES/{day}.txt"
 
-        # print(best_path)
+        print(best_path)
 
         for line in open(best_path).readlines()[:15000]:
             dt_str, o, h, l, c, v, vw, n, _ = line.strip().split("\t")
@@ -84,7 +84,7 @@ def save_data(symbol, data):
 def main():
 
     # for symbol in ["ZO", "ZR", "ZS", "ZW"]:
-    for symbol in ["ZR"]:
+    for symbol in ["HG"]:
 
         print(symbol)
 

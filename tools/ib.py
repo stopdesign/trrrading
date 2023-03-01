@@ -3,10 +3,9 @@ import os
 import pandas as pd
 from datetime import timezone, datetime, timedelta
 from io import StringIO
-from django.conf import settings
 
 
-DATA_BASE_DIR = settings.BASE_DIR / "data"
+DATA_BASE_DIR = os.path.abspath('..') + "/data"
 
 TRADES_NUM_COL = ["open", "high", "low", "close", "volume", "average", "barCount"]
 BIDASK_NUM_COL = ["av_bid", "max_ask", "min_bid", "av_ask"]
@@ -87,7 +86,7 @@ def load_as_df(ticker, data_type, start=None, end=None):
         df.drop(["volume", "average", "barCount"], axis=1, inplace=True)
         df[BIDASK_NUM_COL] = df[BIDASK_NUM_COL].apply(pd.to_numeric)
 
-    if data_type == "TRADES":
+    if data_type in ["TRADES", "MIDPOINT"]:
         df[TRADES_NUM_COL] = df[TRADES_NUM_COL].apply(pd.to_numeric)
 
     return df

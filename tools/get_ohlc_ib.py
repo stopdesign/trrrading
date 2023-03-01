@@ -79,7 +79,7 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # day_end = f"{day:%Y%m%d 23:59:59} UTC"
     # print(day, " | ", day_end, " | ", day_utc)
 
-    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT", "IDEALPRO"]:
+    if contract.exchange in ["GLOBEX", "ECBOT", "NYMEX", "COMEX", "CBOT", "IDEALPRO"]:
         duration = "2 D"
     else:
         duration = "1 D"
@@ -97,7 +97,7 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     if len(bars) == 0:
         raise ValueError("Empty response")
 
-    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT"]:
+    if contract.exchange in ["GLOBEX", "ECBOT", "NYMEX", "COMEX", "CBOT"]:
         ex_tz = pytz.timezone('America/New_York')
         t = datetime.combine(day, datetime.min.time()).astimezone(ex_tz)
         t0 = t - timedelta(days=1) + timedelta(hours=14, minutes=30)
@@ -183,8 +183,10 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     cal_exchange = exchange
     cal_exchange = cal_exchange.replace("ARCA", "NYSE")
     cal_exchange = cal_exchange.replace("NYMEX", "CMES")
+    cal_exchange = cal_exchange.replace("COMEX", "CMES")
     cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
     cal_exchange = cal_exchange.replace("ECBOT", "CMES")
+    cal_exchange = cal_exchange.replace("CBOT", "CMES")
     cal_exchange = cal_exchange.replace("IDEALPRO", "24/7")
 
     calendar = mcal.get_calendar(cal_exchange)
@@ -250,12 +252,12 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
             if contract.secType == "FUT":
                 exp_date = None
                 for ced in exp_dates:
-                    if ced >= middle_date.strftime("%Y%m%d"):
+                    if ced >= (middle_date + timedelta(days=70)).strftime("%Y%m%d"):
                         exp_date = ced
                         break
                 contract.lastTradeDateOrContractMonth = exp_date
-                print(exp_date, middle_date)
-                print(exp_dates)
+                print("Contract exp date:", exp_date, middle_date)
+                # print("All dates:", exp_dates)
 
             # Получить данные за день
             try:
@@ -267,6 +269,14 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
                 cprint(f"ConnectionError: {symbol}, {day}, {data_type}", "red")
                 cprint(e, "red")
                 continue
+            
+            if data_type == "TRADES":
+                bc = df["barCount"].sum()
+                if bc < 10000:
+                    color = "red"
+                else:
+                    color = "blue"
+                cprint(f"Total bars: {bc}", color)
 
             if type(df).__name__ == "NoneType" or df.empty:
                 cprint(f"No data: {middle_date}, {data_type}", "blue")
@@ -320,7 +330,7 @@ def daterange(start_date, end_date):
 @click.option("--trades/--no-trades", is_flag=True, default=True)
 def main(**kwargs):
     """
-    python get_ohlc_ib.py mes.globex --start 2020-12-20
+    python get_ohlc_ib.py mes.globex  --start 2020-12-20
 
     Examples:
     mes.globex
@@ -364,7 +374,7 @@ def main(**kwargs):
             symbol = stock
             pe = "ARCA"
 
-        if pe in ["GLOBEX", "ECBOT", "NYMEX"]:
+        if pe in ["GLOBEX", "ECBOT", "NYMEX", "COMEX", "CBOT"]:
             contract = Future(symbol, exchange=pe, currency="USD")
         elif pe in ["FX", "FOREX", "IDEALPRO"]:
             contract = Forex(symbol)

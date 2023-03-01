@@ -35,11 +35,11 @@ def main():
         rs = None
 
     if telegram_config := config.get("telegram"):
-        alert = TelegramAlertHandler(**telegram_config)
+        ah = TelegramAlertHandler(**telegram_config)
     else:
-        alert = None
+        ah = None
 
-    ib = IBClient(username, password, paper, storage=rs, alert=alert)
+    ib = IBClient(username, password, paper, storage=rs, alert_handler=ah)
     ib._auth.ibkey_handler = ocra_handler
 
     # TODO: add "force new session" flag?

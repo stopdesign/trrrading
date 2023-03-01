@@ -21,10 +21,14 @@ class HullMa(BaseStrategy):
     nsqrt = None
 
     padding = 0.0
-    tf = 15
+    timeframe = 30
+    
     tf_bar_date = datetime(2000, 1, 1)
 
     def on_start(self):
+        self.padding = getattr(self.params, "padding", self.padding)
+        self.timeframe = getattr(self.params, "timeframe", self.timeframe)
+        
         n_half = round(self.length / 2)
         n_sqrt = round(math.sqrt(self.length))
 
@@ -46,10 +50,10 @@ class HullMa(BaseStrategy):
             # bar_cnt = len(self.data) % self.tf == 0
 
             # is_tf = False
-            is_tf = bar.date.minute % self.tf == 0
+            is_tf = bar.date.minute % self.timeframe == 0
 
             timeout = False
-            if (bar.date - self.tf_bar_date).total_seconds() > self.tf * 60:
+            if (bar.date - self.tf_bar_date).total_seconds() > self.timeframe * 60:
                 timeout = True
 
             # докинуть данных
@@ -91,6 +95,6 @@ class HullMa(BaseStrategy):
             return Signal.LONG
 
         if bar.n1 < bar.n2 - self.padding and trade.price < bar.n2 - price_delta:
-            return Signal.SHORT
+            return Signal.SHORT if self.params.short else Signal.CLOSE
 
         return Signal.PASS

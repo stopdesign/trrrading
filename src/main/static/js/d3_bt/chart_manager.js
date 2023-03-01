@@ -6,7 +6,7 @@ import * as d3 from "https://cdn.skypack.dev/d3@7"
 import { PriceChart } from "./price_chart.js"
 import { PerformanceChart } from "./performance_chart.js"
 import { NavChart } from "./nav_chart.js"
-import { WeekleyChart } from "./weekley_chart.js"
+import { PriceAroundTrades } from "./price_around_trades.js"
 
 export class ChartManager {
 
@@ -23,28 +23,23 @@ export class ChartManager {
     // let [data, trades, stats] = await Promise.all([d3.csv('data.csv'), d3.csv('trades.csv'), d3.csv('stats.csv')])
       
     const base = "http://127.0.0.1:8000"
-    // const symbol = "COPX.ARCA_ChannelBreakout3"
-    // const symbol = "URA.ARCA_ChannelBreakout3"
-    // const symbol = "REMX.ARCA_HullMa"
-    // const symbol = "URA.ARCA_HullMa"
-    // const bt_uid = "2022-08-14_020518"
+
     let ohlc = await d3.json(`${base}/bt/raw?symbol=${bt_uid}_${symbol}`);
     let events = await d3.json(`${base}/bt/events?result=${bt_uid}&strategy=${symbol}`);
 
-    // console.log(history)
-    // console.log(events)
-
-    // console.log()
-    // console.log(trades)
-    // console.log(data)
-
+    console.log(events)
 
     // Хочу посчитать все параметры на фронте,
     // т.к. это позволит использовать график для любых бэктестов,
     // которые выдают список сделок.
     // Плюс это кроссвалидация результата.
 
-    // {"date": "2021-12-27 14:34:00", "symbol": "URA.ARCA", "open": 24.635, "high": 24.71, "low": 24.635, "close": 24.68, "volume": 2190.0, "rth": true, "n1": null, "n2": null, "ts": 1640615640, "profit": 0, "strategy": "HullMa"},
+    // {
+    //   "date": "2021-12-27 14:34:00", "symbol": "URA.ARCA", "open": 24.635, 
+    //   "high": 24.71, "low": 24.635, "close": 24.68, "volume": 2190.0, 
+    //   "rth": true, "n1": null, "n2": null, "ts": 1640615640, "profit": 0, 
+    //   "strategy": "HullMa"
+    // },
 
     for (var i in ohlc) {
       ohlc[i]["idx"] = +i
@@ -96,8 +91,11 @@ export class ChartManager {
     for (const bar of ohlc) {
 
       if (trade) {
+        // console.info(new Date(bar.time))
         if (trade.time * 1000 < bar.time) {
           console.error(trade.time, bar.time)
+          // console.error(new Date(bar.time))
+          trade = events.shift()
         }
         if (trade.time * 1000 == bar.time) {
           // обработать сделку
@@ -128,6 +126,10 @@ export class ChartManager {
           if (trade.side == "sell") {
             position = -amount
             cash = amount * p   // получено с продажи
+          }
+
+          if (trade.signal == "close") {
+            position = 0
           }
     
           realized_pnl += trade_pnl
@@ -204,7 +206,7 @@ export class ChartManager {
 
     this.performanceChart = new PerformanceChart(this.chartArea, ohlc)
 
-    // this.weekleyChart = new WeekleyChart(this.chartArea, stats)
+    // this.priceAroundTrades = new PriceAroundTrades(this.chartArea, ohlc, trades_1)
  
     this.navChart = new NavChart(this.chartArea, this.priceChart, this.performanceChart)
 

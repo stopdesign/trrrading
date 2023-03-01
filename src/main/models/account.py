@@ -6,11 +6,15 @@ class Account(models.Model):
     paper = models.BooleanField(default=False)
     username = models.CharField(max_length=50, default="")
 
-    net_value = models.DecimalField(max_digits=12, decimal_places=5, null=True)
-    margin_used = models.DecimalField(max_digits=12, decimal_places=5, null=True)
-    cash_value = models.DecimalField(max_digits=12, decimal_places=5, null=True)
-    ex_liq_sec = models.DecimalField(max_digits=12, decimal_places=5, null=True)
-    ex_liq_com = models.DecimalField(max_digits=12, decimal_places=5, null=True)
+    net_value = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    margin_used = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    cash_value = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    ex_liq_sec = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    ex_liq_com = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+
+    daily_pnl = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    unrealized_pnl = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    realized_pnl = models.DecimalField(max_digits=12, decimal_places=2, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -1,12 +1,19 @@
+import sys
 from datetime import timezone
 from secrets import token_hex
 from django.db import models
+from main.models import Contract
 
-from main.models import Instrument
+
+UNSET_DOUBLE = sys.float_info.max
 
 
 def dt_to_ts(dt):
     return int(dt.timestamp())
+
+
+def new_local_id():
+    return "bot_" + token_hex(4)
 
 
 class Order(models.Model):
@@ -22,11 +29,11 @@ class Order(models.Model):
     account = models.ForeignKey("Account", null=True, on_delete=models.PROTECT)
     run = models.ForeignKey("Run", null=True, on_delete=models.CASCADE, related_name="orders")
 
-    instrument = models.ForeignKey("Instrument", null=False, on_delete=models.PROTECT)
+    contract = models.ForeignKey("Contract", null=False, on_delete=models.PROTECT)
     action = models.CharField(max_length=50, choices=Side.choices, null=True)
 
     order_id = models.PositiveIntegerField(unique=True, null=True)  # id IBKR
-    local_id = models.CharField(max_length=50, null=True)  # локальный id гейтвея
+    local_id = models.CharField(max_length=250, null=True)  # локальный id гейтвея
 
     amount = models.PositiveIntegerField(default=0)
     filled = models.PositiveIntegerField(default=0)
@@ -57,21 +64,40 @@ class Order(models.Model):
         super().__init__(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.instrument} {self.action} {self.amount}"
+        return f"{self.contract} {self.action} {self.amount}"
 
     @property
     def ticker(self):
-        return f"{self.instrument.ticker}"
+        return f"{self.contract.ticker}"
 
     @classmethod
-    def limit_order(cls, account, instrument, side, amount, price, outside_rth=False):
-        if instrument.sec_type == Instrument.Type.fut and outside_rth:
+    def from_ib(cls, order, account, contract, state):
+        order_type = order.orderType
+        filled = order.filledQuantity if order.filledQuantity < UNSET_DOUBLE else 0
+        return cls(
+            order_id=order.permId,
+            account=account,
+            contract=contract,
+            action=order.action,
+            local_id=order.orderRef,
+            status=state.status,
+            amount=order.totalQuantity,
+            filled=filled,
+            type=cls.Type.lmt,
+            limit_price=order.lmtPrice,
+            is_bot=False,
+            outside_rth=order.outsideRth,
+        )
+
+    @classmethod
+    def limit_order(cls, account, contract, side, amount, price, outside_rth=False):
+        if contract.sec_type == Contract.Type.fut and outside_rth:
             raise ValueError("Futures can't be outside_rth")
         order = cls(
             account=account,
-            instrument=instrument,
+            contract=contract,
             action=side,
-            local_id=token_hex(4),
+            local_id=new_local_id(),
             status="New",
             amount=amount,
             type=cls.Type.lmt,
@@ -82,13 +108,13 @@ class Order(models.Model):
         return order
 
     @classmethod
-    def market_order(cls, account, run, instrument, side, amount):
+    def market_order(cls, account, run, contract, side, amount):
         order = cls(
             account=account,
             run=run,
-            instrument=instrument,
+            contract=contract,
             action=side,
-            local_id=token_hex(4),
+            local_id=new_local_id(),
             status="New",
             amount=amount,
             type=cls.Type.mkt,
@@ -97,8 +123,8 @@ class Order(models.Model):
         return order
 
     @classmethod
-    def adaptive_market_order(cls, account, run, instrument, side, amount):
-        order = cls.market_order(account, run, instrument, side, amount)
+    def adaptive_market_order(cls, account, run, contract, side, amount):
+        order = cls.market_order(account, run, contract, side, amount)
         order.order_settings = '{"strategy": "Adaptive", "priority": "Normal"}'
         return order
 

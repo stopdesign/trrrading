@@ -159,7 +159,7 @@ const Orders = ({account, symbol}) => {
 
   // Запуск таймера при создании и остановка при уничтожении компонента
   useEffect(() => {
-    const interval = setInterval(() => setTime((new Date()).toISOString()), 5500);
+    const interval = setInterval(() => setTime((new Date()).toISOString()), 3500);
     return () => {
       clearInterval(interval);
     };

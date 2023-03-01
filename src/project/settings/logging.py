@@ -19,14 +19,14 @@ conf = {
             "fmt": FMT,
             "datefmt": LOG_DATE_FMT,
         },
-        'verbose': {
-            "fmt": FMT,
+        "verbose": {
+            "format": FMT,
             "datefmt": LOG_DATE_FMT,
         },
     },
     "handlers": {
         "console": {
-            "level": "INFO",
+            "level": "DEBUG",
             "class": "logging.StreamHandler",
             "stream": sys.stdout,
             "formatter": "coloredlogs",
@@ -40,7 +40,7 @@ conf = {
         # TODO: добавить file handler
     },
     "loggers": {
-        "": {"level": "DEBUG", "handlers": ["console", "syslog"], "propagate": False},
+        "": {"level": "DEBUG", "handlers": ["console", ], "propagate": False},
         "django": {"level": "INFO", "handlers": ["console"], "propagate": False},
         # Set level to DEBUG and enable settings.DEBUG to see all SQL queries
         "django.db.backends": {
@@ -62,6 +62,18 @@ conf = {
         },
         # suppress DEBUG noise
         "urllib3.connectionpool": {
+            "level": "INFO",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+        # suppress DEBUG noise
+        "ibapi": {
+            "level": "WARNING",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+        # suppress DEBUG noise
+        "ibapi.wrapper": {
             "level": "INFO",
             "handlers": ["console"],
             "propagate": False,

@@ -104,6 +104,21 @@ class DataProvider:
         for ts, symbol, payload in records:
             self.on_market_event(payload)
 
+    def replay(self, dt_start, dt_end):
+        """
+        Заменит warm_up и backtest.
+        """
+        records = self.history.load(self.symbols, dt_start, dt_end)
+
+        # сбросить проверку
+        self.last_processed_dt = defaultdict(lambda: datetime.min)
+
+        log.info(f"replay data length: {len(records)}")
+
+        for ts, symbol, payload in records:
+            self.on_market_event(payload)
+
+
     def listen(self):
         """
         Подписка на real-time данные.

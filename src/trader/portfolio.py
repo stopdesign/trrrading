@@ -28,18 +28,18 @@ class Portfolio:
         self.total_profit = Decimal(0)
         for strategy in self.strategies:
             capital = self.target_margin / len(self.strategies)
-            self.__positions[strategy] = Position(strategy.symbol, capital)
-            self.events[strategy] = []
+            self.__positions[strategy.market_system] = Position(strategy.symbol, capital)
+            self.events[strategy.market_system] = []
 
     def get_amount(self, strategy) -> Decimal:
-        return self.__positions[strategy].amount
+        return self.__positions[strategy.market_system].amount
 
     def set_initial_amount(self, strategy, amount, price=Decimal("nan")):
-        self.__positions[strategy].update(amount, price)
+        self.__positions[strategy.market_system].update(amount, price)
 
     def get_profit(self, strategy):
         net = Decimal(0)
-        position = self.__positions[strategy]
+        position = self.__positions[strategy.market_system]
         if position.amount and not math.isnan(position.amount):
             side = "sell" if position.amount > 0 else "buy"
             price = self.exchange.get_price(strategy.symbol, side)
@@ -54,13 +54,13 @@ class Portfolio:
         amount = Decimal(0)
         for strategy in self.strategies:
             if strategy.symbol == symbol:
-                amount += self.__positions[strategy].amount
+                amount += self.__positions[strategy.market_system].amount
         return amount
 
     def get_virtual_net_value(self) -> Decimal:
         net = Decimal(0)
         for strategy in self.strategies:
-            position = self.__positions[strategy]
+            position = self.__positions[strategy.market_system]
             if position.amount and not math.isnan(position.amount):
                 side = "sell" if position.amount > 0 else "buy"
                 price = self.exchange.get_price(strategy.symbol, side)
@@ -71,9 +71,9 @@ class Portfolio:
     def get_info(self):
         txt = ""
         for strategy in self.strategies:
-            capital = self.__positions[strategy].capital
-            pnl = self.__positions[strategy].profit / capital * 100
-            max_dd = self.__positions[strategy].max_drawdown * 100
+            capital = self.__positions[strategy.market_system].capital
+            pnl = self.__positions[strategy.market_system].profit / capital * 100
+            max_dd = self.__positions[strategy.market_system].max_drawdown * 100
             txt += f"{strategy}, PnL: {pnl:+0.1f}%, Max DD: {max_dd:0.1f}%\n"
         return txt.strip()
 
@@ -105,7 +105,7 @@ class Portfolio:
                 amount = -Decimal(floor(cash_per_strategy / price))
 
             if hint.signal == Signal.CLOSE:
-                cur_amount = self.__positions[hint.strategy].amount
+                cur_amount = self.__positions[hint.strategy.market_system].amount
                 side = "sell" if (not math.isnan(cur_amount)) and cur_amount > 0 else "buy"
                 price = self.exchange.get_price(hint.symbol, side)
                 amount = Decimal(0)
@@ -116,21 +116,23 @@ class Portfolio:
             assert not price.is_nan(), f"no price for signal {hint.signal}"
             assert not amount.is_nan()
 
-            profit = self.__positions[hint.strategy].update(amount, price)
+            profit = self.__positions[hint.strategy.market_system].update(amount, price)
             self.total_profit += profit
 
-            total_profit_rel = 100 * self.total_profit / self.target_margin
-            profit_rel = 100 * profit / self.target_margin
+            total_profit_rel = 100 * self.total_profit / cash_per_strategy
+            profit_rel = 100 * profit / cash_per_strategy
 
             data = {
-                'dt': hint.signal_dt,
-                'time': dt_to_ts(hint.signal_dt),
-                'side': side,
-                'amount': abs(amount),
-                'profit': profit,
-                'price': price,
+                "dt": hint.signal_dt,
+                "time": dt_to_ts(hint.signal_dt),
+                "side": side,
+                "signal": str(hint.signal.value).lower(),
+                "amount": abs(amount),
+                "profit": profit,
+                "profit_rel": f"{profit_rel:0.4f}",
+                "price": price,
             }
-            self.events[hint.strategy].append(data)
+            self.events[hint.strategy.market_system].append(data)
 
             profit_colored = ""
             if profit_rel > 0:

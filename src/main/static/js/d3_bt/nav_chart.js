@@ -92,11 +92,26 @@ export class NavChart {
       this.shadeRight.attr("x", Math.max(0, rangeClient[1]))
       this.shadeRight.attr("width", Math.max(0, this.width - rangeClient[1]))
 
-      let dt0 = this.mainChart.data[Math.round(range[0])].date;
-      let dt1 = this.mainChart.data[Math.round(range[1])].date;
+      // let dt0 = this.mainChart.data[Math.round(range[0])].date;
+      // let dt1 = this.mainChart.data[Math.round(range[1])].date;
 
-      this.performanceChart.zoomToRange(range, [dt0, dt1])
+      this.performanceChart.zoomToRange(range)
     }
+
+    const range = this.mainChart.xScaleZoomed.domain()
+    this.performanceChart.zoomToRange(range)
+
+    // Копирую подписи горизонтальной оси с основного графика
+    this.xAxis = (g, scale) => g
+      .attr("transform", `translate(0,${this.height})`)
+      .call(
+        d3.axisBottom(this.mainChart.xScale)
+        .tickSizeOuter(0)
+        .tickValues(this.mainChart.timeTickValues)
+        .tickFormat((val) => this.mainChart.timeTickFormat(val))
+      )
+    this.drawAxes();
+
   }
 
   resample(data) {
@@ -192,7 +207,7 @@ export class NavChart {
 
   draw(data) {
     this.createScales(data);
-    this.drawAxes();
+    // this.drawAxes();
     this.setupBrush();
     this.drawLine(data);
   }

@@ -59,11 +59,12 @@ export class PriceChart {
   height = 500
   width = 1800
 
-  chartPadding = 0.08
+  chartPadding = 0.15
 
   constructor(chartArea, data, trades) {
 
     this.cursorPos = null
+    this.cursorPosY = null
 
     this.bisectDate = d3.bisector(function (d) { return d.date }).left
     this.bisectTime = d3.bisector(function (d) { return d.time }).left
@@ -121,6 +122,36 @@ export class PriceChart {
       .attr("stroke-width", 1)
       .attr("d", "")
 
+    this.ind_1 = this.chart
+      .append("g")
+      .append("path")
+      .classed("count", true)
+      .attr("clip-path", `url(#${this.clipId})`)
+      .attr("fill", "none")
+      .attr("stroke", "green")
+      .attr("stroke-width", 1)
+      .attr("d", "")
+
+    this.ind_2 = this.chart
+      .append("g")
+      .append("path")
+      .classed("count", true)
+      .attr("clip-path", `url(#${this.clipId})`)
+      .attr("fill", "none")
+      .attr("stroke", "red")
+      .attr("stroke-width", 1)
+      .attr("d", "")
+
+    this.ind_3 = this.chart
+      .append("g")
+      .append("path")
+      .classed("count", true)
+      .attr("clip-path", `url(#${this.clipId})`)
+      .attr("fill", "none")
+      .attr("stroke", "#908")
+      .attr("stroke-width", 3)
+      .attr("d", "")
+
     this.tradesLayer = this.chart
       .append("g")
       .attr("id", "trades")
@@ -147,6 +178,17 @@ export class PriceChart {
       .attr("stroke-dasharray", "5 5")
       .attr("y1", 0)
       .attr("y2", this.height)
+      .attr("d", "")
+
+    this.crosshairY = this.chart
+      .append("line")
+      .attr("clip-path", `url(#${this.clipId})`)
+      .attr("fill", "none")
+      .attr("stroke", "black")
+      .attr("stroke-width", "0.5px")
+      .attr("stroke-dasharray", "5 5")
+      .attr("x1", 0)
+      .attr("x2", this.width)
       .attr("d", "")
 
     // Расширяет this.chart до нужных размеров,
@@ -177,11 +219,34 @@ export class PriceChart {
       .attr("dx", 0)
       .attr("text-anchor", "middle")
 
+
+    // левый блок цены crosshair
+    
+    this.crosshairLabelPriceBoxL = this.svg
+      .append("g")
+      .attr("id", "crosshair_label_price_l")
+
+    this.crosshairLabelPriceBoxL.append("rect")
+      .attr("x", -50)
+      .attr("y", -13)
+      .attr("width", 50)
+      .attr("height", 26)
+
+    this.crosshairLabelPriceValL = this.crosshairLabelPriceBoxL.append("text")
+      .attr("dy", 5)
+      .attr("dx", -43)
+      .attr("text-anchor", "right")
+
   }
 
   updateCrosshairLabel = (x, txt) => {
     this.crosshairLabelTimeBox.attr("transform", `translate(${x},${this.height})`)
     this.crosshairLabelTimeVal.text(txt)
+  }
+
+  updateCrosshairLabelY = (y, txt) => {
+    this.crosshairLabelPriceBoxL.attr("transform", `translate(0,${y})`)
+    this.crosshairLabelPriceValL.text(txt)
   }
 
   resample(data) {
@@ -288,6 +353,8 @@ export class PriceChart {
 
     const dataSize = data_z.length
 
+    let draw_indicators = false
+
     if (dataSize > 100000) {
       // часовые данные, линия
       const i0 = this.bisectIdx(this.data_1d, range[0])
@@ -312,29 +379,32 @@ export class PriceChart {
       path_svg = line_zoomed(small)
       // stroke = "#a08"  // фиолетовый
     }
-    else if (dataSize > 3000) {
+    else if (dataSize > 5000) {
       // 10-минутные данные, вертикальные палки
       const i0 = this.bisectIdx(this.data_10m, range[0])
       const i1 = this.bisectIdx(this.data_10m, range[1])
       small = this.data_10m.slice(i0, i1)
       for (const d of small) {
         const dt = x(d.idx)
-        const h = Math.round(y(d.high))
-        const l = Math.round(y(d.low))
+        const h = Math.round(y(d.high)) + 0.7
+        const l = Math.round(y(d.low)) - 0.7
         path_svg += `M${dt},${l}V${h}`  // зеленый
       }
       // stroke = "#5a5"
     }
-    else if (dataSize > 1000) {
+    else if (dataSize > 1500) {
       // минутные данные, вертикальные палки
       small = data_z
       for (const d of small) {
         const dt = Math.round(x(d.idx) * 10) / 10
-        const h = Math.round(y(d.high))
-        const l = Math.round(y(d.low))
+        const h = Math.round(y(d.high)) + 0.7
+        const l = Math.round(y(d.low)) - 0.7
         path_svg += `M${dt},${l}V${h}`
       }
       // stroke = "#f50"    // оранжевый
+
+      // рисовать индикаторы
+      draw_indicators = true
     }
     else {
       // минутные данные, OHLC
@@ -342,25 +412,38 @@ export class PriceChart {
       for (const d of small) {
         const dt = Math.round(x(d.idx) * 10) / 10
         const o = Math.round(y(d.open))
-        const h = Math.round(y(d.high))
-        const l = Math.round(y(d.low))
+        const h = Math.round(y(d.high)) + 0.7
+        const l = Math.round(y(d.low)) - 0.7
         const c = Math.round(y(d.close))
         let w = Math.round(400 / dataSize)  // засечки на OHLC
         path_svg += `M${dt},${l}V${h}M${dt},${o}h-${w}M${dt},${c}h${w}`
       }
       // stroke = "#000"
+
+      // рисовать индикаторы
+      draw_indicators = true
     }
 
     if (dataSize > 600) {
       strokeWidth = 1
-    } else if (dataSize > 200) {
+    } else if (dataSize > 500) {
       strokeWidth = 1.2
+    } else if (dataSize > 400) {
+      strokeWidth = 1.4
+    } else if (dataSize > 300) {
+      strokeWidth = 1.6
     } else {
-      strokeWidth = 1.5
+      strokeWidth = 1.8
+    }
+
+    if (draw_indicators) {
+      this.draw_indicator_lines(small)
+    } else {
+      this.draw_indicator_lines(false)
     }
 
     this.path
-      .attr("strokeWidth", strokeWidth)
+      .attr("stroke-width", strokeWidth)
       .attr("stroke", stroke)
       .attr("d", path_svg)
 
@@ -368,6 +451,40 @@ export class PriceChart {
     this.verticalScale(this.yScale, small)
 
     print_info(data_z, small)
+  }
+
+  draw_indicator_lines(data) {
+
+    // console.log(data)
+
+    if (data === false) {
+
+      this.ind_1.attr("d", "")
+      this.ind_2.attr("d", "")
+      this.ind_3.attr("d", "")
+
+    } else {
+
+      const line_1 = d3.line()
+        .x(d => this.xScaleZoomed(d.idx))
+        .y(d => this.yScale(d.up))
+
+      this.ind_1.attr("d", line_1(data))
+
+      const line_2 = d3.line()
+        .x(d => this.xScaleZoomed(d.idx))
+        .y(d => this.yScale(d.dn))
+
+      this.ind_2.attr("d", line_2(data))
+
+      const line_3 = d3.line()
+        .defined(d => d.date.getHours() < 7)
+        .x(d => this.xScaleZoomed(d.idx))
+        .y(d => this.yScale(d.op))
+
+      this.ind_3.attr("d", line_3(data))
+
+    }
   }
 
   createScales(data) {
@@ -539,6 +656,7 @@ export class PriceChart {
             .append('g')
             .classed("trade", true)
 
+          // trade marker
           tradeEl
             .append("circle")
             .attr("r", 5)
@@ -546,17 +664,19 @@ export class PriceChart {
             .attr("stroke", "#fff")
             .attr("stroke-width", 2)
 
-          // tradeEl
-          //   .append("text")
-          //   .attr("dy", 30)
-          //   .attr("dx", 0)
-          //   .attr("font-size", 10)
-          //   .attr("text-anchor", "middle")
-          //   .attr("fill", d => d.profit > 0 ? "#080" : "#d00")
-          //   .text(d => { 
-          //     const n = Math.round(d.profit/100) 
-          //     return (n < 0 ? "" : "+") + n 
-          //   })
+          // trade PnL
+          tradeEl
+            .append("text")
+            .attr("dy", d => d.side == "buy" ? 20 : -20)
+            .attr("dx", 0)
+            .attr("font-size", 10)
+            .attr("font-weight", "bold")
+            .attr("text-anchor", "middle")
+            .attr("fill", d => d.profit > 0 ? "#080" : "#d00")
+            .text(d => { 
+              const n = Math.round(d.profit/100) 
+              return (n < 0 ? "" : "+") + n
+            })
 
           return tradeEl
         },
@@ -592,7 +712,7 @@ export class PriceChart {
     const range = this.xScaleZoomed.domain()
 
     // Часть данных, входящая в отображаемый диапазон
-    const dataZoomed = this.data.slice(Math.round(range[0]), Math.round(range[1]))
+    const dataZoomed = this.data.slice(Math.round(range[0]), Math.round(range[1]) + 1)
 
     this.draw_trades(dataZoomed, this.trades)
 
@@ -610,6 +730,13 @@ export class PriceChart {
     this.onAfterZoom()
   }
 
+  onZoomEnd(event) {
+    // Для обработки mouse up за пределами графика
+    if (event && event.sourceEvent) {
+      this.moveCrosshair(event)
+    }
+  }
+
   // Для более пиздатого зума с горизонтальным скроллом
   onWheeled(event) {
     // Какие-то параметры, влияющие на реакцию
@@ -620,6 +747,10 @@ export class PriceChart {
     const dx = Math.abs(event.deltaX)
     const dy = Math.abs(event.deltaY)
     const t = d3.zoomTransform(event.target)
+
+    // Чтобы Crosshair работал, когда курсор не двигали, но начали зумить
+    this.cursorPos = d3.pointer(event)[0]
+    this.cursorPosY = d3.pointer(event)[1]
 
     if (dx > dy) {
       // Horizontal Scroll
@@ -639,22 +770,44 @@ export class PriceChart {
   moveCrosshair(event) {
 
     if (event) {
+      // console.log(event)
       if (event.screenX !== undefined) {
         this.cursorPos = d3.pointer(event)[0]
+        this.cursorPosY = d3.pointer(event)[1]
       }
-      let bar
-      if (this.cursorPos && this.cursorPos >= 0) {
-        const x0 = this.xScaleZoomed.invert(this.cursorPos)
-        bar = this.data[Math.round(x0)]
+      // Обработка перетаскивания (PAN)
+      if (event.sourceEvent && event.sourceEvent.movementX !== undefined) {
+        if (this.cursorPos !== null) {
+          this.cursorPos += event.sourceEvent.movementX 
+        }
       }
-      if (bar) {
+      if (event.sourceEvent && event.sourceEvent.movementY !== undefined) {
+        if (this.cursorPosY !== null) {
+          this.cursorPosY += event.sourceEvent.movementY 
+        }
+      }
+
+      const x0 = this.xScaleZoomed.invert(this.cursorPos)
+      const bar = this.data[Math.round(x0)]
+
+      const y0 = this.yScale.invert(this.cursorPosY)
+      // console.log(y0)
+      this.crosshairY
+        .attr("y1", this.cursorPosY)
+        .attr("y2", this.cursorPosY)
+      this.updateCrosshairLabelY(this.cursorPosY, y0.toFixed(2))
+
+      if (this.cursorPos !== null && bar) {
+        // Курсор над существующим интервалом
         const txt = this.xCrosshairLabelFormat(bar.date)
         this.crosshair
           .attr("x1", this.cursorPos)
           .attr("x2", this.cursorPos)
         this.updateCrosshairLabel(this.cursorPos, txt)
       } else {
-        this.cursorPos = null
+        this.crosshair
+          .attr("x1", -100)
+          .attr("x2", -100)
         this.updateCrosshairLabel(-100000, "")
       }
     } else {
@@ -675,14 +828,18 @@ export class PriceChart {
       .translateExtent(extent)
       .extent(extent)
       .on("zoom", (e) => { this.onZoomed(e) })
+      .on("end", (e) => { this.onZoomEnd(e) })
+      
 
     this.chart.call(this.zoom)
     this.chart.on("wheel.zoom", (e) => { this.onWheeled(e) })
 
+    this.chart.on("mouseenter", (e) => { this.moveCrosshair(e) })
     this.chart.on('mousemove', (e) => { this.moveCrosshair(e) })
-    this.chart.on("mouseleave", () => { this.moveCrosshair(null) })
+    this.chart.on("mouseleave", (e) => { if (!e.buttons) this.moveCrosshair(null) })
 
     this.onZoomed()
+    this.onZoomEnd()
   }
 
   // Метод для изменения масштаба из навигационного графика

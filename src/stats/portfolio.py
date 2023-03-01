@@ -65,7 +65,7 @@ class PortfolioStats:
             file_name = f"{strategy.symbol}_{strategy_name}_events.jsonl"
             path = os.path.join(base_dir, file_name)
             txt = ""
-            events = self.portfolio.events[strategy]
+            events = self.portfolio.events[strategy.market_system]
             for event in events:
                 txt += json.dumps(event, default=str) + "\n"
             with open(path, "w") as f:

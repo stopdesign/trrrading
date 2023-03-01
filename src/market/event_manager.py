@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
 from data_types import Bar, BidAsk, Trade
@@ -22,16 +22,16 @@ class EventManager:
         Разбивает минутный бар на отдельные сделки со смещением.
         """
         trades = []
-        # time_shift = 6  # ломает фильтрацию интервалов по dt < dt_start
+        time_shift = 6  # ломает фильтрацию интервалов по dt < dt_start
         for price in {bar.open, bar.high, bar.low, bar.close}:
             trade = Trade(
-                date=bar.date, # + timedelta(seconds=time_shift),
+                date=bar.date + timedelta(seconds=time_shift),
                 symbol=bar.symbol,
                 price=price,
                 rth=bar.rth,
             )
             trades.append(trade)
-            # time_shift += 10
+            time_shift += 10
         return trades
 
     def interval_event(self, dt):
@@ -78,7 +78,7 @@ class EventManager:
             if bar_time_gap > 1:
                 if not self.in_the_gap:
                     # FIXME: убрать хардкодинг допустимых интервалов
-                    if bar_time_gap not in [3930, 1050, 5370, 4030, 1150, 5470]:
+                    if bar_time_gap not in [4031, 1151, 5471, 4031, 1151, 5471, 1051, 3931, 5371]:
                         log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
                 self.in_the_gap = True
             else:
@@ -89,14 +89,23 @@ class EventManager:
 
             self.prev_bar_dt = bar.date
 
-            # for trade in self.bar_to_trades(bar):
-            # Теперь bar преобразуется в одну сделку с ценой close
-            trade = Trade(
-                date=bar.date,
-                symbol=bar.symbol,
-                price=bar.close,
-                rth=bar.rth,
-            )
-            self.on_event("trade", bar.date, bar.symbol, trade)
+            # Эмуляция отдельных сделок по границам OHLC-бара
+            for trade in self.bar_to_trades(bar):
+                trade = Trade(
+                    date=trade.date,
+                    symbol=trade.symbol,
+                    price=trade.price,
+                    rth=trade.rth,
+                )
+                self.on_event("trade", bar.date, bar.symbol, trade)
+
+            # # Теперь bar преобразуется в одну сделку с ценой close
+            # trade = Trade(
+            #     date=bar.date,
+            #     symbol=bar.symbol,
+            #     price=bar.close,
+            #     rth=bar.rth,
+            # )
+            # self.on_event("trade", bar.date, bar.symbol, trade)
 
             self.on_event("bar", bar.date, bar.symbol, bar)

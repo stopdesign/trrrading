@@ -76,7 +76,7 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # day_end = f"{day:%Y%m%d 23:59:59} UTC"
     # print(day, " | ", day_end, " | ", day_utc)
 
-    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT", "IDEALPRO"]:
+    if contract.exchange in ["NYMEX", "GLOBEX", "CBOT", "COMEX"]:
         duration = "2 D"
     else:
         duration = "1 D"
@@ -98,10 +98,10 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # util.df(bars).to_csv("1.df", sep="\t")
 
     # ТУТ ПРОИСХОДИТ КАКОЕ-ТО ГОВНО, КОТОРОЕ СРЕЗАЕТ КОРОТКИЕ ДНИ
-    # 2021-01-18 ECBOT/ZW
+    # 2021-01-18 CBOT/ZW
     # Похоже, в такие дни нет сделок, если считать по UTC
     
-    if contract.exchange in ["NYMEX", "GLOBEX", "ECBOT"]:
+    if contract.exchange in ["NYMEX", "GLOBEX", "CBOT", "COMEX"]:
         ex_tz = pytz.timezone('America/New_York')
         t = datetime.combine(day, datetime.min.time()).astimezone(ex_tz)
         t0 = t - timedelta(days=1) + timedelta(hours=14, minutes=30)
@@ -168,7 +168,7 @@ def get_contract_day_data(contract, day, data_type, force):
 
     df.to_csv(f_name, sep="\t")
 
-    vol_sum = df["volume"].sum()
+    vol_sum = int(df["volume"].sum())
 
     load_time = (datetime.now() - dt).total_seconds()
     cprint(f"DONE: {f_name}, lines: {len(df)}, vol_sum: {vol_sum}, {load_time:0.2f} s", "green")
@@ -217,7 +217,8 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
     cal_exchange = cal_exchange.replace("ARCA", "NYSE")
     cal_exchange = cal_exchange.replace("NYMEX", "CMES")
     cal_exchange = cal_exchange.replace("GLOBEX", "CMES")
-    cal_exchange = cal_exchange.replace("ECBOT", "CMES")
+    cal_exchange = cal_exchange.replace("CBOT", "CMES")
+    cal_exchange = cal_exchange.replace("COMEX", "CMES")
 
     calendar = mcal.get_calendar(cal_exchange)
 
@@ -233,9 +234,14 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
         # assert d0 < datetime.now(tz=timezone.utc).date()
 
         for data_type in data_types:
-            
+
+            # Разные даты для квартальных и месячных контрактов
+            exp_date_limit = middle_date
+            if middle_date.day < 28:
+                exp_date_limit = middle_date + timedelta(days=1)
+
             # Current contract index
-            con_idx = bisect(exp_dates, middle_date.strftime("%Y%m%d"))
+            con_idx = bisect(exp_dates, exp_date_limit.strftime("%Y%m%d"))
 
             # Даты контрактов от Current до Current + N
             exp_dates_to_load = exp_dates[con_idx:con_idx+4]
@@ -303,7 +309,7 @@ def main(**kwargs):
             symbol = stock
             pe = "ARCA"
 
-        if pe in ["GLOBEX", "ECBOT", "NYMEX"]:
+        if pe in ["NYMEX", "GLOBEX", "CBOT", "COMEX"]:
             contract = Future(symbol, exchange=pe, currency="USD")
         else:
             contract = Stock(symbol, "SMART", "USD", primaryExchange=pe)

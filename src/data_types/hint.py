@@ -16,7 +16,7 @@ class Hint:
         return (
             f"Hint({self.signal_dt}, "
             f"{symbol}, "
-            f"{type(self.strategy).__name__}, "
+            f"{self.strategy.name}, "
             f"{self.signal.abbr}: {self.signal_price:6.2f})"
         )
 
