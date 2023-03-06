@@ -54,6 +54,8 @@ class Emulator:
         self.upcoming = []
         self.bars = {}
 
+        print("redis_client", redis_client)
+
         if not self.end:
             self.end = self.start + timedelta(hours=20)
 
@@ -179,7 +181,7 @@ class Emulator:
         if payload:
             key = event["key"] + self.suffix
             if self.debug:
-                print(key, payload)
+                print("publish_event:", key, payload)
             self.redis_client.publish(key, payload)
 
 

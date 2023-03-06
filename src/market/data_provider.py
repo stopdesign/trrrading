@@ -45,6 +45,7 @@ class DataProvider:
         self.dt_prior = dt_prior
         self.dt_start = dt_start
         self.dt_end = dt_end
+        self.on_event = on_event
 
         # Инициализация календаря для всех нужных символов и дней
         self.schedule = MarketCalendar(self.symbols, dt_prior, dt_end)
@@ -81,6 +82,9 @@ class DataProvider:
                 self.event_manager.notify(payload)
         else:
             log.warning(f"Unknown payload format: {payload}")
+
+    def on_broker_event(self, payload):
+        self.on_event("broker", dt=datetime.now(), payload=payload)
 
     def warm_up(self):
         """
@@ -128,4 +132,4 @@ class DataProvider:
         if not self.feed:
             raise Exception("No feed source to listen")
 
-        self.feed.listen(self.symbols, self.on_market_event)
+        self.feed.listen(self.symbols, self.on_market_event, self.on_broker_event)

@@ -120,7 +120,7 @@ class TradisAdapter(BaseSource):
         # Отсортировать по score и символу
         return sorted(all_data)
 
-    def listen(self, symbols, on_market_event):
+    def listen(self, symbols, on_market_event, on_broker_event):
         """
         Подписка на события в Redis pubsub.
         """
@@ -128,8 +128,9 @@ class TradisAdapter(BaseSource):
 
         # Подписка на pubsub
         for symbol in symbols:
-            pubsub.subscribe(f"{symbol}:TRADES")
-            pubsub.subscribe(f"{symbol}:BARS")
+            pubsub.subscribe([f"{symbol}:TRADES", f"{symbol}:BARS"])
+        
+        pubsub.subscribe("BOT_ACTIONS")
 
         while True:
             try:
@@ -140,7 +141,10 @@ class TradisAdapter(BaseSource):
                 continue
 
             try:
-                if payload := self.format_message(message):
+                if message and message.get("channel") == "BOT_ACTIONS":
+                    if message.get("type") == "message":
+                        on_broker_event(message.get("data"))
+                elif payload := self.format_message(message):
                     on_market_event(payload)
             except Exception as e:
                 log.exception(e)

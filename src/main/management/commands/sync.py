@@ -14,6 +14,7 @@ from main.models import Account, Position, Order, Trade, Contract
 from django.db import transaction
 from ibapi.order import Order as IBOrder
 from django.core.cache import cache
+import redis
 
 # Логгер для этого файла
 log = logging.getLogger("sync")
@@ -30,7 +31,6 @@ BOT_ID_PREFIX = "bot_"
 ERROR 1100 Connectivity between IB and Trader Workstation has been lost.
 ERROR 1102 Connectivity between IB and Trader Workstation has been restored...
 """
-
 
 
 # динамически ловить commissionReport и/или execDetails?
@@ -112,6 +112,20 @@ def check_new_orders(ib):
         # ib.reqCurrentTime()
 
         time.sleep(1)
+
+
+def update_order(ib):
+    order_id = 1793050531  #  1793050442 | 1793050531
+
+    # self.cancelOrder(self.simplePlaceOid, "")
+
+    ib_order, contract, orderState = ib._orders_by_pid[order_id]
+    cprint(f"ib_order: {ib_order}", "blue")
+
+    oid = ib_order.orderId
+    ib_order.lmtPrice = ib_order.lmtPrice - 0.1
+
+    ib.placeOrder(oid, contract, ib_order)
 
 
 def get_executions(ib):
@@ -414,10 +428,25 @@ class Command(BaseCommand):
         app = None
         thread = None
 
+        redis_client = redis.Redis()
+        pubsub = redis_client.pubsub()
+
+        pubsub.subscribe("BOT_ACTIONS")
+
         try:
             while True:
                 go = datetime.now().second % 10 == 0
                 go_2 = datetime.now().second % 13 == 0
+
+                # Обработка команд от бота: создание и редактирование ордеров
+                try:
+                    message = pubsub.get_message(timeout=0.1)
+                    if message:
+                        cprint(f"REDIS: {message}", "red")
+                        update_order(app)
+                except Exception as e:
+                    # log.error(f"Redis pubsub get_message error: {e}")
+                    pass
 
                 # отправка новых запросов из БД в IB
                 if app and app.isConnected():
@@ -437,6 +466,8 @@ class Command(BaseCommand):
                 if not app or go and not app.isConnected():
                     app = IBSync()
                     app.connect("127.0.0.1", 7497, 0)
+
+                    log.info(f"Server Version: {app.decoder.serverVersion}")
 
                     global APP
                     APP = app
@@ -483,6 +514,12 @@ class Command(BaseCommand):
                     # Нет ничего про профит, поэтому все равно придется брать AccountUpdates
                     # ib.reqAccountSummary(ib.r_id, "All", "NetLiquidation,InitMarginReq")
                     # time.sleep(0.1)
+
+                    # С этой хренью новые ордеры из TWS получают id от данного клиента.
+                    # Работает только для подключения с ClientId = 0.
+                    # Пока непонятно, что с ордерами из мобильного приложения, например.
+                    app.reqAutoOpenOrders(True)
+                    time.sleep(0.1)
 
                     # это подписка, но её нельзя отменить
                     app.reqAccountUpdates(True, app.account_id)

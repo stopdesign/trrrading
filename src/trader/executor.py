@@ -1,7 +1,7 @@
 import logging
 from datetime import timezone
 from decimal import Decimal
-from main.models import Instrument, Order, Position
+from main.models import Contract, Order, Position
 from termcolor import colored
 # from storage.redis import check_open_time
 from trader import Exchange
@@ -118,7 +118,7 @@ class Executor:
         amount = self.initial_positions.get(symbol, {}).get("amount")
 
         stock_symbol, exchange_symbol = symbol.split(".")
-        instrument = Instrument.objects.get(symbol=stock_symbol)
+        instrument = Contract.objects.get(symbol=stock_symbol)
         orders_after_start = Order.objects.filter(
             account=self.account,
             id__gt=self.latest_order_id,
@@ -135,7 +135,7 @@ class Executor:
 
     def get_amount_in_orders(self, symbol):
         stock_symbol, exchange_symbol = symbol.split(".")
-        instrument = Instrument.objects.get(symbol=stock_symbol)
+        instrument = Contract.objects.get(symbol=stock_symbol)
 
         orders = Order.objects.filter(account=self.account, instrument=instrument)
         orders = orders.exclude(status__in=["Filled", "Cancelled", "Inactive"])
@@ -149,7 +149,7 @@ class Executor:
 
     def create_order(self, dt, symbol, side, order_amount, signal_price):
         stock_symbol, exchange_symbol = symbol.split(".")
-        instrument = Instrument.objects.get(symbol=stock_symbol)
+        instrument = Contract.objects.get(symbol=stock_symbol)
 
         txt = f"TRADE: {side.upper():>4} {symbol} {order_amount} @ {signal_price}"
         log.info(colored(txt, color="cyan", attrs=["reverse"]))

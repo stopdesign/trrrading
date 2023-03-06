@@ -1,6 +1,7 @@
 from collections import namedtuple
 from typing import Optional
 from .signal import Signal
+from indicator.base import BaseIndicator
 
 
 def hint(func):
@@ -20,6 +21,7 @@ def hint(func):
 class BaseStrategy:
 
     def __init__(self, **kwargs):
+        self.exchange = kwargs.pop("exchange")
         self.name = kwargs.pop("strategy", None)
         self.symbol = kwargs.get("symbol")
         self.length = kwargs.get("length")
@@ -27,6 +29,7 @@ class BaseStrategy:
         self.data = []
         self.prev_signal = Signal.PASS
         self.prev_signal_dt = None
+        self.warmed = False
         self.on_start()
 
     def __repr__(self):
@@ -35,6 +38,10 @@ class BaseStrategy:
     @property
     def market_system(self):
         return f"{self.symbol}_{self.name}"
+
+    @property
+    def indicators(self):
+        return filter(lambda a: isinstance(a, BaseIndicator), self.__dict__.values())
 
     def on_start(self):
         pass

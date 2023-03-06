@@ -10,8 +10,6 @@ from main.models import Account, Order, Contract
 from termcolor import cprint
 from django.core.cache import cache
 
-from django.db.models.signals import post_save
-
 
 class Command(BaseCommand):
     finished = None
@@ -48,7 +46,17 @@ class Command(BaseCommand):
 
         # self.new_db_order()
 
-        last_connected = cache.get("last_connected", "---")
-        print("last_connected", last_connected)
+        # last_connected = cache.get("last_connected", "---")
+        # print("last_connected", last_connected)
 
+        # host: 137.220.48.251
+        # port: 6379
+        # db: 0
+        # password: hFu1asd8331GjaIOm2Nds0
+
+        redis_client = redis.Redis(host="137.220.48.251", password="hFu1asd8331GjaIOm2Nds0")
+    
+        action = {"action": "new_order", "data": "asdfs"}
+        a = redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
+        print(a)
 

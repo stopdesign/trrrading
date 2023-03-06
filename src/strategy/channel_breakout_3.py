@@ -1,73 +1,85 @@
 from dataclasses import dataclass, asdict
-from talipp.indicators import DonchianChannels
-from strategy import BaseStrategy, Signal, hint
+from indicator.donchian_channels import DonchianChannels
+from strategy import BaseStrategy, Signal
 from data_types import Bar, Trade
+import logging
 
 
-@dataclass()
-class Bar2(Bar):
-    """
-    Добавляю индикаторы, которые будут сохранены в файл.
-    """
-    up: float = None
-    dn: float = None
+log = logging.getLogger("strategy")
+
+
+# @dataclass(slots=True)
+# class Bar2(Bar):
+#     """
+#     Добавляю индикаторы, которые будут сохранены в файл.
+#     """
+#     up: float = None
+#     dn: float = None
+
+
+@dataclass(slots=True)
+class Order:
+    amount: int
+    status: str
+    fill_price: float = None
 
 
 class ChBr(BaseStrategy):
-    don = None
-    padding = 0
 
     def on_start(self):
-        # self.padding = self.params.get("padding", self.padding)
-        self.padding = getattr(self.params, "padding", self.padding)
-        self.don = DonchianChannels(self.length)
 
-    @hint
-    def on_bar(self, bar: Bar) -> Signal:
+        self.dc = DonchianChannels(self.length)
 
-        skip = False
+        self.symbol = "URA.ARCA"
 
-        if not bar.rth:
-            skip = True
+    def market_order(self, amount):
+        order = Order(amount=amount, status="new")
+        self.exchange.place_order(order)
 
-        if bar.volume == 0:
-            skip = True
+    def on_bar(self, bar: Bar):
 
-        if not skip:
-            self.don.add_input_value(bar)
+        pass
+        # # Класс, сохраняющий индикаторы
+        # bar = Bar2(**asdict(bar))
 
-        # Класс, сохраняющий индикаторы
-        bar = Bar2(**asdict(bar))
+        # self.data.append(bar)
+        
+        # if not self.warmed:
+        #     return
 
-        if self.don and not skip:
-            bar.up = self.don[-1].ub
-            bar.dn = self.don[-1].lb
-        else:
-            if self.data and bar.rth:
-                bar.up = self.data[-1].up
-                bar.dn = self.data[-1].dn
-
-        self.data.append(bar)
-
-        return Signal.PASS
-
-    @hint
-    def on_trade(self, trade: Trade) -> Signal:
+    def on_trade(self, trade: Trade):
         """
         Проверить сигнал стратегии при появлении новой цены.
         """
         bar = self.data[-1] if self.data else None
 
+        if not self.warmed:
+            return
+
         if not bar or not bar.dn:
-            return Signal.PASS
+            return
 
         if not (trade.rth and bar.rth):
-            return Signal.PASS
+            return
 
-        if trade.price > bar.up - self.padding:
-            return Signal.LONG
+        for order in self.exchange.orders:
+            if order.status == "new":
+                return
 
-        if trade.price < bar.dn + self.padding:
-            return Signal.SHORT
+        position = self.exchange.positions.get(self.symbol)
 
-        return Signal.PASS
+        current_amount = position if position else 0
+        target_amount = current_amount
+
+        if current_amount <= 0 and trade.price > bar.up:
+            target_amount = +10            
+
+        if current_amount >= 0 and trade.price < bar.dn:
+            target_amount = -10
+
+        if target_amount != current_amount:
+            self.market_order(target_amount - current_amount)
+
+    def on_order_event(self, payload):
+        log.info(f"STRATEGY ON ORDER: {payload}")
+        pass
