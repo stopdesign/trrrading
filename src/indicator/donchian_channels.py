@@ -1,4 +1,4 @@
-from talipp.indicators import DonchianChannels as TDC
+from talipp.indicators import DonchianChannels as TalippDonchianChannels
 
 from .base import BaseIndicator 
 
@@ -6,7 +6,8 @@ from .base import BaseIndicator
 class DonchianChannels(BaseIndicator):
 
     def __init__(self, length):
-        self.data = TDC(length)
+        self.data = TalippDonchianChannels(length)
+        self.value = {}
 
     def on_bar(self, bar):
 
@@ -18,13 +19,13 @@ class DonchianChannels(BaseIndicator):
         if bar.volume == 0:
             skip = True
 
+        # При каких-то условиях добавить данные в индикатор
         if not skip:
             self.data.add_input_value(bar)
 
-        # if self.don and not skip:
-        #     bar.up = self.don[-1].ub
-        #     bar.dn = self.don[-1].lb
-        # else:
-        #     if self.data and bar.rth:
-        #         bar.up = self.data[-1].up
-        #         bar.dn = self.data[-1].dn
+        # Значения индикатора возвращаются для дальнейшего использования.
+        # Значения добавляются и в те бары, которые не передавались в индикатор.
+        self.value = {
+            "ub": self.data[-1].ub if self.data else None,
+            "lb": self.data[-1].lb if self.data else None,
+        }

@@ -1,16 +1,17 @@
 import json
 import logging
+from collections import defaultdict
 from copy import copy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import redis
-from data_types import Bar
-from market import DataProvider, PolygonAdapter, TradisAdapter
-from strategy import all_strategies
 from termcolor import colored
 
-# from trader import Exchange, Executor, BTExecutor, Portfolio
+from data_types import Bar, Order, BidAsk
+from data_types.position import Position
+from market import DataProvider, PolygonAdapter, TradisAdapter
+from strategy import all_strategies
 
 log = logging.getLogger("trader")
 
@@ -27,6 +28,91 @@ def date_to_datetime(dt):
     return datetime(dt.year, dt.month, dt.day)
 
 
+class LocalMatcher:
+    """
+    Исполняет ордер локально, используя исторические цены.
+
+    Что здесь нужно?
+    
+    Position
+        В реальной торговле position будет содержать дополнительную информацию:
+            amount
+            avg_price
+            unrealized_pnl
+        Для бэктеста в позиции может быть полезно держать статистику,
+        но нужно ли делать это здесь?
+    
+    Order
+        Ордер и его свойства.
+
+    Account
+        Параметры депозита
+
+
+    Что будет происходить
+
+    При поступлении новых торговых данных нужно попробовать исполнить ордеры,
+    которые лежат в статусе new. Метод process_order принимает ордер и пытается
+    его исполнить. Класс знает текущие позиции и цены. Класс делает всё,
+    что происходило бы при реальном исполнении: меняет позиции, статус ордера, депозит.
+
+    Цену исполнения ордера считает exchange, наверное, т.к. там этот метод нужен
+    для других задач. Matcher занимается только изменением значений.
+
+    """
+
+    def __init__(self, exchange):
+        self.exchange = exchange
+
+    def process_order(self, order: Order):
+        """
+        Тип ордера: market, limit, stop.
+        """
+        process_order = False
+
+        side = "buy" if order.amount > 0 else "sell"
+
+        if order.type == "market":
+            process_order = True
+            price = self.exchange.get_price("URA.ARCA", side)  # "mid"
+        
+        if order.type == "limit":
+            pass
+        
+        if order.type == "stop":
+            # TODO: сделать нормальный алгоритм
+            price = self.exchange.get_price("URA.ARCA", "mid")
+            if order.amount > 0 and price > order.stop_price:
+                process_order = True
+                price = Decimal(order.stop_price)
+            if order.amount < 0 and price < order.stop_price:
+                process_order = True
+                price = Decimal(order.stop_price)
+
+        if process_order:
+
+            order.status = "filled"
+            order.fill_price = price
+
+            # log.info(f"FILL ORDER {self.exchange.dt_last} {order}")
+
+            # обновить позицию
+            position = self.exchange.positions.get("URA.ARCA")
+
+            new_amount = position.amount + order.amount
+            trade_profit = position.update(new_amount, price)
+
+            # обновить баланс
+            self.exchange.account["net_value"] += trade_profit
+
+            log.info(
+                f"trade_profit: {trade_profit:0.2f} "
+                f"net_value: {self.exchange.account['net_value']:0.2f} "
+            )
+
+            # сообщить стратегии о срабатывании ордера
+            self.exchange.on_event("order_emulator", dt=self.exchange.dt_last, payload=order)
+
 
 class Emulator:
     """
@@ -38,57 +124,71 @@ class Emulator:
     Обрабатывает выставленные ордеры.
     При срабатывании ордера запускает событие, которое пробросится в стратегии.
     """
+
     def __init__(self, on_event):
         self.positions = {}
         self.orders = []
         self.account = {}
-        self.quotes = {}
-        self.time = None
-
+        self.quotes = {}  # последнее значение bid-ask
+        self.bars = defaultdict(list)  # market data bar including indicators values
+        self.dt_last = None
         self.on_event = on_event
-    
-    def process_order(self, order):
+        self.matcher = LocalMatcher(self)
+
+    # NOTE: код из старого класса Exchange
+    def get_price(self, symbol: str, side: str) -> Decimal:
+        if quotes := self.quotes.get(symbol):
+            if side == "sell":
+                return quotes["bid"]
+            if side == "buy":
+                return quotes["ask"]
+            if side == "mid":
+                return (quotes["ask"] + quotes["bid"]) / 2
+        return Decimal("nan")
+
+    # NOTE: код из старого класса Exchange
+    def add_quote(self, dt, symbol, payload):
+        """
+        Сохранить BID и ASK как актуальное состояние стакана на бирже.
+        """
+        current_quote = self.quotes.get(symbol)
+        if current_quote and current_quote["dt"] > dt:
+            return
+        if symbol not in self.quotes:
+            self.quotes[symbol] = {}
+        # ask и bid могут приходить независимо
+        if payload.ask:
+            self.quotes[symbol]["ask"] = Decimal(payload.ask)
+            self.quotes[symbol]["dt"] = dt
+        if payload.bid:
+            self.quotes[symbol]["bid"] = Decimal(payload.bid)
+            self.quotes[symbol]["dt"] = dt
+        self.dt_last = dt
+
+    def process_orders(self):
         """
         Посмотреть список ордеров и изобразить их исполнение по известным ценам.
         """
-        print("process_order")
-
-        order.status = "filled"
-
-        quotes = self.quotes["URA.ARCA"]
-        order.fill_price = (quotes.bid + quotes.ask) / 2
-
-        position = self.positions.get("URA.ARCA", 0)
-        self.positions["URA.ARCA"] = position + order.amount
-
-        log.info(f"FILL ORDER {self.time} {order}")
-
-        # сначала закончить исполнение всех ордеров, потом дергать события?
-        self.on_event("order_emulator", dt=self.time, payload=order)
-    
-    def on_quote(self, dt, bid_ask):
-        self.time = dt
-        self.quotes["URA.ARCA"] = bid_ask
-
-    def on_bar(self, dt, bar):
-        """
-        Если пришли новые данные, проверить ордеры в portfolio.orders,
-        исполнить что-нибудь, запустить событие order_event.
-        """
-        self.time = dt
-
         for order in self.orders:
             if order.status == "new":
-                self.process_order(order)
+                self.matcher.process_order(order)
+
+    def on_quote(self, dt, bid_ask):
+        self.add_quote(dt, "URA.ARCA", bid_ask)
+
+    def on_bar(self, dt, bar):
+        self.dt_last = dt
+        self.bars["URA.ARCA"].append(copy(bar))
 
     def place_order(self, order):
         """
-        market-order можно обработать сразу,
-        другие типы будут обработаны при поступлении новых данных.
-        Хотя, limit тоже может сработать сразу, если цена позволяет...
+        Метод для создания ордера из стратегии.
+
+        При эмуляции ордер может быть обработан сразу, если параметры позволяют.
+        Необработанные ордеры будут проверяться при добавлении новых торговых данных.
         """
         self.orders.append(order)
-        self.process_order(order)
+        self.matcher.process_order(order)
 
     def on_portfolio(self, payload):
         """
@@ -102,7 +202,6 @@ class Emulator:
         pass
 
 
-
 class Exchange:
     """
     Живая торговля.
@@ -112,16 +211,17 @@ class Exchange:
     Обновляет данные Portfolio ***из базы*** при новых сигналах.
     Когда бот создает ордер, добавляет его в orders и дергает синхронизатор.
     """
+
     def __init__(self, on_event):
         self.positions = {}
         self.orders = []
         self.account = {}
-        self.quotes = {} 
+        self.quotes = {}
 
         self.on_event = on_event
 
         # TODO загрузить данные в self.positions, self.account...
-    
+
     def process_order(self, order):
         raise Exception("Live order shouldn't be processed here")
 
@@ -142,7 +242,6 @@ class Exchange:
         pass
 
 
-
 class Trader2:
     """
     Есть три режима: live, backtest, replay.
@@ -152,6 +251,7 @@ class Trader2:
 
     Replay - это как бэктест, только данные поступают событиями через redis.
     """
+
     data_provider: DataProvider = None
     strategies: list = None
 
@@ -174,7 +274,7 @@ class Trader2:
         self.data_provider = DataProvider(
             symbols=self.symbols,
             history=self.history_source,  # исторические данные одной кучей
-            feed=self.feed_source,        # real-time потоковые данные
+            feed=self.feed_source,  # real-time потоковые данные
             dt_prior=self.dt_prior,
             dt_start=self.dt_start,
             dt_end=self.dt_end,
@@ -184,7 +284,13 @@ class Trader2:
         if self.backtest or self.replay:
             # Для backtest - передать в эмулятор объекты OPA
             self.exchange = Emulator(self.on_event)
-            # TODO начальное состояние аккаунта при эмуляции
+            
+            # начальное состояние аккаунта при эмуляции
+            self.exchange.account["net_value"] = 100_000
+            # обнулить позиции по всем символам
+            for symbol in self.symbols:
+                self.exchange.positions[symbol] = Position(symbol, 100_000, Decimal(0))
+
         else:
             # Для live торговли подписаться на обновление OPA
             self.exchange = Exchange(self.on_event)
@@ -207,7 +313,6 @@ class Trader2:
         for strategy in self.strategies:
             strategy.warmed = True
 
-
     def on_event(self, event, dt, symbol=None, payload=None):
         """
         В стриме биржи возникло новое событие.
@@ -222,50 +327,57 @@ class Trader2:
             self.exchange.on_quote(dt, payload)
 
         if event == "bar":
-            # пройтись по всем индикаторам и обновить их
+            # 1. Добавить bar в хранилище баров
+            self.exchange.on_bar(dt, payload)
+
+            # 2. Обновить индикаторы, собрать их новые значения
             for indicator in self.indicators:
                 indicator.on_bar(copy(payload))
 
-            # TODO сложить данные индикаторов и баров в удобном виде в стратегии
-
+            # 3. Передать bar в стратегии
             for strategy in self.strategies:
                 strategy.on_bar(copy(payload))
 
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
+
         if event == "trade":
+            # 3. Передать trade в стратегии
             for strategy in self.strategies:
                 strategy.on_trade(copy(payload))
 
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
+
         # Эмулятор сообщает об изменениях ордера
         if event == "order_emulator":
-            # проброс в стратегии
-            # TODO пробрасывать только в стратегию, которая ордер создала
+            # TODO: пробрасывать только в стратегию, которая ордер создала
             for strategy in self.strategies:
-                strategy.on_order_event(copy(payload))
-        
-        # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
-        if event == "broker":
+                strategy.on_order_event(payload)
 
-            # обновить ордер в полях биржи
-            self.exchange.on_order(copy(payload))
+        # # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
+        # if event == "broker":
 
-            # обновить поля биржи
-            self.exchange.on_portfolio(copy(payload))
+        #     # обновить ордер в полях биржи
+        #     self.exchange.on_order(copy(payload))
 
-            # вызвать событие в стратегиях
-            for strategy in self.strategies:
-                strategy.on_order_event(copy(payload))
+        #     # обновить поля биржи
+        #     self.exchange.on_portfolio(copy(payload))
 
-        if event in ["day"]:
-            if dt > self.dt_start:
-                print(f"\n{dt}\n")
-        
-        # Обработка новых торговых данных эмулятором
-        if self.backtest and dt > self.dt_start and event == "bar":
-            # Дернуть эмулятор биржи.
-            # Пробросить в него очередную порцию данных,
-            # запросить обработку открытых ордеров.
-            self.exchange.on_bar(dt, copy(payload))
+        #     # вызвать событие в стратегиях
+        #     for strategy in self.strategies:
+        #         strategy.on_order_event(copy(payload))
 
+        # if event in ["day"]:
+        #     if dt > self.dt_start:
+        #         print(f"\n{dt}\n")
+
+        # # Обработка новых торговых данных эмулятором
+        # if self.backtest and dt > self.dt_start and event == "bar":
+        #     # Дернуть эмулятор биржи.
+        #     # Пробросить в него очередную порцию данных,
+        #     # запросить обработку открытых ордеров.
+        #     self.exchange.on_bar(dt, copy(payload))
 
     def config_start_end(self, conf, warm_up=timedelta(days=5)):
         if self.backtest:
@@ -322,11 +434,10 @@ class Trader2:
             self.feed_source = PolygonAdapter(**feed_conf)
         else:
             raise ValueError(f"Unknown feed source: {feed}")
-        
+
         log.info(self.feed_source)
 
     def start(self):
-
         print()
         log.info(colored(" Start ", "green", attrs=["reverse", "bold"]))
 
@@ -341,4 +452,3 @@ class Trader2:
                 log.exception(e)
 
         log.info(colored(" Stop ", "red", attrs=["reverse", "bold"]))
-

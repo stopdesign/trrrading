@@ -6,7 +6,6 @@ from time import sleep
 
 import requests
 from termcolor import cprint
-import pandas as pd
 
 from .base_source import BaseSource
 
@@ -119,40 +118,50 @@ class PolygonAdapter(BaseSource):
                 data = self.load_from_file(ss, dt_1, dt_2)
             else:
                 data = self.load_from_api(ss, dt_1, dt_2)
-
+            
             if not data:
                 log.error(f"No data for {symbol}")
                 continue
-
-            # Заполнение пробелов в данных
-            df = pd.DataFrame(data).drop_duplicates()
-            df["dt"] = pd.to_datetime(df["t"], unit="s")
-            df = df.set_index("dt")
-
-            df1 = df.resample("1T").ffill()
-
-            df1["v"] = df["v"]
-            df1["v"].fillna(0, inplace=True)
-
-            df1.loc[df1["v"] == 0, ["o", "h", "l"]] = df1["c"]
-
-            df1["t"] = df1.index.astype(int) // 10**9
-
-            data = df1.to_dict("records")
-
+            
+            data = sorted(data, key=lambda d: d['t'])
+            
+            prev_t = None
+            payload = {}
             for line in data:
-                payload = {
-                    "dt": ts_to_dt(line["t"]),
-                    "o": line["o"],
-                    "h": line["h"],
-                    "l": line["l"],
-                    "c": line["c"],
-                    "vol": line["v"],
-                    "symbol": symbol,
-                }
+
+                # skip duplicate
+                if line["t"] == prev_t:
+                    continue
+
+                # Заполняются небольшие пробелы в данных
+                while prev_t and (60 < line["t"] - prev_t < 3600):
+                    # добавить интервалы, пока не догоним line["t"]
+                    prev_t += 60
+                    dt = ts_to_dt(prev_t)
+
+                    # Удаление всех данных за пределами RTH
+                    if self.schedule.is_rth(symbol, dt):
+                        payload = payload.copy()
+                        payload["dt"] = dt
+                        payload["vol"] = 0
+                        all_data.append((prev_t, symbol, payload))
+
+                dt = ts_to_dt(line["t"])
+
                 # Удаление всех данных за пределами RTH
-                if self.schedule.is_rth(symbol, payload["dt"]):
+                if self.schedule.is_rth(symbol, dt):
+                    payload = {
+                        "dt": dt,
+                        "o": line["o"],
+                        "h": line["h"],
+                        "l": line["l"],
+                        "c": line["c"],
+                        "vol": line["v"],
+                        "symbol": symbol,
+                    }
                     all_data.append((line["t"], symbol, payload))
+                
+                prev_t = line["t"]
 
         log.info(f"{dt_1}, {dt_2}, {len(all_data)}")
 

@@ -1,109 +1,80 @@
-import math
-import pandas as pd
-from talipp.indicators import DonchianChannels
-from talipp.ohlcv import OHLCV
-from strategy import BaseStrategy, Signal
-from data_types import Bar
+import logging
+from decimal import Decimal
+
+from data_types import Bar, Order, Trade
+from indicator.donchian_channels import DonchianChannels
+from strategy import BaseStrategy
+
+log = logging.getLogger("strategy")
 
 
-class ChannelBreakout4(BaseStrategy):
+class ChBrStop(BaseStrategy):
     """
-    Как ChannelBreakout3, только гэпы заполняются фейковыми барами.
+    Стратегия ChBr на Stop-ордерах
     """
-    don = None
-    padding = 0
-    count_bars = False
 
     def on_start(self):
-        self.padding = self.params.get("padding", 0)
-        self.count_bars = self.params.get("count_bars", False)
-        self.don = DonchianChannels(self.length)
 
-    def on_bar(self, pandas_ohlc):
-        bar = Bar.from_pandas(pandas_ohlc)
+        self.symbol = "URA.ARCA"  # можно брать из конфига
 
-        if bar.volume == 0:
-            return None
+        # TODO: можно перейти на такой формат подписки.
+        # Тогда это можно передать в индикатор как источник данных.
+        # self.ura = DataSource("URA", "5m", rth=True, on_bar=self.on_bar)
 
-        if self.data:
-            gap = abs(self.data[-1].close - bar.open)
-            prev_price = self.data[-1].close
-            prev_date = self.data[-1].date
-            if gap > 0.15:
-                price = prev_price
-                d_price = 0.005
-                cnt = math.ceil(gap / d_price)
-                cnt = min(cnt, 1500)
-                num = 0
-                for i in range(cnt):
-                    bar = Bar.from_pandas(pandas_ohlc)
+        self.dc = DonchianChannels(self.length)
 
-                    if bar.open > self.data[-1].close:
-                        price += d_price
-                    else:
-                        price -= d_price
+    def market_order(self, amount):
+        order = Order(type="market", amount=amount, status="new")
+        self.exchange.place_order(order)
 
-                    for ii in range(2):
+    def stop_order(self, amount, price):
+        order = Order(type="stop", amount=amount, status="new", stop_price=price)
+        self.exchange.place_order(order)
 
-                        ohlcv = OHLCV(
-                            open=price,
-                            high=price,
-                            low=price,
-                            close=price,
-                        )
+    def on_bar(self, bar: Bar):
 
-                        self.don.add_input_value(ohlcv)
+        if not self.warmed:
+            return
 
-                        if self.don:
-                            bar.up = self.don[-1].ub
-                            bar.dn = self.don[-1].lb
-                        else:
-                            bar.up = None
-                            bar.dn = None
+        # как-то получить актуальный ордер
+        # что делать, если есть два ордера?
+        orders = []
+        for order in self.exchange.orders:
+            if order.status == "new":
+                orders.append(order)
 
-                        bar.open = price
-                        bar.high = price + 0.01
-                        bar.low = price - 0.01
-                        bar.close = price
+        channel = self.dc.value
 
-                        bar.date = prev_date + pd.Timedelta(seconds=num)
-                        num += 1
+        # как-то получить позицию по данному инструменту
+        position = self.exchange.positions[self.symbol]
 
-                        self.data.append(bar)
+        for order in orders:
+            if order.amount > 0:
+                order.stop_price=channel["ub"]
+            if order.amount < 0:
+                order.stop_price=channel["lb"]
 
-        if self.count_bars:
-            cnt = int(math.ceil(min(bar.barCount / self.count_bars, 20)))
-        else:
-            cnt = 1
+        if not orders:
+            
+            if position.amount >= 0:
+                current_amount = position.amount
+                target_amount = -int(100_000 / channel["lb"])
+                self.stop_order(target_amount - current_amount, channel["lb"])
 
-        for i in range(cnt):
-            self.don.add_input_value(pandas_ohlc)
-            bar = Bar.from_pandas(pandas_ohlc)
+            if position.amount <= 0:
+                current_amount = position.amount
+                target_amount = +int(100_000 / channel["ub"])
+                self.stop_order(target_amount - current_amount, channel["ub"])
 
-            if self.don:
-                bar.up = self.don[-1].ub
-                bar.dn = self.don[-1].lb
-            else:
-                bar.up = None
-                bar.dn = None
-
-            self.data.append(bar)
-
-        return bar
-
-    def test_price(self, price: float) -> Signal:
+    def on_trade(self, trade: Trade):
         """
         Проверить сигнал стратегии при появлении новой цены.
         """
-        bar = self.data[-1] if self.data else None
+        # print("strategy on trade", self.dc.value)
 
-        if not bar or not bar.dn:
-            return Signal.PASS
+        if not self.warmed:
+            return
 
-        if price > bar.up - self.padding:
-            return Signal.LONG
-
-        if price < bar.dn + self.padding:
-            return Signal.SHORT
-
-        return Signal.PASS
+    def on_order_event(self, payload):
+        # log.info(f"STRATEGY ON ORDER: {payload}")
+        pass

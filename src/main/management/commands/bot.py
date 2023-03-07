@@ -5,7 +5,7 @@ from datetime import datetime
 from os.path import abspath, join, dirname
 from django.core.management.base import BaseCommand
 from django.conf import settings
-from trader import Trader
+# from trader import Trader
 from trader2.trader import Trader2
 
 log = logging.getLogger("run")
