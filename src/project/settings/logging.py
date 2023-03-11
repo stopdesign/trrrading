@@ -40,7 +40,7 @@ conf = {
         # TODO: добавить file handler
     },
     "loggers": {
-        "": {"level": "DEBUG", "handlers": ["console", "syslog"], "propagate": False},
+        "": {"level": "DEBUG", "handlers": ["console",], "propagate": False},
         "django": {"level": "INFO", "handlers": ["console"], "propagate": False},
         # Set level to DEBUG and enable settings.DEBUG to see all SQL queries
         "django.db.backends": {
