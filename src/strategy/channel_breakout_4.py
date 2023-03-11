@@ -15,7 +15,7 @@ class ChBrStop(BaseStrategy):
 
     def on_start(self):
 
-        self.symbol = "URA.ARCA"  # можно брать из конфига
+        self.symbol = "ZW.CBOT"  # можно брать из конфига
 
         # TODO: можно перейти на такой формат подписки.
         # Тогда это можно передать в индикатор как источник данных.
@@ -45,6 +45,10 @@ class ChBrStop(BaseStrategy):
 
         channel = self.dc.value
 
+        if not channel["lb"]:
+            log.error(f"Indicator wasn't warmed up? {self.symbol} {channel}")
+            return
+
         # как-то получить позицию по данному инструменту
         position = self.exchange.positions[self.symbol]
 
@@ -55,7 +59,7 @@ class ChBrStop(BaseStrategy):
                 order.stop_price=channel["lb"]
 
         if not orders:
-            
+
             if position.amount >= 0:
                 current_amount = position.amount
                 target_amount = -int(100_000 / channel["lb"])

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract
-# from ibapi.order import *
+from ibapi.common import TickerId
 from ibapi.execution import ExecutionFilter
 import threading
 import time
@@ -115,18 +115,18 @@ class IBClient(EWrapper, EClient):
         super().accountSummaryEnd(reqId)
         print('//// accountSummary\n')
     
-    def error(self, reqId, errorCode, errorString):
+    def error(self, reqId:TickerId, errorCode:int, errorString:str, advancedOrderRejectJson = ""):
         cprint(f"ERROR {errorCode} {errorString}", "red")
 
     def historicalData(self, reqId:int, bar):
-        print("HistoricalData. ReqId:", reqId, "BarData.", bar)
+        cprint(f"HistoricalData. BarData: {bar}", "blue")
 
     def historicalDataEnd(self, reqId: int, start: str, end: str):
         super().historicalDataEnd(reqId, start, end)
-        print("HistoricalDataEnd. ReqId:", reqId, "from", start, "to", end)
+        cprint(f"HistoricalDataEnd. ReqId: {reqId} from {start} to {end}", "red")
 
     def historicalDataUpdate(self, reqId: int, bar):
-        print("HistoricalDataUpdate. ReqId:", reqId, "BarData.", bar)
+        cprint(f"HistoricalDataUpdate. BarData: {bar}", "magenta")
 
     def commissionReport(self, commissionReport):
         # super().commissionReport(commissionReport)
@@ -188,6 +188,15 @@ class IBThread(threading.Thread):
     def run(self):
         log.info("Run Message Thread")
         self.app.run()
+
+
+def FxContract(symbol, secType="CASH", exchange="IDEALPRO", currency="USD"):
+    contract = Contract()
+    contract.symbol = symbol
+    contract.secType = secType
+    contract.exchange = exchange
+    contract.currency = currency
+    return contract
 
 
 def FutContract(symbol, localSymbol, secType="FUT", exchange="CME", currency="USD"):

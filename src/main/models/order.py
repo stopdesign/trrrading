@@ -1,11 +1,9 @@
-import sys
-from datetime import timezone
 from secrets import token_hex
 from django.db import models
 from main.models import Contract
 
 
-UNSET_DOUBLE = sys.float_info.max
+UNSET_DOUBLE = 10**10
 
 
 def dt_to_ts(dt):
@@ -108,10 +106,9 @@ class Order(models.Model):
         return order
 
     @classmethod
-    def market_order(cls, account, run, contract, side, amount):
+    def market_order(cls, account, contract, side, amount):
         order = cls(
             account=account,
-            run=run,
             contract=contract,
             action=side,
             local_id=new_local_id(),
@@ -123,8 +120,8 @@ class Order(models.Model):
         return order
 
     @classmethod
-    def adaptive_market_order(cls, account, run, contract, side, amount):
-        order = cls.market_order(account, run, contract, side, amount)
+    def adaptive_market_order(cls, account, contract, side, amount):
+        order = cls.market_order(account, contract, side, amount)
         order.order_settings = '{"strategy": "Adaptive", "priority": "Normal"}'
         return order
 
@@ -140,9 +137,9 @@ class Order(models.Model):
         else:
             price = float(self.signal_price)
         return {
-            "id": self.id,
+            "id": self.pk,
             "amount": self.amount,
-            "side": self.action.lower(),
+            "side": str(self.action).lower(),
             "time": dt_to_ts(self.created_at),
             "dt": str(self.created_at),
             "price": price,

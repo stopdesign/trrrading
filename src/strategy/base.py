@@ -1,8 +1,11 @@
 from collections import namedtuple
 from indicator.base import BaseIndicator
+from trader2 import BaseExchange
 
 
 class BaseStrategy:
+
+    exchange: BaseExchange
 
     def __init__(self, **kwargs):
         self.exchange = kwargs.pop("exchange")
@@ -11,14 +14,20 @@ class BaseStrategy:
         self.length = kwargs.get("length")
         self.params = namedtuple(self.name, kwargs.keys())(*kwargs.values())
         self.data = []
-        # self.prev_signal = Signal.PASS
-        # self.prev_signal_dt = None
         self.warmed = False
+
+        self.bars = self.exchange.bars
+        self.quotes = self.exchange.quotes
+        self.positions = self.exchange.positions
+        self.account = self.exchange.account
+        self.orders = self.exchange.orders
+        self.place_order = self.exchange.place_order
+
         self.on_start()
 
     def __repr__(self):
         return str(self.params)
-    
+
     @property
     def market_system(self):
         return f"{self.symbol}_{self.name}"
@@ -32,7 +41,7 @@ class BaseStrategy:
 
     @property
     def info(self):
-        return f"{self}, signal={self.prev_signal.value}, data_len={len(self.data)}"
+        return f"{self}, data_len={len(self.data)}"
 
     def on_bar(self, data):
         pass

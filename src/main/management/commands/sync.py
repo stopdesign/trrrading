@@ -1,20 +1,30 @@
 import argparse
-import yaml
-import logging
-from datetime import datetime, timedelta
-from django.core.management.base import BaseCommand
-from django.conf import settings
-from ibkr_api.client import IBClient, IBThread, StockContract
-from ibkr_api.ib_sync import IBSync
-import time
-from termcolor import cprint
 import json
+import logging
+import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from main.models import Account, Position, Order, Trade, Contract
-from django.db import transaction
-from ibapi.order import Order as IBOrder
-from django.core.cache import cache
+
 import redis
+import yaml
+from django.conf import settings
+from django.core.cache import cache
+from django.core.management.base import BaseCommand
+from django.db import transaction
+from ibapi.common import TickerId
+from ibapi.order import Order as IBOrder
+from termcolor import cprint
+
+from ibkr_api.client import (
+    CryptoContract,
+    FutContract,
+    FxContract,
+    IBClient,
+    IBThread,
+    StockContract,
+)
+from ibkr_api.ib_sync import IBSync
+from main.models import Account, Contract, Order, Position, Trade
 
 # Логгер для этого файла
 log = logging.getLogger("sync")
@@ -25,6 +35,20 @@ DEF_CONFIG = "../config/bot.yaml"
 APP = None
 
 BOT_ID_PREFIX = "bot_"
+
+DT_FMT = "%Y-%m-%d %H:%M:%S"
+
+
+def ts_to_dt(ts):
+    return datetime.utcfromtimestamp(ts)
+
+
+redis_client = redis.Redis()
+pubsub = redis_client.pubsub()
+
+print()
+
+SYNC_CHANNEL = "SYNC"
 
 """
 Важные ошибки, которые нужно обработать:
@@ -42,17 +66,42 @@ ERROR 1102 Connectivity between IB and Trader Workstation has been restored...
 # то следующий сдвигается вперед. Ну или типа того.
 
 
+def realtimeBar(
+    reqId: TickerId,
+    time: int,
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+    volume: Decimal,
+    wap: Decimal,
+    count: int,
+):
+    symbol = "MESH3.CME"
+    dt = ts_to_dt(time)
+    bar = {
+        "dt": dt.strftime(DT_FMT),  # "2022-10-06 14:01:00"
+        "o": open_,
+        "h": high,
+        "l": low,
+        "c": close,
+        "vol": round(float(volume), 2),
+        "symbol": symbol,
+    }
+    a = redis_client.publish(f"{symbol}:BARS", json.dumps(bar))
+    log.info(f"Redis data-message: {bar}, {a}")
+
 
 def pnl(reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
     account = Account.objects.get(uid=APP.account_id)
     values = APP.values[account.uid]
-    
-    account.daily_pnl = dailyPnL 
+
+    account.daily_pnl = dailyPnL
     account.unrealized_pnl = unrealizedPnL
     account.realized_pnl = realizedPnL
 
     # TODO добавить Cushion — Excess liquidity as a percentage of net liquidation value
-    
+
     # FIXME KeyError: 'NetLiquidation'; pnl может приходить раньше values.
 
     account.net_value = values["NetLiquidation"]
@@ -63,34 +112,48 @@ def pnl(reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
 
     account.save()
 
+    # Этих слишком много. Депозит постоянно обновляется.
+    # action = {"types": ["account"]}
+    # a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+    # log.info(f"Redis sync-message: {action}, {a}")
 
-def updatePortfolio(contract, amount, marketPrice, marketValue, averageCost, 
-        unrealizedPNL, realizedPNL, accountName):
 
+def updatePortfolio(
+    contract,
+    position,
+    marketPrice,
+    marketValue,
+    averageCost,
+    unrealizedPNL,
+    realizedPNL,
+    accountName,
+):
     account = Account.objects.get(uid=accountName)
-    position = Position.objects.get(account=account, contract__conid=contract.conId)
+    db_position = Position.objects.get(account=account, contract__conid=contract.conId)
 
-    if position.amount != amount:
-        log.error(f"Position missmatch: db = {position.amount}, ib = {amount}")
+    if db_position.amount != position:
+        log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
 
-    position.avg_price = averageCost
-    position.unrealized_pnl = unrealizedPNL
-    position.save(update_fields=["avg_price", "unrealized_pnl"])
-    
+    db_position.avg_price = averageCost
+    db_position.unrealized_pnl = unrealizedPNL
+    db_position.save(update_fields=["avg_price", "unrealized_pnl"])
+
+    action = {"types": ["position"], "info": {"contract": contract.conId, "amount": db_position.amount}}
+    a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+    log.info(f"Redis sync-message: {action}, {a}")
 
 
 def check_new_orders(ib):
-
     account = Account.objects.get(uid=ib.account_id)
     new_orders = Order.objects.filter(account=account, status="New")
-    
+
     for no in new_orders:
         no.status = "Sending"
         no.save()
 
         # ib.reqIds(-1)
         # time.sleep(0.5)
-        
+
         oid = ib.nextValidOrderId
         ib.nextValidOrderId += 1
 
@@ -98,12 +161,12 @@ def check_new_orders(ib):
 
         # Create limit order object
         order = IBOrder()
-        order.action = no.action 
+        order.action = no.action
         order.totalQuantity = no.amount
         order.orderType = "LMT"
         order.lmtPrice = no.limit_price
-        order.eTradeOnly       = False
-        order.firmQuoteOnly    = False
+        order.eTradeOnly = False
+        order.firmQuoteOnly = False
         # order.orderRef = '{"id": "%s", "dt": "2023-02-28"}' % no.local_id
         order.orderRef = no.local_id
         order.outsideRth = no.outside_rth
@@ -112,6 +175,53 @@ def check_new_orders(ib):
         # ib.reqCurrentTime()
 
         time.sleep(1)
+
+
+def create_order(ib, message):
+
+    contract = FutContract("MES", "MESH3", exchange="CME")
+
+    print("contract.conId", contract)
+    cd = ib.get_contract_details(contract)
+    print("contract.conId", cd)
+
+    account = Account.objects.get(uid=ib.account_id)
+    instrument = Contract.objects.get(conid=cd.contract.conId)
+
+    print("instrument", instrument)
+
+    oid = ib.nextValidOrderId
+    ib.nextValidOrderId += 1
+
+    data = json.loads(message.get("data").decode())
+    log.info("message.data", data)
+
+    amount = Decimal(data.get("amount"))
+    action = "BUY" if amount > 0 else "SELL"
+    side = Order.Side.buy if amount > 0 else Order.Side.sell
+
+    local_id = data.get("local_id")
+
+    # Отправить ордер в TWS
+    ib_order = IBOrder()
+    ib_order.orderId = oid
+    ib_order.orderRef = local_id
+    ib_order.action = action
+    ib_order.totalQuantity = abs(amount)
+    ib_order.orderType = "MKT"
+    # ib_order.outsideRth = True
+
+    cprint(f"ib_order: {ib_order}", "blue")
+
+    # создать ордер в базе данных
+    order = Order.market_order(account, instrument, side, abs(amount))
+    order.local_id = local_id
+    order.save()
+
+    ib.placeOrder(oid, contract, ib_order)
+
+    order.status = "Sent"
+    order.save(update_fields=["status"])
 
 
 def update_order(ib):
@@ -129,7 +239,6 @@ def update_order(ib):
 
 
 def get_executions(ib):
-
     account = Account.objects.get(uid=ib.account_id)
 
     # TODO выбрать только последние пару дней
@@ -138,7 +247,7 @@ def get_executions(ib):
 
     orders = Order.objects.filter(account=account)
     orders_by_id = {o.order_id: o for o in orders}
-    
+
     executions = ib.get_executions()
 
     trades_to_create = []
@@ -153,13 +262,17 @@ def get_executions(ib):
             else:
                 log.error(f"Execution without order: {exec.execId}, o: {exec.permId}")
 
-    Trade.objects.bulk_create(trades_to_create)
+    if trades_to_create:
+        Trade.objects.bulk_create(trades_to_create)
+
+        action = {"types": ["trade"]}
+        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        log.info(f"Redis sync-message: {action}, {a}")
 
     # Пересчитать цены ордеров, для которых загружены сделки.
     # updated_orders
     # Получить сделки для этих ордеров, посчитать, сохранить.
     # trades = Trade.objects.filter(account=account)
-
 
 
 # TWS Account Window
@@ -180,7 +293,6 @@ def get_executions(ib):
 # PnL для всего аккаунта
 # reqPnL(17001, "DU111519", "")
 #       pnl
-
 
 
 def orderStatus(
@@ -228,7 +340,6 @@ def orderStatus(
     account = Account.objects.get(uid=order.account)
 
     with transaction.atomic():
-
         # Контракт достается из базы или создается
         try:
             db_contract = Contract.objects.get(conid=contract.conId)
@@ -277,6 +388,9 @@ def orderStatus(
 
         # Редактирование или создание позиции
         try:
+            # TODO: не редактировать, если не было изменений
+            # orderStatus возникает при редактировании цены ордера,
+            # поэтому часто это не связано с изменением позиции.
             db_position = Position.objects.get(account=account, contract=db_contract)
             if db_position.amount != known_ib_position:
                 cprint(f"Pos: {db_position.amount} -> {known_ib_position}", "green")
@@ -294,6 +408,10 @@ def orderStatus(
         db_order.filled = filled
         db_order.status = status
         db_order.save()
+
+        action = {"types": ["order", "position"]}
+        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        log.info(f"Redis sync-message: {action}, {a}")
 
 
 def initial_sync(ib):
@@ -354,14 +472,18 @@ def initial_sync(ib):
     orders_to_create = []
 
     for contract, order, state in ib_orders:
-        
         print("IB ORDER", order, ">", order.goodAfterTime)
 
         if order.permId and order.permId not in orders_by_id:
             c = contracts_by_id[contract.conId]
             orders_to_create.append(Order.from_ib(order, account, c, state))
 
-    Order.objects.bulk_create(orders_to_create)
+    if orders_to_create:
+        Order.objects.bulk_create(orders_to_create)
+
+        action = {"types": ["order"]}
+        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        log.info(f"Redis sync-message: {action}, {a}")
 
     ############
     # Позиции
@@ -394,8 +516,13 @@ def initial_sync(ib):
 
     positions_to_update = positions_by_con_id.values()
 
-    Position.objects.bulk_create(positions_to_create)
-    Position.objects.bulk_update(positions_to_update, ["avg_price", "amount"])
+    if positions_to_create or positions_to_update:
+        Position.objects.bulk_create(positions_to_create)
+        Position.objects.bulk_update(positions_to_update, ["avg_price", "amount"])
+
+        action = {"types": ["position"]}
+        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        log.info(f"Redis sync-message: {action}, {a}")
 
     log.info("Check initial_sync")
 
@@ -415,6 +542,39 @@ def initial_sync(ib):
         raise Exception("Executions updated")
 
 
+def market_data_subscribe(ib):
+    #####
+    # ib.reqMarketDataType(3)
+    # contract = StockContract("AAPL")
+    # contract = FutContract("ZW", "ZW   MAY 23", exchange="CBOT")
+    # contract = FutContract("MCL", "MCLJ3", exchange="NYMEX")
+    # contract = FutContract("DAX", "FDXS MAR 23", exchange="EUREX", currency="EUR")
+    # contract = FutContract("GE", "GEH3", exchange="CME")
+
+    contract = FutContract("MES", "MESH3", exchange="CME")
+    # contract = FxContract("EUR")    # +++
+    # contract = CryptoContract("ETH")   # +++  AGGTRADES
+
+    # print("contract", contract)
+    # cd = ib.get_contract_details(contract)
+    # print("details", cd)
+    # print()
+
+    ib.reqRealTimeBars(ib.r_id, contract, 5, "TRADES", False, [])
+
+    # ib.reqHistoricalData(
+    #     ib.r_id,
+    #     contract,
+    #     endDateTime="",  # 20230309-22:59:52
+    #     durationStr="120 S",
+    #     barSizeSetting="5 secs",
+    #     whatToShow="MIDPOINT",
+    #     useRTH=0,
+    #     formatDate=1,
+    #     keepUpToDate=True,
+    #     chartOptions=[]
+    # )
+
 
 class Command(BaseCommand):
     """
@@ -428,9 +588,6 @@ class Command(BaseCommand):
         app = None
         thread = None
 
-        redis_client = redis.Redis()
-        pubsub = redis_client.pubsub()
-
         pubsub.subscribe("BOT_ACTIONS")
 
         try:
@@ -443,15 +600,16 @@ class Command(BaseCommand):
                     message = pubsub.get_message(timeout=0.1)
                     if message:
                         cprint(f"REDIS: {message}", "red")
-                        update_order(app)
+                        create_order(app, message)
+                        # update_order(app)
                 except Exception as e:
-                    # log.error(f"Redis pubsub get_message error: {e}")
+                    log.error(f"Redis pubsub get_message error: {e}")
                     pass
 
-                # отправка новых запросов из БД в IB
-                if app and app.isConnected():
-                    cache.set('last_connected', str(datetime.now()), 300)
-                    check_new_orders(app)
+                # # отправка новых запросов из БД в IB
+                # if app and app.isConnected():
+                #     cache.set("last_connected", str(datetime.now()), 300)
+                #     check_new_orders(app)
 
                 # регулярные запросы
                 if go_2 and app and app.isConnected():
@@ -502,12 +660,16 @@ class Command(BaseCommand):
                                 break
                         except Exception as e:
                             log.error(f"Initial sync error: {e}")
+                            log.exception(e)
                             time.sleep(3)
-                    
+
                     # Начать real-time обработку сообщений orderStatus
                     app.orderStatus = orderStatus
 
-                    
+                    # TODO: Тестовая подписка на market data
+                    market_data_subscribe(app)
+                    app.realtimeBar = realtimeBar
+
                     app.pnl = pnl
                     app.updatePortfolio = updatePortfolio
 
@@ -546,4 +708,5 @@ class Command(BaseCommand):
             log.info("Stop\n")
 
         finally:
-            app and app.disconnect()
+            if app:
+                app.disconnect()

@@ -21,6 +21,7 @@ IBKR_TO_MCAL = {
     "NYSE": "NYSE",
     "ARCA": "NYSE",
     "GLOBEX": "CME_Rate",
+    "CME": "CME_Rate",
     "CBOT": "CustomCBOT",
 }
 
@@ -67,7 +68,7 @@ class MarketCalendar:
         # Минутные интервалы RTH
         open = mcal.date_range(schedule, "1T", force_close=1)
 
-        # Смещение на одну минуту нужно, чтобы интервал 
+        # Смещение на одну минуту нужно, чтобы интервал
         # HH:00 был как следующие интервалы этого часа
         res = {dt - 60 for dt in set(open.view("int64") // 10**9)}
 

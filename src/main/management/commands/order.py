@@ -6,7 +6,7 @@ import redis
 import yaml
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from main.models import Account, Order, Contract 
+from main.models import Account, Order, Contract
 from termcolor import cprint
 from django.core.cache import cache
 
@@ -30,7 +30,7 @@ class Command(BaseCommand):
         price = 140
         order = Order.limit_order(account, instrument, Order.Side.buy, 1, price, outside_rth=False )
         order.save()
-        
+
         print(order.local_id, price)
 
     def handle(self, *args, **kwargs):
@@ -49,14 +49,12 @@ class Command(BaseCommand):
         # last_connected = cache.get("last_connected", "---")
         # print("last_connected", last_connected)
 
-        # host: 137.220.48.251
-        # port: 6379
-        # db: 0
-        # password: hFu1asd8331GjaIOm2Nds0
+        redis_client = redis.Redis()
 
-        redis_client = redis.Redis(host="137.220.48.251", password="hFu1asd8331GjaIOm2Nds0")
-    
         action = {"action": "new_order", "data": "asdfs"}
         a = redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
+        print(a)
+
+        a = redis_client.publish("SYNC", json.dumps(action, default=str))
         print(a)
 

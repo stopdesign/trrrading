@@ -36,9 +36,9 @@ class DataProvider:
         on_event: Callable,
         dt_prior: datetime,
         dt_start: datetime,
-        dt_end: datetime,
+        dt_end: datetime|None,
         history: BaseSource,
-        feed: BaseSource = None,
+        feed: BaseSource|None = None,
     ):
         self.symbols = symbols
 

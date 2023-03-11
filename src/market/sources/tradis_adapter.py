@@ -22,7 +22,6 @@ def parse_dt(dt: str) -> datetime:
 
 class TradisAdapter(BaseSource):
     def __init__(self, redis_client):
-
         # Есть ли в базе QUOTES
         self.quotes = False
 
@@ -33,7 +32,6 @@ class TradisAdapter(BaseSource):
         return f"{self.__class__.__name__}(host={host})"
 
     def format_message(self, message):
-
         # Игнорировать subscribe messages
         if message and message.get("type") == "subscribe":
             return
@@ -98,7 +96,6 @@ class TradisAdapter(BaseSource):
             # prev_str = None
             # prev = {"c": None}
             for data_str, score in sorted(lns):
-                
                 data = orjson.loads(data_str)
                 # Легкий фикс формата
                 data["symbol"] = s
@@ -129,8 +126,11 @@ class TradisAdapter(BaseSource):
         # Подписка на pubsub
         for symbol in symbols:
             pubsub.subscribe([f"{symbol}:TRADES", f"{symbol}:BARS"])
-        
-        pubsub.subscribe("BOT_ACTIONS")
+
+        # FIXME: плохо всё это держать в одной подписке, т.к. ломается timeout
+        # Ну или нужно руками считать timeout по типам сообщений.
+        # В любом случае SYNC лучше отсюда вынести. Это не часть канала данных.
+        pubsub.subscribe(["SYNC"])  # подписка на события от брокера
 
         while True:
             try:
@@ -141,7 +141,7 @@ class TradisAdapter(BaseSource):
                 continue
 
             try:
-                if message and message.get("channel") == "BOT_ACTIONS":
+                if message and message.get("channel") == "SYNC":
                     if message.get("type") == "message":
                         on_broker_event(message.get("data"))
                 elif payload := self.format_message(message):

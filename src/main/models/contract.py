@@ -20,11 +20,11 @@ class Contract(models.Model):
     sec_type = models.CharField(max_length=50, choices=Type.choices, default=Type.stk)
 
     def __str__(self):
-        return f"{self.symbol}"
+        return f"{self.local_symbol}.{self.main_exchange.symbol}"
 
     @property
     def ticker(self):
-        return f"{self.symbol}.{self.main_exchange.symbol}"
+        return f"{self.local_symbol}.{self.main_exchange.symbol}"
 
     @classmethod
     def from_ib(cls, contract):

@@ -42,7 +42,7 @@ def get_key(instrument, mode=None):
 
 
 class Emulator:
-    
+
     def __init__(self, redis_client, instruments, speed, start, end, suffix, debug):
         self.redis_client = redis_client
         self.instruments = instruments

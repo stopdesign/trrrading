@@ -8,6 +8,12 @@ log = logging.getLogger("event_manager")
 
 
 class EventManager:
+    """
+    Служебный класс для DataProvider.
+    Преобразует данные из dict в dataclass разных типов.
+    Следит за Large gap. Разбивает событие bar на разные сделки.
+    """
+
     def __init__(self, on_event: Callable):
         self.on_event = on_event
         self.dt_last = None
@@ -65,7 +71,6 @@ class EventManager:
 
         # Это bar
         elif payload.get("o"):
-
             if not self.quotes:
                 quote = BidAsk.from_redis_trade(payload)
                 self.on_event("quote", quote.date, quote.symbol, quote)
@@ -78,7 +83,17 @@ class EventManager:
             if bar_time_gap > 1:
                 if not self.in_the_gap:
                     # FIXME: убрать хардкодинг допустимых интервалов
-                    if bar_time_gap not in [4031, 1151, 5471, 4031, 1151, 5471, 1051, 3931, 5371]:
+                    if bar_time_gap not in [
+                        4031,
+                        1151,
+                        5471,
+                        4031,
+                        1151,
+                        5471,
+                        1051,
+                        3931,
+                        5371,
+                    ]:
                         log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
                 self.in_the_gap = True
             else:

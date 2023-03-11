@@ -1,6 +1,6 @@
 from talipp.indicators import DonchianChannels as TalippDonchianChannels
 
-from .base import BaseIndicator 
+from .base import BaseIndicator
 
 
 class DonchianChannels(BaseIndicator):
@@ -13,11 +13,11 @@ class DonchianChannels(BaseIndicator):
 
         skip = False
 
-        if not bar.rth:
-            skip = True
+        # if not bar.rth:
+            # skip = True
 
-        if bar.volume == 0:
-            skip = True
+        # if bar.volume == 0:
+            # skip = True
 
         # При каких-то условиях добавить данные в индикатор
         if not skip:

@@ -4,15 +4,15 @@ from oath._utils import fromhex
 
 
 # stopdesign
-# counter = 11
+# counter = 12
 
 # mariamiro
-# counter = 42
+# counter = 45
 # pin = "12345"
 # ocra_key = fromhex(".....")
 
 
-counter = 36
+counter = 60
 pin = "fixit1"
 ocra_key = fromhex(".....")
 
