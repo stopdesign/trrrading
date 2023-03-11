@@ -1,8 +1,10 @@
 import logging
 from decimal import Decimal
 from typing import Callable
+from termcolor import colored
 
 from data_types import Position
+from data_types.order import Order
 from trader2 import BaseExchange, LocalMatcher
 
 log = logging.getLogger("emulator")
@@ -29,6 +31,8 @@ class Emulator(BaseExchange):
     def __init__(self, on_event: Callable):
         super().__init__(on_event)
 
+        self.trades = []
+
         self.matcher = LocalMatcher(self)
 
         # начальное состояние аккаунта при эмуляции
@@ -37,11 +41,12 @@ class Emulator(BaseExchange):
         # обнулить позиции по всем символам
         self.positions = EmulatorPositions(100_000)
 
-    def place_order(self, order):
+    def place_order(self, order: Order):
         """
         Метод для создания ордера из стратегии.
         В эмуляторе этим занимается LocalMatcher
         """
+        # log.info(colored(f"PLACE {order}"))
         self.orders.append(order)
         self.matcher.process_order(order)
 

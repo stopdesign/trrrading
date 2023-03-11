@@ -6,7 +6,7 @@ from .base import BaseIndicator
 class DonchianChannels(BaseIndicator):
     def __init__(self, length):
         self.data = TalippDonchianChannels(length)
-        self.value = {}
+        self.value = {}  # актуальное значение индикатора
 
     def on_bar(self, bar):
         skip = False

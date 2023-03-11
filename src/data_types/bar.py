@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 
-@dataclass
+@dataclass(slots=True)
 class Bar:
     date: datetime
     symbol: str

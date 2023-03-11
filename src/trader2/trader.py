@@ -6,6 +6,7 @@ import redis
 from termcolor import colored
 
 from market import DataProvider, PolygonAdapter, TradisAdapter
+from stats import PortfolioStats
 from strategy import all_strategies
 from trader2 import Emulator, Exchange
 
@@ -49,7 +50,7 @@ class Trader2:
         run_config = config["backtest"] if backtest else config["live"]
 
         self.symbols = sorted(list({c["symbol"] for c in config["strategies"]}))
-        self.config_start_end(run_config, warm_up=timedelta(days=2))
+        self.config_start_end(run_config, warm_up=timedelta(days=10))
         self.config_sources(run_config, config["sources"])
 
         # Добывает данные, запускает события
@@ -86,6 +87,11 @@ class Trader2:
         # Может, лучше сделать это внутри стратегии?
         for strategy in self.strategies:
             strategy.warmed = True
+
+        self.portfolio_stats = PortfolioStats(self, self.exchange, 100000)
+
+        self.portfolio_stats.portfolio_info()
+        # self.portfolio_stats.account_info()
 
     def on_event(self, event, dt, symbol=None, payload=None):
         """
@@ -133,6 +139,10 @@ class Trader2:
         # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
         if event == "broker":
             self.exchange.on_broker_update(copy(payload))
+
+        if event in ["hour", "day"]:
+            if dt > self.dt_start:
+                self.portfolio_stats.snapshot()
 
     def config_start_end(self, conf, warm_up=timedelta(days=5)):
         if self.backtest:
@@ -196,14 +206,19 @@ class Trader2:
         print()
         log.info(colored(" Start ", "green", attrs=["reverse", "bold"]))
 
-        if self.backtest:
-            self.data_provider.backtest()
-        else:
-            try:
+        self.portfolio_stats.snapshot()
+
+        try:
+            if self.backtest:
+                self.data_provider.backtest()
+            else:
                 self.data_provider.listen()
-            except KeyboardInterrupt:
-                pass
-            except Exception as e:
-                log.exception(e)
+        except KeyboardInterrupt:
+            print()
+        except Exception as e:
+            log.exception(e)
 
         log.info(colored(" Stop ", "red", attrs=["reverse", "bold"]))
+
+        if self.backtest:
+            self.portfolio_stats.print_summary()  # RESULTS

@@ -13,6 +13,13 @@ def dt_to_ts(dt):
 
 
 class StrategyStats:
+    """
+    История работы стратегии. На каждый бар пишет:
+    - ohlc
+    - индикаторы
+    - profit в разных видах
+    """
+
     def __init__(self, strategies, portfolio=None):
         self.strategies = strategies
         self.portfolio = portfolio
@@ -40,7 +47,7 @@ class StrategyStats:
             path = os.path.join(base_dir, file_name)
             data = self.__stats[strategy.market_system]
             res = ""
-            # FIXME: переписать. 
+            # FIXME: переписать.
             # Смысл в том, что данные добавляются не по порядку,
             # Но сохранить нужно по порядку и не все.
             strat_min_dt = min_dt

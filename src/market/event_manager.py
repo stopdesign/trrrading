@@ -17,7 +17,7 @@ class EventManager:
     def __init__(self, on_event: Callable):
         self.on_event = on_event
         self.dt_last = None
-        self.quotes = False
+        self.quotes = False  # в данных есть quotes
 
         self.prev_bar_dt = datetime(2000, 1, 1)
         self.in_the_gap = True
@@ -79,20 +79,18 @@ class EventManager:
             bar.rth = payload["rth"]
 
             # FIXME: тут нужна поддержка разных инструментов
-            bar_time_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60)
-            if bar_time_gap > 1:
+            bar_time_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60) - 1
+            if bar_time_gap > 0:
                 if not self.in_the_gap:
                     # FIXME: убрать хардкодинг допустимых интервалов
                     if bar_time_gap not in [
-                        4031,
-                        1151,
-                        5471,
-                        4031,
-                        1151,
-                        5471,
-                        1051,
-                        3931,
-                        5371,
+                        1050,
+                        1150,
+                        3870,
+                        3930,
+                        4030,
+                        5370,
+                        5470,
                     ]:
                         log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
                 self.in_the_gap = True
@@ -104,23 +102,23 @@ class EventManager:
 
             self.prev_bar_dt = bar.date
 
-            # Эмуляция отдельных сделок по границам OHLC-бара
-            for trade in self.bar_to_trades(bar):
-                trade = Trade(
-                    date=trade.date,
-                    symbol=trade.symbol,
-                    price=trade.price,
-                    rth=trade.rth,
-                )
-                self.on_event("trade", bar.date, bar.symbol, trade)
+            # # Эмуляция отдельных сделок по границам OHLC-бара
+            # for trade in self.bar_to_trades(bar):
+            #     trade = Trade(
+            #         date=trade.date,
+            #         symbol=trade.symbol,
+            #         price=trade.price,
+            #         rth=trade.rth,
+            #     )
+            #     self.on_event("trade", bar.date, bar.symbol, trade)
 
-            # # Теперь bar преобразуется в одну сделку с ценой close
-            # trade = Trade(
-            #     date=bar.date,
-            #     symbol=bar.symbol,
-            #     price=bar.close,
-            #     rth=bar.rth,
-            # )
-            # self.on_event("trade", bar.date, bar.symbol, trade)
+            # Теперь bar преобразуется в одну сделку с ценой close
+            trade = Trade(
+                date=bar.date,
+                symbol=bar.symbol,
+                price=bar.close,
+                rth=bar.rth,
+            )
+            self.on_event("trade", bar.date, bar.symbol, trade)
 
             self.on_event("bar", bar.date, bar.symbol, bar)

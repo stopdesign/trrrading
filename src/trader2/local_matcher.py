@@ -1,6 +1,8 @@
 import logging
 from decimal import Decimal
 
+from termcolor import colored
+
 from data_types import Order
 
 log = logging.getLogger("matcher")
@@ -74,7 +76,7 @@ class LocalMatcher:
             order.status = "filled"
             order.fill_price = price
 
-            # log.info(f"FILL ORDER {self.exchange.dt_last} {order}")
+            # log.info(f"FILL {order}")
 
             # обновить позицию
             position = self.exchange.positions.get(instrument)
@@ -85,10 +87,32 @@ class LocalMatcher:
             # обновить баланс
             self.exchange.account["net_value"] += trade_profit
 
+            profit_str = f"{trade_profit:+9.2f}"
+            if trade_profit > 0:
+                profit_str = colored(profit_str, "green")
+            if trade_profit < 0:
+                profit_str = colored(profit_str, "red")
+
             log.info(
-                f"trade_profit: {trade_profit:0.2f} "
-                f"net_value: {self.exchange.account['net_value']:0.2f} "
+                f"Fill {order.local_id}, {side:>4}, price: {order.fill_price:0.2f}, "
+                f"trade: {profit_str}, "
+                f"net: {self.exchange.account['net_value']:10.2f} "
             )
+
+            # сохранить результаты сделки для статистики
+            # total_profit_rel = 100 * self.total_profit / cash_per_strategy
+            # profit_rel = 100 * profit / cash_per_strategy
+            data = {
+                "instrument": order.instrument,
+                "dt": self.exchange.dt_last,
+                # "time": dt_to_ts(self.exchange.dt_last),
+                "side": side,
+                "amount": abs(order.amount),
+                "profit": trade_profit,
+                # "profit_rel": f"{profit_rel:0.4f}",
+                "price": price,
+            }
+            self.exchange.trades.append(data)
 
             # сообщить стратегии о срабатывании ордера
             self.exchange.on_event("order", dt=self.exchange.dt_last, payload=order)
