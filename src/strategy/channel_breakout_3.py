@@ -13,7 +13,7 @@ class ChBr(BaseStrategy):
     def on_start(self):
 
         # self.symbol = "MES.CME"  # можно брать из конфига
-        self.instrument = "MESH3.CME"
+        self.instrument = "URA.ARCA"  # "MESH3.CME"
 
         # TODO можно перейти на такой формат подписки.
         # Тогда это можно передать в индикатор как источник данных.
@@ -56,7 +56,8 @@ class ChBr(BaseStrategy):
 
         for order in self.orders:
             # TODO: проверить, что инструмент совпадает
-            if order.status in ["New", "PreSubmitted", "Submitted"]:
+            active = ["New", "PreSubmitted", "Submitted"]
+            if order.instrument == self.instrument and order.status in active:
                 log.warn(f"strategy has live order, {order}")
                 return
 
@@ -72,11 +73,11 @@ class ChBr(BaseStrategy):
         target_amount = current_amount
 
         if current_amount <= 0 and trade.price > channel["ub"]:
-            target_amount = +Decimal(100_000 / trade.price)
+            target_amount = +int(100_000 / trade.price)
             # target_amount = +2
 
         if current_amount >= 0 and trade.price < channel["lb"]:
-            target_amount = -Decimal(100_000 / trade.price)
+            target_amount = -int(100_000 / trade.price)
             # target_amount = -2
 
         if target_amount != current_amount:

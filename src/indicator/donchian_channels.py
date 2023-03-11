@@ -4,20 +4,18 @@ from .base import BaseIndicator
 
 
 class DonchianChannels(BaseIndicator):
-
     def __init__(self, length):
         self.data = TalippDonchianChannels(length)
         self.value = {}
 
     def on_bar(self, bar):
-
         skip = False
 
-        # if not bar.rth:
-            # skip = True
+        if not bar.rth:
+            skip = True
 
-        # if bar.volume == 0:
-            # skip = True
+        if bar.volume == 0:
+            skip = True
 
         # При каких-то условиях добавить данные в индикатор
         if not skip:
