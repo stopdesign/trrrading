@@ -8,8 +8,7 @@ export class NavChart {
 
   margin = { top: 40, right: 70, bottom: 50, left: 70 }
 
-  height = 50
-  width = 1800
+  height = 80
 
   constructor(chartArea, mainChart, performanceChart) {
 
@@ -21,6 +20,8 @@ export class NavChart {
     this.data = mainChart.data
 
     const m = this.margin
+
+    this.width = chartArea.clientWidth - m.left - m.right
 
     this.svg = this.chartArea.append("svg")
       .attr("width", "100%")
@@ -196,10 +197,10 @@ export class NavChart {
     this.brush = d3.brushX()
       .extent([[0, 0], [this.width, this.height]])
       .on("brush", (e) => { this.onBrushed(e) })
-    
+
     // сначала выбрано всё
     const defaultSelection = this.xScale.range();
-    
+
     this.chart
       .call(this.brush)
       .call(this.brush.move, defaultSelection);

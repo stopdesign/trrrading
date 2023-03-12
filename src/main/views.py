@@ -31,7 +31,7 @@ def get_stats_for_hour(data):
                 break
         else:
             cnt["ok"] += 1
-    
+
     cnt["none"] = min(60, 60 - len(data))
 
     return dict(cnt)
@@ -129,7 +129,7 @@ def results(request):
     }
     context = json.dumps(res, indent=None, default=str)
     return HttpResponse(context, content_type="application/json")
-    
+
 
 def strategies(request):
     res = []
@@ -138,13 +138,13 @@ def strategies(request):
     files = glob.glob(f"{base_dir}/*_ohlc.jsonl")
     for file in files:
         file = os.path.basename(file)
-        contract, strategy, _ = file.split("_")
+        instrument, strategy, _ = file.split("_")
         res.append({
-            "id": f"{contract}_{strategy}",
+            "id": f"{instrument}_{strategy}",
             "strategy": strategy,
-            "contract": contract,
+            "instrument": instrument,
         })
-    res = sorted(res, key=lambda r: (r["contract"], r["strategy"]))
+    res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
 
@@ -195,7 +195,7 @@ def bt_events(request):
             "price": order["price"],
             "profit": order["profit"],
             "side": order["side"],
-            "signal": order["signal"],
+            "signal": order["side"],
             "time": order["time"],
             "created": order["dt"],
         })

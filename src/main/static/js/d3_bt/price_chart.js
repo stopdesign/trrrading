@@ -57,7 +57,6 @@ export class PriceChart {
   margin = { top: 40, right: 70, bottom: 50, left: 70 }
 
   height = 500
-  width = 1800
 
   chartPadding = 0.15
 
@@ -88,6 +87,8 @@ export class PriceChart {
     this.createAxes()
 
     const m = this.margin
+
+    this.width = chartArea.clientWidth - m.left - m.right
 
     this.svg = this.chartArea.append("svg")
       .attr("width", "100%")
@@ -173,7 +174,7 @@ export class PriceChart {
       .append("line")
       .attr("clip-path", `url(#${this.clipId})`)
       .attr("fill", "none")
-      .attr("stroke", "black")
+      .attr("stroke", "#999999")
       .attr("stroke-width", "0.5px")
       .attr("stroke-dasharray", "5 5")
       .attr("y1", 0)
@@ -184,7 +185,7 @@ export class PriceChart {
       .append("line")
       .attr("clip-path", `url(#${this.clipId})`)
       .attr("fill", "none")
-      .attr("stroke", "black")
+      .attr("stroke", "#999999")
       .attr("stroke-width", "0.5px")
       .attr("stroke-dasharray", "5 5")
       .attr("x1", 0)
@@ -221,7 +222,7 @@ export class PriceChart {
 
 
     // левый блок цены crosshair
-    
+
     this.crosshairLabelPriceBoxL = this.svg
       .append("g")
       .attr("id", "crosshair_label_price_l")
@@ -415,7 +416,7 @@ export class PriceChart {
         const h = Math.round(y(d.high)) + 0.7
         const l = Math.round(y(d.low)) - 0.7
         const c = Math.round(y(d.close))
-        let w = Math.round(400 / dataSize)  // засечки на OHLC
+        let w = Math.round(600 / dataSize)  // засечки на OHLC
         path_svg += `M${dt},${l}V${h}M${dt},${o}h-${w}M${dt},${c}h${w}`
       }
       // stroke = "#000"
@@ -427,13 +428,13 @@ export class PriceChart {
     if (dataSize > 600) {
       strokeWidth = 1
     } else if (dataSize > 500) {
-      strokeWidth = 1.2
+      strokeWidth = 1.1
     } else if (dataSize > 400) {
-      strokeWidth = 1.4
+      strokeWidth = 1.3
     } else if (dataSize > 300) {
-      strokeWidth = 1.6
+      strokeWidth = 1.5
     } else {
-      strokeWidth = 1.8
+      strokeWidth = 1.7
     }
 
     if (draw_indicators) {
@@ -597,7 +598,7 @@ export class PriceChart {
           .tickValues(this.timeTickValues)
           .tickFormat((val) => this.timeTickFormat(val))
       )
-    
+
     this.xAxisGrid = (g, scale) => g
       .attr("transform", `translate(0,${this.height})`)
       .call(
@@ -673,8 +674,8 @@ export class PriceChart {
             .attr("font-weight", "bold")
             .attr("text-anchor", "middle")
             .attr("fill", d => d.profit > 0 ? "#080" : "#d00")
-            .text(d => { 
-              const n = Math.round(d.profit/100) 
+            .text(d => {
+              const n = Math.round(d.profit/100)
               return (n < 0 ? "" : "+") + n
             })
 
@@ -778,12 +779,12 @@ export class PriceChart {
       // Обработка перетаскивания (PAN)
       if (event.sourceEvent && event.sourceEvent.movementX !== undefined) {
         if (this.cursorPos !== null) {
-          this.cursorPos += event.sourceEvent.movementX 
+          this.cursorPos += event.sourceEvent.movementX
         }
       }
       if (event.sourceEvent && event.sourceEvent.movementY !== undefined) {
         if (this.cursorPosY !== null) {
-          this.cursorPosY += event.sourceEvent.movementY 
+          this.cursorPosY += event.sourceEvent.movementY
         }
       }
 
@@ -816,7 +817,11 @@ export class PriceChart {
       this.crosshair
         .attr("x1", -100)
         .attr("x2", -100)
+      this.crosshairY
+        .attr("y1", -100)
+        .attr("y2", -100)
       this.updateCrosshairLabel(-100000, "")
+      this.updateCrosshairLabelY(-100000, "")
     }
   }
 
@@ -829,7 +834,7 @@ export class PriceChart {
       .extent(extent)
       .on("zoom", (e) => { this.onZoomed(e) })
       .on("end", (e) => { this.onZoomEnd(e) })
-      
+
 
     this.chart.call(this.zoom)
     this.chart.on("wheel.zoom", (e) => { this.onWheeled(e) })

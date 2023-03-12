@@ -14,7 +14,6 @@ export class PerformanceChart {
   margin = { top: 40, right: 70, bottom: 50, left: 70 }
 
   height = 150
-  width = 1800
 
   chartPadding = 0.05
 
@@ -28,6 +27,8 @@ export class PerformanceChart {
     this.data = data
 
     const m = this.margin
+
+    this.width = chartArea.clientWidth - m.left - m.right
 
     this.svg = this.chartArea.append("svg")
       .attr("width", "100%")
@@ -126,7 +127,7 @@ export class PerformanceChart {
         return dt_1.getDay() == dt_2.getDay()
       }
     }
-    
+
     this.data_10m = []
     prevBar = data[0]
     for (const bar of data) {

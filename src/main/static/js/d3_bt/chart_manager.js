@@ -21,13 +21,13 @@ export class ChartManager {
   async run(bt_uid, symbol) {
 
     // let [data, trades, stats] = await Promise.all([d3.csv('data.csv'), d3.csv('trades.csv'), d3.csv('stats.csv')])
-      
+
     const base = "http://127.0.0.1:8000"
 
     let ohlc = await d3.json(`${base}/bt/raw?symbol=${bt_uid}_${symbol}`);
     let events = await d3.json(`${base}/bt/events?result=${bt_uid}&strategy=${symbol}`);
 
-    console.log(events)
+    console.log([...events])
 
     // Хочу посчитать все параметры на фронте,
     // т.к. это позволит использовать график для любых бэктестов,
@@ -35,9 +35,9 @@ export class ChartManager {
     // Плюс это кроссвалидация результата.
 
     // {
-    //   "date": "2021-12-27 14:34:00", "symbol": "URA.ARCA", "open": 24.635, 
-    //   "high": 24.71, "low": 24.635, "close": 24.68, "volume": 2190.0, 
-    //   "rth": true, "n1": null, "n2": null, "ts": 1640615640, "profit": 0, 
+    //   "date": "2021-12-27 14:34:00", "symbol": "URA.ARCA", "open": 24.635,
+    //   "high": 24.71, "low": 24.635, "close": 24.68, "volume": 2190.0,
+    //   "rth": true, "n1": null, "n2": null, "ts": 1640615640, "profit": 0,
     //   "strategy": "HullMa"
     // },
 
@@ -58,7 +58,7 @@ export class ChartManager {
     //     close: +history.c[idx],
     //   })
     // }
-    
+
     // Парсинг формата TV
     // let ohlc = []
     // for (const idx in history.t) {
@@ -74,7 +74,7 @@ export class ChartManager {
     // }
 
     // Пройтись по двум массивам одновременно.
-    // Цикл по ценам. Как только дата текущей сделки становится 
+    // Цикл по ценам. Как только дата текущей сделки становится
     // меньше или равна дате из цен — обработать сделку и убрать из списка.
     // В начале проверить, что дата первой сделки больше даты первой цены.
     // В конце проверить, что сделок не осталось.
@@ -103,7 +103,7 @@ export class ChartManager {
 
           const p = +trade.price
           let trade_pnl = 0
-    
+
           if (position > 0) {
             // закрыть long
             trade_pnl = position * p + cash
@@ -112,12 +112,12 @@ export class ChartManager {
             // закрыть short
             trade_pnl = cash + position * p
           }
-    
+
           position = 0
           cash = 0
-    
+
           let amount = trade_size / p  // может быть дробным, но это норм
-    
+
           // открыть новую
           if (trade.side == "buy") {
             position = amount
@@ -131,9 +131,9 @@ export class ChartManager {
           if (trade.signal == "close") {
             position = 0
           }
-    
+
           realized_pnl += trade_pnl
-    
+
           trades_1.push({
             date: new Date(trade.time * 1000),
             time: trade.time * 1000,
@@ -159,13 +159,13 @@ export class ChartManager {
         // закрыть short
         unrealized_pnl = cash + position * bar["close"]
       }
- 
+
       bar["pnl"] = Math.round(realized_pnl / trade_size * 10000) / 100
       bar["net_value"] = initial_cash + realized_pnl + unrealized_pnl
       bar["drawdown"] = 0
-      
+
     }
-  
+
 
     // console.info(trades_1)
     // console.info(ohlc)
@@ -207,7 +207,7 @@ export class ChartManager {
     this.performanceChart = new PerformanceChart(this.chartArea, ohlc)
 
     // this.priceAroundTrades = new PriceAroundTrades(this.chartArea, ohlc, trades_1)
- 
+
     this.navChart = new NavChart(this.chartArea, this.priceChart, this.performanceChart)
 
   }
