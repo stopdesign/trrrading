@@ -15,7 +15,7 @@ class ChBrStop(BaseStrategy):
 
     def on_start(self):
 
-        self.instrument = "URA.ARCA"
+        self.instrument = str(self.symbol)
 
         # TODO: можно перейти на такой формат подписки.
         # Тогда это можно передать в индикатор как источник данных.
@@ -24,22 +24,11 @@ class ChBrStop(BaseStrategy):
         self.dc = DonchianChannels(self.length)
 
     def market_order(self, amount):
-        order = Order(
-            instrument=self.instrument,
-            type="market",
-            amount=amount,
-            status="New",
-        )
+        order = Order(self.instrument, type="market", amount=amount)
         self.place_order(order)
 
     def stop_order(self, amount, price):
-        order = Order(
-            instrument=self.instrument,
-            type="stop",
-            amount=amount,
-            status="New",
-            stop_price=price
-        )
+        order = Order(self.instrument, type="stop", amount=amount, stop_price=price)
         self.exchange.place_order(order)
 
     def on_bar(self, bar: Bar):
@@ -59,6 +48,8 @@ class ChBrStop(BaseStrategy):
         if not (channel["lb"] and channel["ub"]):
             log.error(f"Indicator wasn't warmed up? {self.instrument} {channel}")
             return
+
+        # log.info(f"channel: {channel}")
 
         # как-то получить позицию по данному инструменту
         position = self.exchange.positions[self.symbol]

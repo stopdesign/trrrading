@@ -3,6 +3,8 @@ from datetime import datetime
 from decimal import Decimal
 
 
+QUANTIZE_EXP = Decimal("1.00")
+
 @dataclass(slots=True)
 class BidAsk:
     date: datetime
@@ -22,8 +24,8 @@ class BidAsk:
             date=data["dt"],
             symbol=data["symbol"],
             # FIXME: плохо хардкодить количество знаков, но str тоже плохо
-            bid=Decimal(data["av_bid"]).quantize(Decimal("1.00")),
-            ask=Decimal(data["av_ask"]).quantize(Decimal("1.00")),
+            bid=Decimal(data["av_bid"]).quantize(QUANTIZE_EXP),
+            ask=Decimal(data["av_ask"]).quantize(QUANTIZE_EXP),
         )
 
     @classmethod
@@ -31,6 +33,6 @@ class BidAsk:
         return cls(
             date=data["dt"],
             symbol=data["symbol"],
-            bid=Decimal(data["l"]).quantize(Decimal("1.00")),
-            ask=Decimal(data["h"]).quantize(Decimal("1.00")),
+            bid=Decimal(data["l"]).quantize(QUANTIZE_EXP),
+            ask=Decimal(data["h"]).quantize(QUANTIZE_EXP),
         )

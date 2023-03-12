@@ -106,6 +106,9 @@ class Trader2:
             # Обновление стакана для инструмента
             self.exchange.on_quote(dt, payload)
 
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
+
         if event == "bar":
             # 1. Добавить bar в хранилище баров
             self.exchange.on_bar(dt, payload)
@@ -118,8 +121,8 @@ class Trader2:
             for strategy in self.strategies:
                 strategy.on_bar(copy(payload))
 
-            # 4. Запустить обработку ордеров
-            self.exchange.process_orders()
+            # # 4. Запустить обработку ордеров
+            # self.exchange.process_orders()
 
         # TODO: переименовать в tick
         if event == "trade":

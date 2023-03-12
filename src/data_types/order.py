@@ -9,7 +9,7 @@ class Order:
     instrument: str
     type: str
     amount: int
-    status: str
+    status: str = "New"
     local_id: str | None = None
     limit_price: float = float("nan")
     stop_price: float = float("nan")

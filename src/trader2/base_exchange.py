@@ -4,7 +4,7 @@ from copy import copy
 from decimal import ROUND_DOWN, Decimal
 from typing import Callable
 
-from data_types import Bar, BidAsk
+from data_types import Bar, BidAsk, Order
 
 log = logging.getLogger("base_exchange")
 
@@ -74,6 +74,9 @@ class BaseExchange:
         #         net += position.amount * (price - position.avg_price)
         #     net += position.profit
         return net.quantize(Decimal("0.01"), ROUND_DOWN)
+
+    def place_order(self, order: Order):
+        raise NotImplementedError
 
     def process_orders(self):
         """

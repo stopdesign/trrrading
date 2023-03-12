@@ -27,4 +27,5 @@ class Bar:
             low=data["l"],
             close=data["c"],
             volume=data["vol"],
+            rth=data["rth"],
         )

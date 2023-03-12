@@ -40,7 +40,7 @@ class EventManager:
             time_shift += 10
         return trades
 
-    def interval_event(self, dt):
+    def interval_event(self, dt: datetime):
         """
         Запустить интервальное событие при необходимости.
         """
@@ -52,9 +52,31 @@ class EventManager:
             elif dt.hour != self.dt_last.hour:
                 norm_dt = norm_dt.replace(minute=0)
                 self.on_event("hour", norm_dt)
-            elif dt.minute != self.dt_last.minute:
-                self.on_event("minute", norm_dt)
+            # elif dt.minute != self.dt_last.minute:
+            #     self.on_event("minute", norm_dt)
         self.dt_last = dt
+
+    def validate_bar_time(self, bar: Bar):
+        """
+        Проверка соблюдения последовательности
+        интервалов и промежутков между интервалами.
+        """
+        # FIXME: убрать хардкодинг допустимых интервалов
+        valid_gap = [1050, 1150, 3870, 3930, 4030, 5370, 5470]
+
+        # FIXME: тут нужна поддержка разных инструментов
+        bar_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60) - 1
+        if bar_gap > 0:
+            if not self.in_the_gap and bar_gap not in valid_gap:
+                log.error(f"Large gap: {bar.date}, {bar_gap} min")
+            self.in_the_gap = True
+        else:
+            self.in_the_gap = False
+
+        if bar_gap < 0:
+            log.error(f"Negative gap: {bar.date}, {bar_gap} min")
+
+        self.prev_bar_dt = bar.date
 
     def notify(self, payload: dict):
         """
@@ -64,43 +86,21 @@ class EventManager:
 
         self.interval_event(payload["dt"])
 
-        # Это quote
+        # Это quote bar
         if self.quotes and payload.get("av_bid"):
             quote = BidAsk.from_redis_quote(payload)
             self.on_event("quote", quote.date, quote.symbol, quote)
 
-        # Это bar
+        # Это trade bar
         elif payload.get("o"):
+            # Симуляция quote из trade bar
             if not self.quotes:
                 quote = BidAsk.from_redis_trade(payload)
                 self.on_event("quote", quote.date, quote.symbol, quote)
 
             bar = Bar.from_redis(payload)
-            bar.rth = payload["rth"]
 
-            # FIXME: тут нужна поддержка разных инструментов
-            bar_time_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60) - 1
-            if bar_time_gap > 0:
-                if not self.in_the_gap:
-                    # FIXME: убрать хардкодинг допустимых интервалов
-                    if bar_time_gap not in [
-                        1050,
-                        1150,
-                        3870,
-                        3930,
-                        4030,
-                        5370,
-                        5470,
-                    ]:
-                        log.error(f"Large gap: {bar.date}, {bar_time_gap} min")
-                self.in_the_gap = True
-            else:
-                self.in_the_gap = False
-
-            if bar_time_gap < 0:
-                log.error(f"Negative gap: {bar.date}, {bar_time_gap} min")
-
-            self.prev_bar_dt = bar.date
+            self.validate_bar_time(bar)
 
             # # Эмуляция отдельных сделок по границам OHLC-бара
             # for trade in self.bar_to_trades(bar):
@@ -112,13 +112,13 @@ class EventManager:
             #     )
             #     self.on_event("trade", bar.date, bar.symbol, trade)
 
-            # Теперь bar преобразуется в одну сделку с ценой close
-            trade = Trade(
-                date=bar.date,
-                symbol=bar.symbol,
-                price=bar.close,
-                rth=bar.rth,
-            )
-            self.on_event("trade", bar.date, bar.symbol, trade)
+            # # Теперь bar преобразуется в одну сделку с ценой close
+            # trade = Trade(
+            #     date=bar.date,
+            #     symbol=bar.symbol,
+            #     price=bar.close,
+            #     rth=bar.rth,
+            # )
+            # self.on_event("trade", bar.date, bar.symbol, trade)
 
             self.on_event("bar", bar.date, bar.symbol, bar)

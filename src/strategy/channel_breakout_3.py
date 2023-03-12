@@ -12,8 +12,7 @@ class ChBr(BaseStrategy):
 
     def on_start(self):
 
-        # self.symbol = "MES.CME"  # можно брать из конфига
-        self.instrument = "URA.ARCA"  # "MESH3.CME"
+        self.instrument = str(self.symbol)
 
         # TODO можно перейти на такой формат подписки.
         # Тогда это можно передать в индикатор как источник данных.
@@ -22,12 +21,7 @@ class ChBr(BaseStrategy):
         self.dc = DonchianChannels(self.length)
 
     def market_order(self, amount):
-        order = Order(
-            instrument=self.instrument,
-            type="market",
-            amount=amount,
-            status="New",
-        )
+        order = Order(self.instrument, type="market", amount=amount)
         self.place_order(order)
 
     def on_bar(self, bar: Bar):

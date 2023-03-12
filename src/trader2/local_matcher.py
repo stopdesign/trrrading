@@ -68,9 +68,11 @@ class LocalMatcher:
             if order.amount > 0 and price > order.stop_price:
                 process_order = True
                 price = Decimal(order.stop_price)
+                # price = (Decimal(order.stop_price) + Decimal(price)) / 2
             if order.amount < 0 and price < order.stop_price:
                 process_order = True
                 price = Decimal(order.stop_price)
+                # price = (Decimal(order.stop_price) + Decimal(price)) / 2
 
         if process_order and price:
             order.status = "filled"

@@ -68,9 +68,9 @@ class DataProvider:
         # Дополнить payload информацией о расписании биржи
         if "symbol" in payload and "dt" in payload:
 
-            # Проверить, что эти данные новее всех уже обработанных
             dt, symbol = payload["dt"], payload["symbol"]
 
+            # Проверить, что эти данные новее всех уже обработанных
             if self.last_processed_dt[symbol] >= dt:
                 log.warning(f"Interval has been processed: {symbol}, {dt}")
                 return
@@ -79,6 +79,7 @@ class DataProvider:
 
             payload["rth"] = self.schedule.is_rth(symbol, dt)
             if payload["rth"]:
+                # Формат данных, проверка large gap и вызов Trader.on_event
                 self.event_manager.notify(payload)
         else:
             log.warning(f"Unknown payload format: {payload}")
