@@ -456,8 +456,6 @@ export class PriceChart {
 
   draw_indicator_lines(data) {
 
-    // console.log(data)
-
     if (data === false) {
 
       this.ind_1.attr("d", "")
@@ -468,20 +466,20 @@ export class PriceChart {
 
       const line_1 = d3.line()
         .x(d => this.xScaleZoomed(d.idx))
-        .y(d => this.yScale(d.up))
+        .y(d => this.yScale(d.ind[0].ub))
 
       this.ind_1.attr("d", line_1(data))
 
       const line_2 = d3.line()
         .x(d => this.xScaleZoomed(d.idx))
-        .y(d => this.yScale(d.dn))
+        .y(d => this.yScale(d.ind[0].lb))
 
       this.ind_2.attr("d", line_2(data))
 
       const line_3 = d3.line()
-        .defined(d => d.date.getHours() < 7)
+        // .defined(d => d.date.getHours() < 7)
         .x(d => this.xScaleZoomed(d.idx))
-        .y(d => this.yScale(d.op))
+        .y(d => this.yScale(d.ind[1].ma))
 
       this.ind_3.attr("d", line_3(data))
 
@@ -828,8 +826,11 @@ export class PriceChart {
   setupZoom() {
     const extent = [[0, 0], [this.width, this.height]]
 
+    // минимум N баров на экране
+    const max_zoom = this.data.length / (this.width / 10)
+
     this.zoom = d3.zoom()
-      .scaleExtent([1, this.data.length / 250])  // минимум N баров на экране
+      .scaleExtent([1, max_zoom])
       .translateExtent(extent)
       .extent(extent)
       .on("zoom", (e) => { this.onZoomed(e) })

@@ -1,14 +1,20 @@
 from talipp.indicators import DonchianChannels as TalippDonchianChannels
 
+from data_types import Bar
+
 from .base import BaseIndicator
 
 
 class DonchianChannels(BaseIndicator):
-    def __init__(self, length):
-        self.data = TalippDonchianChannels(length)
-        self.value = {}  # актуальное значение индикатора
+    chart = {
+        "ub": {"type": "line", "color": "green"},
+        "lb": {"type": "line", "color": "red"},
+    }
 
-    def on_bar(self, bar):
+    def init(self, length):
+        self.data = TalippDonchianChannels(length)
+
+    def on_bar(self, bar: Bar):
         skip = False
 
         if not bar.rth:
@@ -23,7 +29,7 @@ class DonchianChannels(BaseIndicator):
 
         # Значения индикатора возвращаются для дальнейшего использования.
         # Значения добавляются и в те бары, которые не передавались в индикатор.
-        self.value = {
+        return {
             "ub": self.data[-1].ub if self.data else None,
             "lb": self.data[-1].lb if self.data else None,
         }

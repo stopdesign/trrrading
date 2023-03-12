@@ -73,7 +73,8 @@ class EventManager:
         else:
             self.in_the_gap = False
 
-        if bar_gap < 0:
+        # FIXME: поставить 0, когда будет поддержка разных инструментов
+        if bar_gap < -1:
             log.error(f"Negative gap: {bar.date}, {bar_gap} min")
 
         self.prev_bar_dt = bar.date

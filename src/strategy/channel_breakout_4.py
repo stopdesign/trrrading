@@ -2,7 +2,7 @@ import logging
 from decimal import Decimal
 
 from data_types import Bar, Order, Trade
-from indicator.donchian_channels import DonchianChannels
+from indicator import DonchianChannels, MovingAverage
 from strategy import BaseStrategy
 
 log = logging.getLogger("strategy")
@@ -22,6 +22,8 @@ class ChBrStop(BaseStrategy):
         # self.ura = DataSource("URA", "5m", rth=True, on_bar=self.on_bar)
 
         self.dc = DonchianChannels(self.length)
+        
+        self.ma = MovingAverage(self.length)
 
     def market_order(self, amount):
         order = Order(self.instrument, type="market", amount=amount)

@@ -1,4 +1,4 @@
-from .local_matcher import LocalMatcher
+from .matcher import LocalMatcher
 from .base_exchange import BaseExchange
 from .sync_client import SyncClient
 from .exchange import Exchange

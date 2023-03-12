@@ -1,3 +1,4 @@
+from datetime import timezone
 import logging
 from decimal import Decimal
 
@@ -6,6 +7,10 @@ from termcolor import colored
 from data_types import Order
 
 log = logging.getLogger("matcher")
+
+
+def dt_to_ts(dt):
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
 class LocalMatcher:
@@ -67,11 +72,11 @@ class LocalMatcher:
             price = self.exchange.get_price(instrument, "mid")
             if order.amount > 0 and price > order.stop_price:
                 process_order = True
-                price = Decimal(order.stop_price)
+                # price = Decimal(order.stop_price)
                 # price = (Decimal(order.stop_price) + Decimal(price)) / 2
             if order.amount < 0 and price < order.stop_price:
                 process_order = True
-                price = Decimal(order.stop_price)
+                # price = Decimal(order.stop_price)
                 # price = (Decimal(order.stop_price) + Decimal(price)) / 2
 
         if process_order and price:
@@ -105,13 +110,13 @@ class LocalMatcher:
             # total_profit_rel = 100 * self.total_profit / cash_per_strategy
             # profit_rel = 100 * profit / cash_per_strategy
             data = {
-                "instrument": order.instrument,
                 "dt": self.exchange.dt_last,
-                # "time": dt_to_ts(self.exchange.dt_last),
+                "time": dt_to_ts(self.exchange.dt_last),
+                "symbol": order.instrument,
                 "side": side,
                 "amount": abs(order.amount),
                 "profit": trade_profit,
-                # "profit_rel": f"{profit_rel:0.4f}",
+                "profit_rel": 0, # f"{profit_rel:0.4f}",
                 "price": price,
             }
             self.exchange.trades.append(data)
