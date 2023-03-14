@@ -23,6 +23,7 @@ class Order(models.Model):
     class Type(models.TextChoices):
         mkt = "MKT", "Market"
         lmt = "LMT", "Limit"
+        stp = "STP", "Stop"
 
     account = models.ForeignKey("Account", null=True, on_delete=models.PROTECT)
     run = models.ForeignKey("Run", null=True, on_delete=models.CASCADE, related_name="orders")
@@ -38,6 +39,7 @@ class Order(models.Model):
     type = models.CharField(max_length=50, choices=Type.choices, null=True)
     signal_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     limit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    stop_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     avg_fill_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     is_bot = models.BooleanField(default=False)
     status = models.CharField(max_length=50, null=True)
@@ -55,7 +57,7 @@ class Order(models.Model):
     # Некий слепок ордера, по которому понимаем, что он изменился в IBKR
     version = models.CharField(max_length=50, null=True)
 
-    created_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(null=True, auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __init__(self, *args, **kwargs):
@@ -120,6 +122,20 @@ class Order(models.Model):
         return order
 
     @classmethod
+    def stop_order(cls, account, contract, side, amount):
+        order = cls(
+            account=account,
+            contract=contract,
+            action=side,
+            local_id=new_local_id(),
+            status="New",
+            amount=amount,
+            type=cls.Type.stp,
+            is_bot=True,
+        )
+        return order
+
+    @classmethod
     def adaptive_market_order(cls, account, contract, side, amount):
         order = cls.market_order(account, contract, side, amount)
         order.order_settings = '{"strategy": "Adaptive", "priority": "Normal"}'
@@ -135,7 +151,7 @@ class Order(models.Model):
         if self.avg_fill_price:
             price = float(self.avg_fill_price)
         else:
-            price = float(self.signal_price)
+            price = float("nan")
         return {
             "id": self.pk,
             "amount": self.amount,

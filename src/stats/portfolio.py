@@ -69,20 +69,17 @@ class PortfolioStats:
         log.info(colored(f"Net Value:   {self.prev_net_value:6.0f}", "blue"))
         log.info(colored(f"Margin Used: {bot_margin:6.0f}\n", "blue"))
 
-    # def save_events(self, base_dir):
-    #     """
-    #     Сохранение сделок на диск.
-    #     """
-    #     for strategy in self.portfolio.strategies:
-    #         strategy_name = type(strategy).__name__
-    #         file_name = f"{strategy.symbol}_{strategy_name}_events.jsonl"
-    #         path = os.path.join(base_dir, file_name)
-    #         txt = ""
-    #         events = self.portfolio.events[strategy.market_system]
-    #         for event in events:
-    #             txt += json.dumps(event, default=str) + "\n"
-    #         with open(path, "w") as f:
-    #             f.write(txt)
+    def save_events(self, base_dir):
+        """
+        Сохранение сделок на диск.
+        """
+        file_name = "URA.ARCA_strategy_events.jsonl"
+        path = os.path.join(base_dir, file_name)
+        txt = ""
+        for trade in self.exchange.trades:
+            txt += json.dumps(trade, default=str) + "\n"
+        with open(path, "w") as f:
+            f.write(txt)
 
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")

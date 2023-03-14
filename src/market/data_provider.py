@@ -70,12 +70,12 @@ class DataProvider:
 
             dt, symbol = payload["dt"], payload["symbol"]
 
-            # Проверить, что эти данные новее всех уже обработанных
-            if self.last_processed_dt[symbol] >= dt:
-                log.warning(f"Interval has been processed: {symbol}, {dt}")
-                return
-
-            self.last_processed_dt[symbol] = dt
+            # Для OHLC проверить, что эти данные новее всех уже обработанных
+            if "o" in payload:
+                if self.last_processed_dt[symbol] >= dt:
+                    log.warning(f"Interval has been processed: {symbol}, {dt}")
+                    return
+                self.last_processed_dt[symbol] = dt
 
             payload["rth"] = self.schedule.is_rth(symbol, dt)
             if payload["rth"]:

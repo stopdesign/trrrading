@@ -11,15 +11,14 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from ibapi.common import TickerId
+from ibapi.common import BarData, TickerId
 from ibapi.order import Order as IBOrder
-from termcolor import cprint
+from termcolor import colored, cprint
 
 from ibkr_api.client import (
     CryptoContract,
     FutContract,
     FxContract,
-    IBClient,
     IBThread,
     StockContract,
 )
@@ -77,19 +76,50 @@ def realtimeBar(
     wap: Decimal,
     count: int,
 ):
+    """
+    5-sec real-time OHLC bars.
+    """
     symbol = "MESH3.CME"
     dt = ts_to_dt(time)
-    bar = {
-        "dt": dt.strftime(DT_FMT),  # "2022-10-06 14:01:00"
-        "o": open_,
-        "h": high,
-        "l": low,
-        "c": close,
-        "vol": round(float(volume), 2),
-        "symbol": symbol,
-    }
-    a = redis_client.publish(f"{symbol}:BARS", json.dumps(bar))
-    log.info(f"Redis data-message: {bar}, {a}")
+
+    prices = list(set([open_, high, low, close]))
+    for price in prices:
+        msg = {
+            "dt": dt.strftime(DT_FMT),
+            "price": price,
+            "conid": 0,
+            "symbol": symbol,
+        }
+        json_str = json.dumps(msg, indent=None, default=str)
+        a = redis_client.publish(f"{symbol}:TRADES", json_str)
+        log.info(colored(f"Redis TRADES: {json_str}, {a}", "magenta"))
+
+
+LAST_BAR = None
+
+
+def historicalDataUpdate(reqId: int, bar: BarData):
+    # log.info(f"historicalDataUpdate: {bar}")
+
+    global LAST_BAR
+
+    # при появлении нового бара отправить старый бар
+    if LAST_BAR and LAST_BAR.date < bar.date:
+        symbol = "MESH3.CME"
+        msg = {
+            "dt": ts_to_dt(int(LAST_BAR.date)),
+            "o": LAST_BAR.open,
+            "h": LAST_BAR.high,
+            "l": LAST_BAR.low,
+            "c": LAST_BAR.close,
+            "vol": round(float(LAST_BAR.volume), 2),
+            "symbol": symbol,
+        }
+        json_str = json.dumps(msg, indent=None, default=str)
+        a = redis_client.publish(f"{symbol}:BARS", json_str)
+        log.info(colored(f"Redis BARS: {json_str}, {a}", "cyan"))
+
+    LAST_BAR = bar
 
 
 def pnl(reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
@@ -138,47 +168,34 @@ def updatePortfolio(
     db_position.unrealized_pnl = unrealizedPNL
     db_position.save(update_fields=["avg_price", "unrealized_pnl"])
 
-    action = {"types": ["position"], "info": {"contract": contract.conId, "amount": db_position.amount}}
+    action = {
+        "types": ["position"],
+        "info": {"contract": contract.conId, "amount": db_position.amount},
+    }
     a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
     log.info(f"Redis sync-message: {action}, {a}")
 
 
-def check_new_orders(ib):
-    account = Account.objects.get(uid=ib.account_id)
-    new_orders = Order.objects.filter(account=account, status="New")
+def process_bot_action(ib, message):
+    data = json.loads(message.get("data").decode())
+    log.info(colored(f"message.data: {data}", "yellow"))
 
-    for no in new_orders:
-        no.status = "Sending"
-        no.save()
+    if data.get("action") == "create":
+        create_order(ib, data)
+        return
 
-        # ib.reqIds(-1)
-        # time.sleep(0.5)
+    if data.get("action") == "update":
+        update_order(ib, data)
+        return
 
-        oid = ib.nextValidOrderId
-        ib.nextValidOrderId += 1
+    if data.get("action") == "cancel":
+        cancel_order(ib, data)
+        return
 
-        contract = StockContract("AAPL")
-
-        # Create limit order object
-        order = IBOrder()
-        order.action = no.action
-        order.totalQuantity = no.amount
-        order.orderType = "LMT"
-        order.lmtPrice = no.limit_price
-        order.eTradeOnly = False
-        order.firmQuoteOnly = False
-        # order.orderRef = '{"id": "%s", "dt": "2023-02-28"}' % no.local_id
-        order.orderRef = no.local_id
-        order.outsideRth = no.outside_rth
-
-        ib.placeOrder(oid, contract, order)
-        # ib.reqCurrentTime()
-
-        time.sleep(1)
+    log.error(f"Unknown bot action: {message}")
 
 
-def create_order(ib, message):
-
+def create_order(ib, data):
     contract = FutContract("MES", "MESH3", exchange="CME")
 
     print("contract.conId", contract)
@@ -193,8 +210,7 @@ def create_order(ib, message):
     oid = ib.nextValidOrderId
     ib.nextValidOrderId += 1
 
-    data = json.loads(message.get("data").decode())
-    log.info("message.data", data)
+    stop_price = Decimal(data.get("stop_price"))
 
     amount = Decimal(data.get("amount"))
     action = "BUY" if amount > 0 else "SELL"
@@ -208,13 +224,25 @@ def create_order(ib, message):
     ib_order.orderRef = local_id
     ib_order.action = action
     ib_order.totalQuantity = abs(amount)
-    ib_order.orderType = "MKT"
-    # ib_order.outsideRth = True
+
+    # order.goodTillDate = "20200923 15:13:20 EST"
+    # order.tif = "GTD"
+
+    # ib_order.orderType = "MKT"
+    # order = Order.market_order(account, instrument, side, abs(amount))
+
+    ib_order.orderType = "STP LMT"
+    ib_order.outsideRth = True
+    ib_order.auxPrice = stop_price
+    if ib_order.account == "BUY":
+        ib_order.lmtPrice = stop_price + Decimal(0.25)
+    else:
+        ib_order.lmtPrice = stop_price - Decimal(0.25)
+    order = Order.stop_order(account, instrument, side, abs(amount))
 
     cprint(f"ib_order: {ib_order}", "blue")
 
     # создать ордер в базе данных
-    order = Order.market_order(account, instrument, side, abs(amount))
     order.local_id = local_id
     order.save()
 
@@ -224,18 +252,41 @@ def create_order(ib, message):
     order.save(update_fields=["status"])
 
 
-def update_order(ib):
-    order_id = 1793050531  #  1793050442 | 1793050531
+def update_order(ib, data):
+    local_id = data.get("local_id")
+    stop_price = Decimal(data.get("stop_price"))
 
-    # self.cancelOrder(self.simplePlaceOid, "")
+    for ib_order, contract, orderState in ib._orders_by_pid.values():
+        if ib_order.orderRef == local_id:
+            cprint(f"ib_order: {ib_order} {orderState}", "blue")
+            ib_order.auxPrice = stop_price
+            if ib_order.account == "BUY":
+                ib_order.lmtPrice = stop_price + Decimal(0.25)
+            else:
+                ib_order.lmtPrice = stop_price - Decimal(0.25)
+            ib.placeOrder(ib_order.orderId, contract, ib_order)
 
-    ib_order, contract, orderState = ib._orders_by_pid[order_id]
-    cprint(f"ib_order: {ib_order}", "blue")
+            return
 
-    oid = ib_order.orderId
-    ib_order.lmtPrice = ib_order.lmtPrice - 0.1
+    log.error(f"Order not found: {data}")
 
-    ib.placeOrder(oid, contract, ib_order)
+
+def cancel_order(ib, data):
+    local_id = data.get("local_id")
+
+    inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
+
+    # ! _orders_by_pid обновляется в openOrder и не ловит состояние canceled
+    for ib_order, contract, orderState in ib._orders_by_pid.values():
+        if ib_order.orderRef == local_id and orderState.status not in inactive:
+            cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
+            ib.cancelOrder(ib_order.orderId, "")
+            return
+
+    log.error(f"Order not found: {data}")
+
+
+##################
 
 
 def get_executions(ib):
@@ -330,11 +381,15 @@ def orderStatus(
         return
 
     cprint(
-        f"OrderStatus: oId: {orderId}, pId: {permId}, status: {status}, "
+        f"OrderStatus: oId: {orderId}, pId: {permId}, status: {state.status} >> {status}, "
         f"fill_pr: {av_fill_price}, filled: {filled}, remaining: {remaining}, "
         f"price: {order.lmtPrice}, held: {whyHeld}",
-        "magenta",
+        "red",
     )
+
+    # Обновление статуса ордера в кэше
+    state.status = status
+    APP._orders_by_pid[permId] = order, contract, state
 
     # TODO закешировать?
     account = Account.objects.get(uid=order.account)
@@ -467,16 +522,24 @@ def initial_sync(ib):
 
     ############
     # Ордеры
-    # TODO проверить изменения ордеров из базы, которые не в финальном состоянии
 
     orders_to_create = []
 
     for contract, order, state in ib_orders:
-        print("IB ORDER", order, ">", order.goodAfterTime)
+        # print("IB ORDER", order, ">", order.orderRef, state.status)
 
-        if order.permId and order.permId not in orders_by_id:
-            c = contracts_by_id[contract.conId]
-            orders_to_create.append(Order.from_ib(order, account, c, state))
+        if order.permId:
+            if order.permId not in orders_by_id:
+                c = contracts_by_id[contract.conId]
+                orders_to_create.append(Order.from_ib(order, account, c, state))
+            else:
+                # TODO проверить изменения ордеров из базы, которые не в финальном состоянии
+                # ! сделать нормально
+                db_order = orders_by_id[order.permId]
+                if state.status != db_order.status:
+                    cprint(f"UPDATE in DB {order} {orders_by_id[order.permId]}", "magenta")
+                    db_order.status = state.status
+                    db_order.save(update_fields=["status"])
 
     if orders_to_create:
         Order.objects.bulk_create(orders_to_create)
@@ -560,20 +623,32 @@ def market_data_subscribe(ib):
     # print("details", cd)
     # print()
 
+    # Норм тема.
+    # {'reqId': 37724159, 'time': 1678662094, 'midPoint': 3896.125}
+    # ib.reqTickByTickData(ib.r_id, contract, "MidPoint", 0, False)
+
+    # Данные приходят отдельными сообщениями по типам данных
+    # tickSnapshot приходит один раз, собирая данные за 10 секунд
+    # ib.reqMktData(ib.r_id, contract, "", False, False, [])
+
+    # Это самое удобное
+    # ! сделать из этого trades
     ib.reqRealTimeBars(ib.r_id, contract, 5, "TRADES", False, [])
 
-    # ib.reqHistoricalData(
-    #     ib.r_id,
-    #     contract,
-    #     endDateTime="",  # 20230309-22:59:52
-    #     durationStr="120 S",
-    #     barSizeSetting="5 secs",
-    #     whatToShow="MIDPOINT",
-    #     useRTH=0,
-    #     formatDate=1,
-    #     keepUpToDate=True,
-    #     chartOptions=[]
-    # )
+    # ! сделать из этого минутные бары
+    # при открытии нового бара передавать предыдущий в redis.
+    ib.reqHistoricalData(
+        ib.r_id,
+        contract,
+        endDateTime="",  # 20230309-22:59:52
+        durationStr="600 S",
+        barSizeSetting="1 min",
+        whatToShow="TRADES",
+        useRTH=0,
+        formatDate=2,
+        keepUpToDate=True,
+        chartOptions=[],
+    )
 
 
 class Command(BaseCommand):
@@ -598,18 +673,11 @@ class Command(BaseCommand):
                 # Обработка команд от бота: создание и редактирование ордеров
                 try:
                     message = pubsub.get_message(timeout=0.1)
-                    if message:
-                        cprint(f"REDIS: {message}", "red")
-                        create_order(app, message)
-                        # update_order(app)
+                    if message and message.get("type") == "message":
+                        process_bot_action(app, message)
                 except Exception as e:
                     log.error(f"Redis pubsub get_message error: {e}")
                     pass
-
-                # # отправка новых запросов из БД в IB
-                # if app and app.isConnected():
-                #     cache.set("last_connected", str(datetime.now()), 300)
-                #     check_new_orders(app)
 
                 # регулярные запросы
                 if go_2 and app and app.isConnected():
@@ -669,6 +737,7 @@ class Command(BaseCommand):
                     # TODO: Тестовая подписка на market data
                     market_data_subscribe(app)
                     app.realtimeBar = realtimeBar
+                    app.historicalDataUpdate = historicalDataUpdate
 
                     app.pnl = pnl
                     app.updatePortfolio = updatePortfolio

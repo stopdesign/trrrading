@@ -21,7 +21,9 @@ class BaseStrategy:
         self.positions = self.exchange.positions
         self.account = self.exchange.account
         self.orders = self.exchange.orders
+
         self.place_order = self.exchange.place_order
+        self.update_order = self.exchange.update_order
 
         self.on_start()
 

@@ -1,7 +1,8 @@
-from dataclasses import dataclass
 import math
-from secrets import token_hex
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
+from secrets import token_hex
 
 
 @dataclass(slots=True)
@@ -14,6 +15,7 @@ class Order:
     limit_price: float = float("nan")
     stop_price: float = float("nan")
     fill_price: Decimal = Decimal("nan")
+    created_at: datetime | None = None
 
     @staticmethod
     def new_local_id():

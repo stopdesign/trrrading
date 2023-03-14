@@ -1,6 +1,8 @@
 import logging
 from decimal import Decimal
 
+from termcolor import colored
+
 from data_types import Bar, Order, Trade
 from indicator.donchian_channels import DonchianChannels
 from strategy import BaseStrategy
@@ -41,16 +43,18 @@ class ChBr(BaseStrategy):
         if not bar:
             return
 
+        print(colored(channel, "blue"), bar, colored(trade, "green"))
+
         if not (channel["lb"] and channel["ub"]):
             log.error(f"Indicator wasn't warmed up? {self.instrument} {channel}")
             return
 
-        if not (trade.rth and bar.rth):
+        if not bar.rth:  # trade.rth пока нет
             return
 
         for order in self.orders:
             # TODO: проверить, что инструмент совпадает
-            active = ["New", "PreSubmitted", "Submitted"]
+            active = ["New", "Sent", "PreSubmitted", "Submitted"]
             if order.instrument == self.instrument and order.status in active:
                 log.warn(f"strategy has live order, {order}")
                 return
@@ -67,11 +71,11 @@ class ChBr(BaseStrategy):
         target_amount = current_amount
 
         if current_amount <= 0 and trade.price > channel["ub"]:
-            target_amount = +int(100_000 / trade.price)
+            target_amount = +int(10_000 / trade.price)
             # target_amount = +2
 
         if current_amount >= 0 and trade.price < channel["lb"]:
-            target_amount = -int(100_000 / trade.price)
+            target_amount = -int(10_000 / trade.price)
             # target_amount = -2
 
         if target_amount != current_amount:

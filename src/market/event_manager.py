@@ -1,3 +1,4 @@
+from decimal import Decimal
 import logging
 from datetime import datetime, timedelta
 from typing import Callable
@@ -5,6 +6,12 @@ from typing import Callable
 from data_types import Bar, BidAsk, Trade
 
 log = logging.getLogger("event_manager")
+
+
+def parse_dt(dt: str) -> datetime:
+    if "." not in dt:
+        dt += ".000000"
+    return datetime.strptime(dt, "%Y-%m-%d %H:%M:%S.%f")
 
 
 class EventManager:
@@ -91,6 +98,17 @@ class EventManager:
         if self.quotes and payload.get("av_bid"):
             quote = BidAsk.from_redis_quote(payload)
             self.on_event("quote", quote.date, quote.symbol, quote)
+
+        # Это single trade
+        elif payload.get("price"):
+            dt = payload["dt"]
+            symbol = payload["symbol"]
+            trade = Trade(
+                date=dt,
+                symbol=symbol,
+                price=Decimal(payload["price"]),
+            )
+            self.on_event("trade", dt, symbol, trade)
 
         # Это trade bar
         elif payload.get("o"):

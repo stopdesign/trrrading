@@ -17,8 +17,16 @@ class Exchange(BaseExchange):
         self.sync_client = SyncClient(self.positions, self.orders, self.account)
 
     def place_order(self, order):
-        log.info(colored(f"PLACE ORDER: {order}", "magenta"))
+        log.info(colored(f"PLACE ORDER: {order}", "green"))
         self.sync_client.place_order(order)
+
+    def update_order(self, order, **kwargs):
+        log.info(colored(f"UPDATE ORDER: {order} {kwargs}", "cyan"))
+        self.sync_client.update_order(order, **kwargs)
+
+    def cancel_order(self, order):
+        log.info(colored(f"CANCEL ORDER: {order}", "red"))
+        self.sync_client.cancel_order(order)
 
     def on_broker_update(self, payload):
         log.info(f"Update broker data: {payload}")
@@ -28,3 +36,6 @@ class Exchange(BaseExchange):
         for order in self.orders:
             # TODO: только при изменении ордера
             self.on_event("order", dt=self.dt_last, payload=order)
+
+    def process_orders(self):
+        pass

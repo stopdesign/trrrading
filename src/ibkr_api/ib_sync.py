@@ -108,6 +108,10 @@ class IBSync(IBClient):
         # super().completedOrder(contract, order, orderState)
         if not self._completed_orders.finished:
             self._completed_orders.append((contract, order, orderState))
+        if order.permId:
+            self._orders_by_pid[order.permId] = order, contract, orderState
+        else:
+            log.error(f"CompletedOrder without permId: {order}")
 
     def openOrderEnd(self):
         super().openOrderEnd()

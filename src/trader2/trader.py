@@ -1,3 +1,5 @@
+from dataclasses import asdict
+import json
 import logging
 from copy import copy
 from datetime import datetime, timedelta
@@ -98,7 +100,7 @@ class Trader2:
         В стриме биржи возникло новое событие.
         Порядок событий пока хрен знает какой.
         """
-        if dt > self.dt_start and not self.backtest:
+        if dt and dt > self.dt_start and not self.backtest:
             # log.info(f"EVENT {event} {symbol} {payload}")
             pass
 
@@ -115,7 +117,7 @@ class Trader2:
 
             # 2. Обновить индикаторы, собрать их новые значения
             for indicator in self.indicators:
-                indicator.on_bar(copy(payload))
+                indicator.add_bar(copy(payload))
 
             # 3. Передать bar в стратегии
             for strategy in self.strategies:
@@ -144,7 +146,7 @@ class Trader2:
             self.exchange.on_broker_update(copy(payload))
 
         if event in ["hour", "day"]:
-            if dt > self.dt_start:
+            if dt > self.dt_start and self.backtest:
                 self.portfolio_stats.snapshot()
 
     def config_start_end(self, conf, warm_up=timedelta(days=5)):
@@ -214,6 +216,9 @@ class Trader2:
         try:
             if self.backtest:
                 self.data_provider.backtest()
+                # TODO: после завершения бэктеста закрыть все позиции
+                # self.close_all()
+                self.save_backtest_data()
             else:
                 self.data_provider.listen()
         except KeyboardInterrupt:
@@ -225,3 +230,45 @@ class Trader2:
 
         if self.backtest:
             self.portfolio_stats.print_summary()  # RESULTS
+
+    def save_backtest_data(self):
+        """
+        FIXME: код стал еще более ебаным
+        """
+        import os
+
+        # создание директории для всяких там результатов бэктеста
+        dt = datetime.utcnow()  # server time
+        day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        ts = (dt - day).total_seconds()
+        dir_name = f"{day:%Y-%m-%d}_{ts:06.0f}/"
+        base_dir = os.path.join(os.path.dirname(__file__), "../../res", dir_name)
+        base_dir = os.path.abspath(base_dir)
+        os.makedirs(base_dir)
+
+        # self.strategy_stats.save_ohlc(path, self.dt_start)
+
+        from datetime import timezone
+        def dt_to_ts(dt):
+            return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+        # сохранение баров и индикаторов
+        for symbol in self.symbols:
+            file_name = f"URA.ARCA_strategy_ohlc.jsonl"
+            path = os.path.join(base_dir, file_name)
+            txt = ""
+            for bar in self.exchange.bars[symbol]:
+                if bar.date >= self.dt_start:
+                    ts = dt_to_ts(bar.date)
+                    last_bar = asdict(bar)
+                    last_bar["ts"] = ts
+                    last_bar["ind"] = []
+                    for ind in self.indicators:
+                        last_bar["ind"].append(ind.values_by_ts.get(ts, {}))
+                    txt += json.dumps(last_bar, default=str) + "\n"
+            with open(path, "w") as f:
+                f.write(txt)
+
+        # сохранение сделок и депозита
+        self.portfolio_stats.save_events(base_dir)
+

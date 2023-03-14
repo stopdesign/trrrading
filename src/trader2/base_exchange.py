@@ -78,6 +78,12 @@ class BaseExchange:
     def place_order(self, order: Order):
         raise NotImplementedError
 
+    def update_order(self, order: Order):
+        raise NotImplementedError
+
+    def cancel_order(self, order: Order):
+        raise NotImplementedError
+
     def process_orders(self):
         """
         Только для эмуляции.
