@@ -1,9 +1,5 @@
 
-// set the dimensions and margins of the graph
-const margin = {top: 10, right: 0, bottom: 40, left: 0},
-    width = 2400 - margin.left - margin.right,
-    height = 130 - margin.top - margin.bottom;
-
+const d3 = window["d3"]
 
 function pad(num) {
   return ("0" + num).slice(-2)
@@ -11,22 +7,29 @@ function pad(num) {
 
 
 function draw_chart(el, data, symbol) {
+
+  // set the dimensions and margins of the graph
+  const margin = {top: 10, right: 0, bottom: 40, left: 0}
+  const height = 150 - margin.top - margin.bottom
+  const width = el.clientWidth
+
   const svg = d3.select(el)
     .append("svg")
       .attr("width", width + margin.left + margin.right)
       .attr("height", height + margin.top + margin.bottom)
     .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+      .attr("transform", `translate(${margin.left},${margin.top})`)
 
   // List of subgroups = header of the csv files = soil condition here
   const subgroups = data.columns.slice(1)
 
   const subdata = data.filter(d => d['ticker'] === symbol)
 
+  const max_data_for_width = width / 13
+
   // List of groups = species here = value of the first
   // column called group -> I show them on the X axis
-  const groups = subdata.map(d => (d.hour))
-
+  const groups = subdata.slice(-max_data_for_width).map(d => (d.hour))
 
 
   // Add X axis
@@ -136,6 +139,29 @@ function draw_chart(el, data, symbol) {
 }
 
 
+function draw_dashboard(chart_container, symbols, data) {
+  chart_container.innerHTML = ""
+  for (const symbol of symbols.sort()) {
+    const chart_row = document.createElement('div')
+    chart_row.className = "chart_row"
+    chart_container.append(chart_row)
+
+    const header_left = document.createElement('h2')
+    header_left.textContent = symbol
+    chart_row.append(header_left)
+
+    const header_right = document.createElement('h3')
+    header_right.textContent = symbol
+    chart_row.append(header_right)
+
+    const svg_container = document.createElement('div')
+    chart_row.append(svg_container)
+
+    draw_chart(svg_container, data, symbol)
+  }
+}
+
+
 // Parse the Data
 d3.csv("./dash.csv").then( function(data) {
 
@@ -146,14 +172,20 @@ d3.csv("./dash.csv").then( function(data) {
     }
   }
 
-  for (const symbol of symbols.sort()) {
-    const element = document.createElement('h2')
-    element.textContent = symbol
-    document.body.append(element)
+  const chart_container = document.getElementById("chart");
 
-    const svg_container = document.createElement('div')
-    document.body.append(svg_container)
-    draw_chart(svg_container, data, symbol)
+  let timeout
+  window.onresize = function(){
+    if (!timeout) {
+      timeout = setTimeout(() => {
+        draw_dashboard(chart_container, symbols, data)
+        clearTimeout(timeout)
+        timeout = false
+      }, 100);
+    }
   }
+
+  draw_dashboard(chart_container, symbols, data)
+
 
 })
