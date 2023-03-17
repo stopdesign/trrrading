@@ -42,7 +42,12 @@ class MarketCalendar:
     def init_grids(self, symbols):
         res = {}
         for symbol in symbols:
-            exchange = IBKR_TO_MCAL[symbol.split(".")[1]]
+            if "." in symbol:
+                exchange = IBKR_TO_MCAL[symbol.split(".")[1]]
+            elif "_" in symbol:
+                exchange = IBKR_TO_MCAL[symbol.split("_")[0]]
+            else:
+                raise Exception("unknown symbol format")
             if exchange in res:
                 continue
             res[exchange] = self.get_grid(exchange)
@@ -75,5 +80,10 @@ class MarketCalendar:
         return res
 
     def is_rth(self, symbol, dt) -> bool:
-        ex = IBKR_TO_MCAL[symbol.split(".")[1]]
-        return dt_to_ts(dt.replace(second=0, microsecond=0)) in self.grids[ex]
+        if "." in symbol:
+            exchange = IBKR_TO_MCAL[symbol.split(".")[1]]
+        elif "_" in symbol:
+            exchange = IBKR_TO_MCAL[symbol.split("_")[0]]
+        else:
+            raise Exception("unknown symbol format")
+        return dt_to_ts(dt.replace(second=0, microsecond=0)) in self.grids[exchange]

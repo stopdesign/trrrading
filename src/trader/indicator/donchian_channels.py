@@ -1,6 +1,6 @@
 from talipp.indicators import DonchianChannels as TalippDonchianChannels
 
-from data_types import Bar
+from trader.data_types import Bar
 
 from .base import BaseIndicator
 

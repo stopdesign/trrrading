@@ -21,11 +21,11 @@ class Bar:
     def from_redis(cls, data: dict):
         return cls(
             date=data["dt"],
-            symbol=data["symbol"],
+            symbol=data["sid"],
             open=data["o"],
             high=data["h"],
             low=data["l"],
             close=data["c"],
-            volume=data["vol"],
+            volume=data.get("v") or data.get("vol", None),
             rth=data["rth"],
         )

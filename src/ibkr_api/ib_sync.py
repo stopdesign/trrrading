@@ -1,33 +1,34 @@
-from datetime import datetime, timedelta
-from ibapi.client import EClient
-from ibapi.wrapper import EWrapper
-from ibapi.contract import Contract, ContractDetails
-
-# from ibapi.order import *
-from ibapi.execution import ExecutionFilter
-import threading
-import time
-from termcolor import colored, cprint
 import logging
-import sys
 import random
-from timeout_decorator import timeout
-from .client import IBClient
+import time
+from decimal import Decimal
 
+from ibapi.common import BarData, TickerId
+from ibapi.contract import Contract, ContractDetails
+from ibapi.execution import ExecutionFilter
+from timeout_decorator import timeout
+
+from .client import IBClient
 
 # Логгер для этого файла
 log = logging.getLogger("ib_api.ib_sync")
 log.setLevel(logging.INFO)
 
+logging.getLogger("ibapi.client").setLevel(logging.WARNING)
+logging.getLogger("ibapi.wrapper").setLevel(logging.WARNING)
+
 
 TIMEOUT = 5
+TIMEOUT_HISTORICAL = 150
 
 
 class Results(list):
-    def __init__(self):
+    def __init__(self, r_id: int = 0):
+        self.r_id = r_id
         self.finished = False
+        self.error = ""
 
-    def finish(self, request_id=None):
+    def finish(self, r_id: int = 0):
         self.finished = True
 
 
@@ -36,6 +37,8 @@ class IBSync(IBClient):
     Positions
     Executions (execDetails + commissionReport)
     Open + Completed Orders
+
+    TODO: добавить остановку ожидания Results при ошибке с данным r_id.
     """
 
     def __init__(self):
@@ -45,6 +48,8 @@ class IBSync(IBClient):
         self._positions = Results()
         self._executions = Results()
         self._contract_details = Results()
+        self._historical_data = Results()
+        self._head_timestamp = Results()
 
         # TODO: приделать протухание
         self._orders_by_pid = {}
@@ -53,6 +58,28 @@ class IBSync(IBClient):
     @property
     def r_id(self):
         return random.randint(10000000, 99999999)
+
+    def error(
+        self,
+        reqId: TickerId,
+        errorCode: int,
+        errorString: str,
+        advancedOrderRejectJson="",
+    ):
+        if errorCode in [2104, 2106, 2158]:
+            # Это не ошибки, а сообщения connection is OK
+            log.info(errorString)
+        else:
+            # TODO: сделать универсальный механизм для всех видов данных
+            # Остановить запрос, если такой есть
+            if reqId > 0 and reqId == self._historical_data.r_id:
+                self._historical_data.error = errorString
+                self._historical_data.finish()
+
+            txt = f"r_id: {reqId}, code: {errorCode}, msg: '{errorString}'"
+            if advancedOrderRejectJson:
+                txt += f", '{advancedOrderRejectJson}'"
+            log.error(txt)
 
     ##########################
     ### Positions
@@ -68,7 +95,9 @@ class IBSync(IBClient):
 
         return list(self._positions)
 
-    def position(self, account: str, contract: Contract, position: float, avgCost: float):
+    def position(
+        self, account: str, contract: Contract, position: Decimal, avgCost: float
+    ):
         super().position(account, contract, position, avgCost)
         if account == self.account_id:
             self._positions_by_conid[contract.conId] = (position, avgCost)
@@ -152,17 +181,90 @@ class IBSync(IBClient):
         self.reqContractDetails(self.r_id, contract)
         while not self._contract_details.finished:
             time.sleep(0.001)
-        return list(self._contract_details)[0]
+        return list(self._contract_details)
 
     def contractDetails(self, reqId: int, contractDetails: ContractDetails):
-        super().contractDetails(reqId, contractDetails)
+        # super().contractDetails(reqId, contractDetails)
         if not self._contract_details.finished:
             self._contract_details.append(contractDetails)
 
     def contractDetailsEnd(self, reqId: int):
-        super().contractDetailsEnd(reqId)
+        # super().contractDetailsEnd(reqId)
         self._contract_details.finish()
 
+    ##########################
+    ### History
+
+    @timeout(TIMEOUT_HISTORICAL)
+    def get_historical_data(
+        self,
+        contract: Contract,
+        end_dt: str,
+        duration: str = "300 S",
+        bar_size: str = "1 min",
+        data_type: str = "TRADES",
+        use_rth: int = 0,
+    ):
+        """
+        End Date/Time: The date, time, or time-zone entered is invalid.
+        The correct format: [yyyymmdd] hh:mm:ss [xx/xxxx]
+        E.g.: 20031126 15:59:00 US/Eastern
+        If no date is specified, current date is assumed.
+        If no time-zone is specified, local time-zone is assumed (deprecated).
+        You can also provide yyyymmddd-hh:mm:ss time is in UTC.
+        Note that there is a dash between the date and time in UTC notation.
+        """
+        r_id = self.r_id
+        self._historical_data = Results(r_id)
+        self.reqHistoricalData(
+            r_id,
+            contract,
+            endDateTime=end_dt,
+            durationStr=duration,
+            barSizeSetting=bar_size,
+            whatToShow=data_type,
+            useRTH=use_rth,
+            formatDate=2,
+            keepUpToDate=False,
+            chartOptions=[],
+        )
+
+        while not self._historical_data.finished:
+            time.sleep(0.001)
+
+        if self._historical_data.error:
+            if "query returned no data" in self._historical_data.error:
+                return []
+            else:
+                raise Exception(self._historical_data.error)
+        else:
+            return list(self._historical_data)
+
+    def historicalData(self, reqId: int, bar: BarData):
+        # super().historicalData(reqId, bar)
+        if not self._historical_data.finished and self._historical_data.r_id == reqId:
+            self._historical_data.append(bar)
+
+    def historicalDataEnd(self, reqId: int, start: str, end: str):
+        # super().historicalDataEnd(reqId, start, end)
+        if self._historical_data.r_id == reqId:
+            self._historical_data.finish()
+
+    ##########################
+    ### Contract head date
+
     @timeout(TIMEOUT)
-    def get_account_summary(self):
-        pass
+    def get_head_timestamp(self, contract, whatToShow="TRADES", useRTH=0, formatDate=2):
+        # даты для BID/ASK иногда нет (например, CL.NYMEX)
+        self._head_timestamp = Results()
+        self.reqHeadTimeStamp(self.r_id, contract, whatToShow, useRTH, formatDate)
+
+        while not self._head_timestamp.finished:
+            time.sleep(0.001)
+
+        return list(self._head_timestamp)[0]
+
+    def headTimestamp(self, reqId: int, headTimestamp: str):
+        if not self._head_timestamp.finished:
+            self._head_timestamp.append(headTimestamp)
+            self._head_timestamp.finish()

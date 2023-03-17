@@ -1,21 +1,16 @@
 import json
 import logging
-import os
 from copy import copy
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from dataclasses import asdict
+from datetime import datetime, timedelta
 
 import redis
-from data_types import Bar, Hint, Trade
-from django.utils.timezone import make_aware
-from main.models import Account, Run
-from market import DataProvider, PolygonAdapter, TradisAdapter
-from market.event_manager import EventManager
-from stats import PortfolioStats, StrategyStats
-from strategy import Signal, all_strategies
 from termcolor import colored
 
-from trader import Exchange, Executor, Portfolio
+from .exchange import Emulator, Exchange
+from .market import DataProvider, PolygonAdapter, TradisAdapter
+from .stats import PortfolioStats
+from .strategy import all_strategies
 
 log = logging.getLogger("trader")
 
@@ -38,13 +33,12 @@ class Trader:
     Реальная торговля идет от now до остановки скрипта.
     Бэктест идет от dt_start до dt_end.
     Replay идет от dt_start до dt_end, но через feed.
+
+    Replay - это как бэктест, только данные поступают событиями через redis.
     """
 
-    data_provider: DataProvider = None
-    exchange: Exchange = None
-    strategies: list = None
-    executor: Executor = None
-    run: Run = None
+    data_provider: DataProvider
+    strategies: list
 
     def __init__(self, config, backtest, replay):
         dt_now = datetime.utcnow().replace(microsecond=0)
@@ -56,88 +50,106 @@ class Trader:
         self.replay = replay
 
         run_config = config["backtest"] if backtest else config["live"]
-        strategies = config["strategies"]
-        sources = config["sources"]
 
-        self.target_margin = Decimal(run_config["target_margin"])
-
-        self.symbols = sorted(list({c["symbol"] for c in strategies}))
-
-        # self.symbols.append("SPY.ARCA")
-
-        self.init_strategies(strategies)
-
-        self.config_start_end(run_config)
-
-        # Сколько данных до старта нужно для прогрева индикаторов.
-        # TODO: Хорошо бы сделать какую-то автоматизацию выбора интервала.
-        self.dt_prior = self.dt_start - timedelta(days=20)
-
-        # Инициализация источников данных
-        self.config_sources(run_config, sources)
-
-        log.info(f"Start: {self.dt_start}, end: {self.dt_end}")
-        log.info(f"History: {self.history_source}, feed: {self.feed_source}")
+        self.symbols = sorted(list({c["symbol"] for c in config["strategies"]}))
+        self.config_start_end(run_config, warm_up=timedelta(days=10))
+        self.config_sources(run_config, config["sources"])
 
         # Добывает данные, запускает события
         self.data_provider = DataProvider(
             symbols=self.symbols,
-            history=self.history_source,
-            feed=self.feed_source,
+            history=self.history_source,  # исторические данные одной кучей
+            feed=self.feed_source,  # real-time потоковые данные
             dt_prior=self.dt_prior,
             dt_start=self.dt_start,
             dt_end=self.dt_end,
             on_event=self.on_event,
         )
 
-        # Exchange занимается стаканом и ценами
-        self.exchange = Exchange()
+        # Объект, работающий с ордерами
+        if self.backtest or self.replay:
+            self.exchange = Emulator(self.on_event)
+        else:
+            account_uid = run_config.get("account")
+            self.exchange = Exchange(self.on_event, account_uid)
 
-        # Это нужно до прогрева индикаторов,
-        # чтобы сохранились индикаторы в процессе прогрева.
-        self.strategy_stats = StrategyStats(self.strategies)
+        # Инициализация стратегий и список индикаторов
+        self.strategies = []
+        self.indicators = []
+        for cfg in config["strategies"]:
+            strategy_class = all_strategies[cfg["strategy"]]
+            strategy = strategy_class(exchange=self.exchange, **cfg)
+            self.strategies.append(strategy)
+            self.indicators += list(strategy.indicators)
 
-        # Прогреть индикторы прогоном исторических данных.
-        # На этом этапе еще нет портфолио, только сигналы и Hint.
+        # Прогреть индикторы прогоном исторических данных
         self.data_provider.warm_up()
 
-        self.portfolio = Portfolio(self.exchange, self.strategies, self.target_margin)
-        self.strategy_stats.portfolio = self.portfolio
+        # Отметить, что стратегии прогреты.
+        # Может, лучше сделать это внутри стратегии?
+        for strategy in self.strategies:
+            strategy.warmed = True
 
-        # Пока решил не открывать ордер по сигналу на старте для бэктеста,
-        # потому что не хочу показывать прогревочный период на графике.
-        # Для торговли нужно инициализировать позиции по прошлым сигналам,
-        # чтобы бот при первой возможности купил-продал нужное.
-        if not (self.backtest or self.replay):
-            self.init_positions()
-
-        # Инициализируется механизм выставления ордера на бирже
-        if not (self.backtest or self.replay):
-            account = Account.objects.get(
-                uid=run_config["account"],
-                username=run_config["username"],
-            )
-            self.run = Run.objects.create(
-                account=account,
-                start_dt=make_aware(self.dt_start, timezone=timezone.utc),
-                broker_config=json.dumps(run_config, indent=2, default=str),
-                strategy_config=json.dumps(strategies, indent=2, default=str),
-            )
-            self.executor = Executor(self.exchange, self.portfolio, self.run)
-
-        self.portfolio_stats = PortfolioStats(self, self.portfolio, self.target_margin)
+        self.portfolio_stats = PortfolioStats(self, self.exchange, 100000)
 
         self.portfolio_stats.portfolio_info()
         # self.portfolio_stats.account_info()
 
-    def reset_settings(self, dt):
-        print(colored("\nRESET\n", "magenta"))
-        print(self.portfolio.get_info())
-        print()
+    def on_event(self, event, dt, symbol=None, payload=None):
+        """
+        В стриме биржи возникло новое событие.
+        Порядок событий пока хрен знает какой.
+        """
+        if dt and dt > self.dt_start and not self.backtest:
+            # log.info(f"EVENT {event} {symbol} {payload}")
+            pass
 
-        self.dt_start = dt
+        if event == "quote":
+            # Обновление стакана для инструмента
+            self.exchange.on_quote(dt, payload)
 
-    def config_start_end(self, conf):
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
+
+        if event == "bar":
+            # 1. Добавить bar в хранилище баров
+            self.exchange.on_bar(dt, payload)
+
+            # 2. Обновить индикаторы, собрать их новые значения
+            for indicator in self.indicators:
+                indicator.add_bar(copy(payload))
+
+            # 3. Передать bar в стратегии
+            for strategy in self.strategies:
+                strategy.on_bar(copy(payload))
+
+            # # 4. Запустить обработку ордеров
+            # self.exchange.process_orders()
+
+        # TODO: переименовать в tick
+        if event == "trade":
+            # 3. Передать trade в стратегии
+            for strategy in self.strategies:
+                strategy.on_trade(copy(payload))
+
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
+
+        # Событие ордера, которое нужно передать в стратегию
+        if event == "order":
+            # TODO: пробрасывать только в стратегию, которая ордер создала
+            for strategy in self.strategies:
+                strategy.on_order_event(payload)
+
+        # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
+        if event == "broker":
+            self.exchange.on_broker_update(copy(payload))
+
+        if event in ["hour", "day"]:
+            if dt > self.dt_start and self.backtest:
+                self.portfolio_stats.snapshot()
+
+    def config_start_end(self, conf, warm_up=timedelta(days=5)):
         if self.backtest:
             self.dt_start = date_to_datetime(conf["dt_start"])
             self.dt_end = date_to_datetime(conf["dt_end"]) + timedelta(1)
@@ -153,6 +165,10 @@ class Trader:
         else:
             self.dt_start = datetime.utcnow().replace(microsecond=0)
             self.dt_end = None
+
+        # Сколько данных до старта нужно для прогрева индикаторов.
+        # Хорошо бы сделать какую-то автоматизацию выбора интервала.
+        self.dt_prior = self.dt_start - warm_up
 
     def config_sources(self, run_config, sources):
         history = run_config["history"]
@@ -188,59 +204,27 @@ class Trader:
         else:
             raise ValueError(f"Unknown feed source: {feed}")
 
-    def init_strategies(self, strategy_conf):
-        """
-        Инициализация классов стратегий.
-        """
-        self.strategies = []
-        for config in strategy_conf:
-            strategy_class = all_strategies[config["strategy"]]
-            self.strategies.append(strategy_class(**config))
-
-    def init_positions(self):
-        """
-        Создаются и применяются Hints по последниму состоянию стратегий,
-        чтобы позиции соответствовали сигналам.
-        """
-        # for strategy in self.strategies:
-        #     self.portfolio.set_initial_amount(strategy, Decimal(0))
-        hints = []
-        for strategy in self.strategies:
-            # TODO: Тут нужно добыть цену сигнала
-            side = strategy.prev_signal.side
-            price = self.exchange.get_price(strategy.symbol, side)
-            hint = Hint(
-                strategy=strategy,
-                signal=strategy.prev_signal,
-                signal_dt=strategy.prev_signal_dt,
-                signal_price=price,
-            )
-            hints.append(hint)
-        self.portfolio.rebalance(hints)
+        log.info(f"History: {self.history_source}")
+        log.info(f"Feed: {self.feed_source}")
 
     def start(self):
-
         print()
         log.info(colored(" Start ", "green", attrs=["reverse", "bold"]))
 
-        self.portfolio_stats.snapshot()
+        # self.portfolio_stats.snapshot()
 
-        if self.backtest:
-            self.data_provider.backtest()
-            self.close_all()
-            self.save_backtest_data()
-
-        else:
-            try:
+        try:
+            if self.backtest:
+                self.data_provider.backtest()
+                # TODO: после завершения бэктеста закрыть все позиции
+                # self.close_all()
+                self.save_backtest_data()
+            else:
                 self.data_provider.listen()
-            except KeyboardInterrupt:
-                pass
-            except Exception as e:
-                log.exception(e)
-
-            if not self.replay:
-                self.run.finished_at = datetime.now(tz=timezone.utc)
-                self.run.save()
+        except KeyboardInterrupt:
+            print()
+        except Exception as e:
+            log.exception(e)
 
         log.info(colored(" Stop ", "red", attrs=["reverse", "bold"]))
 
@@ -249,113 +233,42 @@ class Trader:
 
     def save_backtest_data(self):
         """
-        FIXME: ебаный код какой-то
+        FIXME: код стал еще более ебаным
         """
+        import os
+
+        # создание директории для всяких там результатов бэктеста
         dt = datetime.utcnow()  # server time
         day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
         ts = (dt - day).total_seconds()
         dir_name = f"{day:%Y-%m-%d}_{ts:06.0f}/"
-        path = os.path.join(os.path.dirname(__file__), "../../res", dir_name)
-        path = os.path.abspath(path)
-        os.makedirs(path)
-        self.strategy_stats.save_ohlc(path, self.dt_start)
-        self.portfolio_stats.save_events(path)
+        base_dir = os.path.join(os.path.dirname(__file__), "../../res", dir_name)
+        base_dir = os.path.abspath(base_dir)
+        os.makedirs(base_dir)
 
-    def on_event(self, event, dt, symbol=None, payload=None):
-        """
-        В стриме биржи возникло новое событие.
-        """
-        # if dt > self.dt_start and not self.backtest:
-        #     log.info(f"EVENT {event} {symbol} {payload}")
-        # if event == "day":
-        #     print("\n\n\n")
+        # self.strategy_stats.save_ohlc(path, self.dt_start)
 
-        if event == "bar":
-            self.on_bar(dt, symbol, payload)
+        from datetime import timezone
 
-        if event == "trade":
-            self.on_trade(dt, symbol, payload)
+        def dt_to_ts(dt):
+            return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
-        if event == "quote":
-            self.exchange.add_quote(dt, symbol, payload)
+        # сохранение баров и индикаторов
+        for symbol in self.symbols:
+            file_name = f"URA.ARCA_strategy_ohlc.jsonl"
+            path = os.path.join(base_dir, file_name)
+            txt = ""
+            for bar in self.exchange.bars[symbol]:
+                if bar.date >= self.dt_start:
+                    ts = dt_to_ts(bar.date)
+                    last_bar = asdict(bar)
+                    last_bar["ts"] = ts
+                    last_bar["ind"] = []
+                    for ind in self.indicators:
+                        last_bar["ind"].append(ind.values_by_ts.get(ts, {}))
+                    txt += json.dumps(last_bar, default=str) + "\n"
+            with open(path, "w") as f:
+                f.write(txt)
 
-        if event in ["hour", "day"]:
-            if dt > self.dt_start:
-                self.portfolio_stats.snapshot()
-
-    def on_bar(self, dt: datetime, symbol, payload: Bar):
-        """
-        Новый интервал. Обновить данные в стратегиях.
-        Получить сигналы, зависящие от интервалов.
-        """
-        hints = []
-
-        # В стратегию подаются бары всех символов 
-        for strategy in self.strategies:
-            if strategy.symbol == symbol:
-                if signal := strategy.on_bar(copy(payload)):
-                    hint = Hint(
-                        strategy=strategy,
-                        signal=signal,
-                        signal_dt=dt,
-                        signal_price=payload.close,
-                    )
-                    hints.append(hint)
-
-        for strategy in self.strategies:
-            if strategy.symbol == symbol:
-                # После добавления нового бара в стратегию происходит
-                # сохранение бара с индикаторами и профитом
-                # TODO: обработать прерывание торгов и close all
-                if strategy.data:  # and dt > self.dt_start:
-                    self.strategy_stats.append(strategy, dt)
-
-        # # FIXME: эта штука срезает первый bar в реальной торговле
-        # if dt > self.dt_start:
-        #     self.process_hints(hints, dt)
-
-    def on_trade(self, dt: datetime, symbol, payload: Trade):
-        """
-        Новая цена. Обновить данные в стратегиях.
-        Получить сигналы, зависящие от сделок.
-        """
-        hints = []
-
-        for strategy in self.strategies:
-            if strategy.symbol == symbol:
-                if signal := strategy.on_trade(copy(payload)):
-                    hint = Hint(
-                        strategy=strategy,
-                        signal=signal,
-                        signal_dt=dt,
-                        signal_price=payload.price,
-                    )
-                    hints.append(hint)
-
-        if dt > self.dt_start:
-            self.process_hints(hints, dt)
-
-    def close_all(self):
-        hints = []
-        for strategy in self.strategies:
-            hint = Hint(
-                strategy=strategy,
-                signal=Signal.CLOSE,
-                signal_dt=self.exchange.dt_last,
-                signal_price=Decimal("nan"),
-            )
-            hints.append(hint)
-        self.process_hints(hints, self.exchange.dt_last)
-
-    def process_hints(self, hints, dt):
-        """
-        Обновить состояние портфолио после получения новых сигналов.
-        Применить новое состояние портфолио к торговому аккаунту.
-        """
-        self.portfolio.rebalance(hints)
-
-        if self.backtest:
-            return
-
-        if self.executor:
-            self.executor.apply_targets(dt)
+        # сохранение сделок и депозита
+        self.portfolio_stats.save_events(base_dir)

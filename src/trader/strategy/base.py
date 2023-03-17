@@ -1,6 +1,6 @@
 from collections import namedtuple
-from indicator.base import BaseIndicator
-from trader2 import BaseExchange
+from trader.indicator.base import BaseIndicator
+from trader.exchange import BaseExchange
 
 
 class BaseStrategy:

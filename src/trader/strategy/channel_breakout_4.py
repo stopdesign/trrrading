@@ -1,12 +1,12 @@
 import logging
-from decimal import Decimal
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from termcolor import colored
 
-from data_types import Bar, Order, Trade
-from indicator import DonchianChannels, MovingAverage
-from strategy import BaseStrategy
+from trader.data_types import Bar, Order, Trade
+from trader.indicator import DonchianChannels, MovingAverage
+from trader.strategy import BaseStrategy
 
 log = logging.getLogger("strategy")
 
@@ -17,7 +17,6 @@ class ChBrStop(BaseStrategy):
     """
 
     def on_start(self):
-
         self.instrument = str(self.symbol)
 
         # TODO: можно перейти на такой формат подписки.
@@ -37,7 +36,6 @@ class ChBrStop(BaseStrategy):
         self.place_order(order)
 
     def on_bar(self, bar: Bar):
-
         if not self.warmed:
             return
 
@@ -48,9 +46,7 @@ class ChBrStop(BaseStrategy):
 
         self.set_or_change_stops()
 
-
     def set_or_change_stops(self):
-
         active = ["New", "Sent", "PreSubmitted", "Submitted"]
         in_tws = ["PreSubmitted", "Submitted"]
 
@@ -78,7 +74,6 @@ class ChBrStop(BaseStrategy):
                     self.update_order(order, stop_price=channel["lb"])
 
         if not orders:
-
             if position.amount >= 0:
                 current_amount = position.amount
                 target_amount = -int(10_000 / channel["lb"])
@@ -99,13 +94,12 @@ class ChBrStop(BaseStrategy):
             return
 
     def on_order_event(self, payload):
-
         in_tws = ["PreSubmitted", "Submitted"]
-        too_old = datetime.now(timezone.utc) - timedelta(minutes=2)
+        too_old = datetime.now(timezone.utc) - timedelta(minutes=10)
 
+        # TODO: отменять только тот ордер, цена которого лучше рынка
         for o in self.exchange.orders:
             if o.status in in_tws:
                 # print(">>>>", o.local_id, o.created_at, too_old)
                 if o.created_at and o.created_at < too_old:
                     self.exchange.cancel_order(o)
-

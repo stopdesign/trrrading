@@ -4,10 +4,10 @@ from decimal import Decimal
 
 import redis
 
-from data_types import Order, Position
 from main.models import Account as DBAccount
 from main.models import Order as DBOrder
 from main.models import Position as DBPosition
+from trader.data_types import Order, Position
 
 log = logging.getLogger("sync_client")
 
@@ -28,11 +28,14 @@ class SyncClient:
 
         self.redis_client = redis.Redis()
 
-    def place_order(self, order):
+    def place_order(self, order: Order):
         action = {
             "action": "create",
             "local_id": order.local_id,
+            "sid": order.instrument,
             "amount": order.amount,
+            "type": order.type,
+            "limit_price": order.limit_price,
             "stop_price": order.stop_price,
         }
         self.redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
@@ -41,7 +44,7 @@ class SyncClient:
         # удалился при появлении его в TWS
         self.orders.append(order)  # Нужно ли добавлять ордер сюда ???
 
-    def update_order(self, order, **kwargs):
+    def update_order(self, order: Order, **kwargs):
         action = {
             "action": "update",
             "local_id": order.local_id,
@@ -50,7 +53,7 @@ class SyncClient:
         }
         self.redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
 
-    def cancel_order(self, order):
+    def cancel_order(self, order: Order):
         action = {
             "action": "cancel",
             "local_id": order.local_id,
@@ -59,14 +62,15 @@ class SyncClient:
 
     def update_broker_data(self):
         # обновить данные в self.positions, self.account...
-        db_positions = DBPosition.objects.filter(account=self.db_account).order_by('-id')[:100]
+        db_positions = DBPosition.objects.filter(account=self.db_account)
+        db_positions = db_positions.order_by('-id')[:100]
 
         for key in list(self.positions.keys()):
             self.positions.pop(key)
         for position in db_positions:
-            ticker = position.contract.ticker
-            self.positions[ticker] = Position(
-                symbol=ticker,
+            sid = position.contract.sid
+            self.positions[sid] = Position(
+                symbol=sid,
                 capital=Decimal(100_000),
                 amount=position.amount,
                 avg_price=position.avg_price,
@@ -74,13 +78,15 @@ class SyncClient:
 
         self.orders.clear()
         # вытащить только актуальные ордеры, а не всю историю
-        db_orders = DBOrder.objects.filter(account=self.db_account).order_by('-id')[:10]
+        db_orders = DBOrder.objects.filter(account=self.db_account)
+        db_orders = db_orders.order_by('-id')[:10]
+
         for order in db_orders:
             amount = order.amount
             if order.action == DBOrder.Side.sell:
                 amount = -order.amount
             o = Order(
-                instrument=order.contract.ticker,
+                instrument=order.contract.sid,
                 local_id=order.local_id,
                 type=order.type,
                 amount=amount,

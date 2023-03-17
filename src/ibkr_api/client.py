@@ -37,7 +37,7 @@ class IBClient(EWrapper, EClient):
         log.warn("connectionClosed")
 
     def nextValidId(self, orderId):
-        print("Next Valid Id", orderId)
+        # print("Next Valid Id", orderId)
         self.nextValidOrderId = orderId
 
     def managedAccounts(self, accountsList:str):
@@ -77,7 +77,7 @@ class IBClient(EWrapper, EClient):
     # def position(self, account, contract, position, avgCost):
     #     super().position(account, contract, position, avgCost)
     #     print('Position: account={}, contract={}, position={}, avgCost={}'.format(account, contract.symbol, position, avgCost))
-    
+
     # def positionEnd(self):
     #     super().positionEnd()
     #     print('//// Positions\n')
@@ -114,9 +114,6 @@ class IBClient(EWrapper, EClient):
     def accountSummaryEnd(self, reqId: int):
         super().accountSummaryEnd(reqId)
         print('//// accountSummary\n')
-    
-    def error(self, reqId:TickerId, errorCode:int, errorString:str, advancedOrderRejectJson = ""):
-        cprint(f"ERROR {errorCode} {errorString}", "red")
 
     def historicalData(self, reqId:int, bar):
         cprint(f"HistoricalData. BarData: {bar}", "blue")
@@ -145,10 +142,10 @@ class IBClient(EWrapper, EClient):
         # # # Request open orders from all clients
         # self.reqAllOpenOrders()
 
-        # # Requests status updates about future orders placed from TWS. 
+        # # Requests status updates about future orders placed from TWS.
         # # Can only be used with client ID 0.
         # if self.clientId == 0:
-        #     self.reqAutoOpenOrders(True) 
+        #     self.reqAutoOpenOrders(True)
 
         # self.reqCompletedOrders(apiOnly=False)
 
@@ -164,12 +161,12 @@ class IBClient(EWrapper, EClient):
         # Нужно сделать две группы запросов с интервалом N секунд.
         # Если результаты одинаковые, значит ситуация стабильна,
         # и можно сохранять данные как начальные.
-        # Если результаты разные, то можно продолжать, 
+        # Если результаты разные, то можно продолжать,
         # пока две последовательные группы не совпадут.
 
         # Дальше это состояние сравнивается с базой.
         # Различия вываливаются в логи.
-        
+
         # Дальше состояние в базе подгоняется к реальному.
 
         # Вроде как, надо бы попытаться позиции базы при помощи
@@ -188,6 +185,23 @@ class IBThread(threading.Thread):
     def run(self):
         log.info("Run Message Thread")
         self.app.run()
+
+
+def IbContract(
+        symbol,
+        secType="STK",
+        exchange="SMART",
+        currency="USD",
+        localSymbol="",
+    ):
+    contract = Contract()
+    contract.symbol = symbol
+    contract.secType = secType
+    contract.exchange = exchange
+    contract.currency = currency
+    if secType == "FUT":
+        contract.localSymbol = localSymbol
+    return contract
 
 
 def FxContract(symbol, secType="CASH", exchange="IDEALPRO", currency="USD"):

@@ -4,7 +4,7 @@ from copy import copy
 from decimal import ROUND_DOWN, Decimal
 from typing import Callable
 
-from data_types import Bar, BidAsk, Order
+from trader.data_types import Bar, BidAsk, Order
 
 log = logging.getLogger("base_exchange")
 

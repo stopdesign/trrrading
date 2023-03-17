@@ -5,8 +5,7 @@ from datetime import datetime
 from os.path import abspath, join, dirname
 from django.core.management.base import BaseCommand
 from django.conf import settings
-# from trader import Trader
-from trader2.trader import Trader2
+from trader import Trader
 
 log = logging.getLogger("run")
 
@@ -51,7 +50,7 @@ class Command(BaseCommand):
 
         assert not (backtest and replay), "Can't combine replay and backtest"
 
-        trader = Trader2(config, backtest, replay)
+        trader = Trader(config, backtest, replay)
         # trader.start_intervals()
         trader.start()
 

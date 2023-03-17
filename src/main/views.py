@@ -156,7 +156,7 @@ def positions(request):
     positions = positions.order_by("-avg_price")
     for position in positions:
         res.append({
-            "symbol": position.contract.ticker,
+            "symbol": position.contract.sid,
             "amount": position.amount,
             "avg_price": position.avg_price,
             "unrealized_pnl": position.unrealized_pnl,
@@ -440,76 +440,4 @@ def history(request):
 
     content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
 
-    return HttpResponse(content, content_type="application/json")
-
-
-def marks(request):
-
-    account = Account.objects.get(id=1)
-    contract = Contract.objects.get(symbol="MES")
-
-    orders = Order.objects.filter(account=account, contract=contract)
-
-    times = [1647364100]
-    ids = [123]
-    labels = ["sdfa"]
-    prices = [24]
-    colors = ["red"]
-    texts = ["asdfas"]
-
-    # for order in orders:
-    #     times.append(dt_to_ts(order.created_at))
-    #     ids.append(len(ids))
-    #     labels.append(order.action)
-    #     prices.append(order.avg_fill_price)
-    #     colors.append("red" if order.action == "SELL" else "green")
-    #     texts.append(order.created_at.strftime('%H:%M:%S') + " @" + str(order.avg_fill_price))
-
-    # 1639304000
-    data = {
-        "id": ids,
-        "time": times,
-        "color": colors,
-        "text": texts,
-        "label": labels,
-        "minSize": 10,
-        "price": prices,
-    }
-    content = json.dumps(data, indent=2, default=str)
-    return HttpResponse(content, content_type="application/json")
-
-
-def timescale_marks(request):
-    data = [
-        {"id": "tsm1", "time": 1522108800, "color": "red", "label": "A", "tooltip": ""},
-        {
-            "id": "tsm2",
-            "time": 1521763200,
-            "color": "blue",
-            "label": "D",
-            "tooltip": ["Dividends: $0.56", "Date: Fri Mar 23 2018"],
-        },
-        {
-            "id": "tsm3",
-            "time": 1521504000,
-            "color": "green",
-            "label": "D",
-            "tooltip": ["Dividends: $3.46", "Date: Tue Mar 20 2018"],
-        },
-        {
-            "id": "tsm4",
-            "time": 1520812800,
-            "color": "#999999",
-            "label": "E",
-            "tooltip": ["Earnings: $3.44", "Estimate: $3.60"],
-        },
-        {
-            "id": "tsm7",
-            "time": 1519516800,
-            "color": "red",
-            "label": "E",
-            "tooltip": ["Earnings: $5.40", "Estimate: $5.00"],
-        },
-    ]
-    content = json.dumps(data, indent=2, default=str)
     return HttpResponse(content, content_type="application/json")

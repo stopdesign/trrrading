@@ -1,4 +1,4 @@
-from data_types import Bar
+from trader.data_types import Bar
 from datetime import timezone
 
 

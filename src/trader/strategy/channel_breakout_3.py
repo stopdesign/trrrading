@@ -3,9 +3,9 @@ from decimal import Decimal
 
 from termcolor import colored
 
-from data_types import Bar, Order, Trade
-from indicator.donchian_channels import DonchianChannels
-from strategy import BaseStrategy
+from trader.data_types import Bar, Order, Trade
+from trader.indicator.donchian_channels import DonchianChannels
+from trader.strategy import BaseStrategy
 
 log = logging.getLogger("strategy")
 

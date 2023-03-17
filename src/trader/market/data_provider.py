@@ -3,10 +3,9 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Callable
 
-from market.market_calendar import MarketCalendar
-from market.sources.base_source import BaseSource
-
 from .event_manager import EventManager
+from .market_calendar import MarketCalendar
+from .sources.base_source import BaseSource
 
 log = logging.getLogger("data_provider")
 
@@ -66,9 +65,9 @@ class DataProvider:
         """
 
         # Дополнить payload информацией о расписании биржи
-        if "symbol" in payload and "dt" in payload:
+        if "sid" in payload and "dt" in payload:
 
-            dt, symbol = payload["dt"], payload["symbol"]
+            dt, symbol = payload["dt"], payload["sid"]
 
             # Для OHLC проверить, что эти данные новее всех уже обработанных
             if "o" in payload:
@@ -82,7 +81,7 @@ class DataProvider:
                 # Формат данных, проверка large gap и вызов Trader.on_event
                 self.event_manager.notify(payload)
         else:
-            log.warning(f"Unknown payload format: {payload}")
+            log.warning(f"Unknown format: {payload}")
 
     def on_broker_event(self, payload):
         self.on_event("broker", dt=datetime.now(), payload=payload)

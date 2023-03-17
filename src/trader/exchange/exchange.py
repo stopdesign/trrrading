@@ -1,7 +1,12 @@
 import logging
 from typing import Callable
+
 from termcolor import colored
-from trader2 import BaseExchange, SyncClient
+
+from main.sync_client import SyncClient
+from trader.data_types import Order
+
+from .base_exchange import BaseExchange
 
 log = logging.getLogger("exchange")
 
@@ -14,17 +19,19 @@ class Exchange(BaseExchange):
     def __init__(self, on_event: Callable, account_uid: str):
         super().__init__(on_event)
         self.account["uid"] = account_uid
+
+        # Это связь всей платформы с джангой
         self.sync_client = SyncClient(self.positions, self.orders, self.account)
 
-    def place_order(self, order):
+    def place_order(self, order: Order):
         log.info(colored(f"PLACE ORDER: {order}", "green"))
         self.sync_client.place_order(order)
 
-    def update_order(self, order, **kwargs):
+    def update_order(self, order: Order, **kwargs):
         log.info(colored(f"UPDATE ORDER: {order} {kwargs}", "cyan"))
         self.sync_client.update_order(order, **kwargs)
 
-    def cancel_order(self, order):
+    def cancel_order(self, order: Order):
         log.info(colored(f"CANCEL ORDER: {order}", "red"))
         self.sync_client.cancel_order(order)
 

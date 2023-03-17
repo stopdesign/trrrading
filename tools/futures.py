@@ -100,7 +100,7 @@ def get_data(contract, day, data_type, timeframe="1 min"):
     # ТУТ ПРОИСХОДИТ КАКОЕ-ТО ГОВНО, КОТОРОЕ СРЕЗАЕТ КОРОТКИЕ ДНИ
     # 2021-01-18 CBOT/ZW
     # Похоже, в такие дни нет сделок, если считать по UTC
-    
+
     if contract.exchange in ["NYMEX", "GLOBEX", "CBOT", "COMEX"]:
         ex_tz = pytz.timezone('America/New_York')
         t = datetime.combine(day, datetime.min.time()).astimezone(ex_tz)
@@ -123,7 +123,7 @@ def get_contract_day_data(contract, day, data_type, force):
     """
 
     dt = datetime.now()
-        
+
     symbol = contract.symbol
     exp_day = contract.lastTradeDateOrContractMonth
     exchange = contract.primaryExchange or contract.exchange
@@ -191,7 +191,7 @@ def download_and_save(contract, data_types=None, start=None, end=None, force=Fal
         # print(ib.reqContractDetails(Contract(conId=11160683)))   #contracts[0]
         # res = get_data(Contract(conId=11160683), start, "MIDPRICE")
         # print(res)
-        
+
         exp_dates = [c.contract.lastTradeDateOrContractMonth for c in contracts]
         exp_dates = sorted(exp_dates)
         contract.lastTradeDateOrContractMonth = exp_dates[0]
@@ -301,7 +301,7 @@ def main(**kwargs):
     if kwargs.get("trades"):
         data_types.append("TRADES")
 
-    for stock in kwargs.get("symbols"):
+    for stock in list(kwargs.get("symbols", [])):
         stock = stock.upper()
         if "." in stock:
             symbol, pe = stock.split(".")

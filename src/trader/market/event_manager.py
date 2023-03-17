@@ -1,9 +1,9 @@
-from decimal import Decimal
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Callable
 
-from data_types import Bar, BidAsk, Trade
+from trader.data_types import Bar, BidAsk, Trade
 
 log = logging.getLogger("event_manager")
 
@@ -102,7 +102,7 @@ class EventManager:
         # Это single trade
         elif payload.get("price"):
             dt = payload["dt"]
-            symbol = payload["symbol"]
+            symbol = payload["sid"]
             trade = Trade(
                 date=dt,
                 symbol=symbol,

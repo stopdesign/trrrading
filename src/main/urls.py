@@ -25,8 +25,6 @@ urlpatterns = [
     path("tv/time", views.time, name="time"),
     path("tv/symbols", views.symbols, name="symbols"),
     path("tv/config", views.config, name="config"),
-    path("tv/marks", views.marks, name="marks"),
-    path("tv/timescale_marks", views.timescale_marks, name="timescale_marks"),
 
     # path("api/save/<int:payload_id>/", save, name="api_save"),
     # path("api/load/<int:payload_id>/", load, name="api_load"),

@@ -1,11 +1,13 @@
 import logging
 from decimal import Decimal
 from typing import Callable
+
 from termcolor import colored
 
-from data_types import Position
-from data_types.order import Order
-from trader2 import BaseExchange, LocalMatcher
+from trader.data_types import Order, Position
+
+from .base_exchange import BaseExchange
+from .matcher import LocalMatcher
 
 log = logging.getLogger("emulator")
 

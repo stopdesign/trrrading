@@ -50,7 +50,7 @@ class TradisAdapter(BaseSource):
 
         # Легкий фикс формата
         try:
-            symbol = data["symbol"]
+            symbol = data["sid"]
             data["dt"] = parse_dt(data["dt"])
         except KeyError:
             log.error(f"Bad format: {data}")
@@ -71,7 +71,7 @@ class TradisAdapter(BaseSource):
             log.warning(f"{symbol}, {data['dt']} delay")
             return
 
-        if not ("price" in data or "vol" in data):
+        if not ("price" in data or "vol" in data or "o" in data):
             try:
                 dump = json.dumps(data, default=str)
             except:

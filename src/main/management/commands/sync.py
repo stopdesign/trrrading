@@ -1,4 +1,3 @@
-import argparse
 import json
 import logging
 import time
@@ -11,17 +10,10 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from ibapi.common import BarData, TickerId
 from ibapi.order import Order as IBOrder
 from termcolor import colored, cprint
 
-from ibkr_api.client import (
-    CryptoContract,
-    FutContract,
-    FxContract,
-    IBThread,
-    StockContract,
-)
+from ibkr_api.client import IBThread, IbContract
 from ibkr_api.ib_sync import IBSync
 from main.models import Account, Contract, Order, Position, Trade
 
@@ -45,7 +37,6 @@ def ts_to_dt(ts):
 redis_client = redis.Redis()
 pubsub = redis_client.pubsub()
 
-print()
 
 SYNC_CHANNEL = "SYNC"
 
@@ -56,72 +47,6 @@ ERROR 1102 Connectivity between IB and Trader Workstation has been restored...
 """
 
 
-# динамически ловить commissionReport и/или execDetails?
-# Проблема в том, что execDetails приходят через раз.
-# Думаю, правильный выход такой: нужно после исполнения ордера запускать
-# несколько синхронных запросов, которые будут забирать все execDetails.
-# Допустим, через секунду после исполнения и через 10 секунд.
-# Но не чаще, чем раз в 3 секунды, допустим. Если запрос уже недавно был,
-# то следующий сдвигается вперед. Ну или типа того.
-
-
-def realtimeBar(
-    reqId: TickerId,
-    time: int,
-    open_: float,
-    high: float,
-    low: float,
-    close: float,
-    volume: Decimal,
-    wap: Decimal,
-    count: int,
-):
-    """
-    5-sec real-time OHLC bars.
-    """
-    symbol = "MESH3.CME"
-    dt = ts_to_dt(time)
-
-    prices = list(set([open_, high, low, close]))
-    for price in prices:
-        msg = {
-            "dt": dt.strftime(DT_FMT),
-            "price": price,
-            "conid": 0,
-            "symbol": symbol,
-        }
-        json_str = json.dumps(msg, indent=None, default=str)
-        a = redis_client.publish(f"{symbol}:TRADES", json_str)
-        log.info(colored(f"Redis TRADES: {json_str}, {a}", "magenta"))
-
-
-LAST_BAR = None
-
-
-def historicalDataUpdate(reqId: int, bar: BarData):
-    # log.info(f"historicalDataUpdate: {bar}")
-
-    global LAST_BAR
-
-    # при появлении нового бара отправить старый бар
-    if LAST_BAR and LAST_BAR.date < bar.date:
-        symbol = "MESH3.CME"
-        msg = {
-            "dt": ts_to_dt(int(LAST_BAR.date)),
-            "o": LAST_BAR.open,
-            "h": LAST_BAR.high,
-            "l": LAST_BAR.low,
-            "c": LAST_BAR.close,
-            "vol": round(float(LAST_BAR.volume), 2),
-            "symbol": symbol,
-        }
-        json_str = json.dumps(msg, indent=None, default=str)
-        a = redis_client.publish(f"{symbol}:BARS", json_str)
-        log.info(colored(f"Redis BARS: {json_str}, {a}", "cyan"))
-
-    LAST_BAR = bar
-
-
 def pnl(reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
     account = Account.objects.get(uid=APP.account_id)
     values = APP.values[account.uid]
@@ -130,9 +55,9 @@ def pnl(reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
     account.unrealized_pnl = unrealizedPnL
     account.realized_pnl = realizedPnL
 
-    # TODO добавить Cushion — Excess liquidity as a percentage of net liquidation value
+    # TODO: добавить Cushion — Excess liquidity as a percentage of net liquidation value
 
-    # FIXME KeyError: 'NetLiquidation'; pnl может приходить раньше values.
+    # FIXME: KeyError: 'NetLiquidation'; pnl может приходить раньше values.
 
     account.net_value = values["NetLiquidation"]
     account.margin_used = values["MaintMarginReq"]
@@ -196,10 +121,17 @@ def process_bot_action(ib, message):
 
 
 def create_order(ib, data):
-    contract = FutContract("MES", "MESH3", exchange="CME")
+
+    # TODO: сделать контракт из data.sid
+
+    # ib_contract - нужен для отправки ордера в IB - может ли быть без conid?
+    # db_contract - нужен для сохранения ордера в базе
+
+    contract = IbContract("")
+    contract = FutContract("MES", "MESM3", exchange="CME")
 
     print("contract.conId", contract)
-    cd = ib.get_contract_details(contract)
+    cd = ib.get_contract_details(contract)[0]
     print("contract.conId", cd)
 
     account = Account.objects.get(uid=ib.account_id)
@@ -234,7 +166,7 @@ def create_order(ib, data):
     ib_order.orderType = "STP LMT"
     ib_order.outsideRth = True
     ib_order.auxPrice = stop_price
-    if ib_order.account == "BUY":
+    if ib_order.action == "BUY":
         ib_order.lmtPrice = stop_price + Decimal(0.25)
     else:
         ib_order.lmtPrice = stop_price - Decimal(0.25)
@@ -258,9 +190,9 @@ def update_order(ib, data):
 
     for ib_order, contract, orderState in ib._orders_by_pid.values():
         if ib_order.orderRef == local_id:
-            cprint(f"ib_order: {ib_order} {orderState}", "blue")
+            cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
             ib_order.auxPrice = stop_price
-            if ib_order.account == "BUY":
+            if ib_order.action == "BUY":
                 ib_order.lmtPrice = stop_price + Decimal(0.25)
             else:
                 ib_order.lmtPrice = stop_price - Decimal(0.25)
@@ -276,7 +208,7 @@ def cancel_order(ib, data):
 
     inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
 
-    # ! _orders_by_pid обновляется в openOrder и не ловит состояние canceled
+    # FIXME: _orders_by_pid обновляется в openOrder и не ловит состояние canceled
     for ib_order, contract, orderState in ib._orders_by_pid.values():
         if ib_order.orderRef == local_id and orderState.status not in inactive:
             cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
@@ -292,7 +224,7 @@ def cancel_order(ib, data):
 def get_executions(ib):
     account = Account.objects.get(uid=ib.account_id)
 
-    # TODO выбрать только последние пару дней
+    # TODO: выбрать только последние пару дней
     trades = Trade.objects.filter(account=account)
     trades_by_exec_id = {t.exec_id: t for t in trades}
 
@@ -326,26 +258,6 @@ def get_executions(ib):
     # trades = Trade.objects.filter(account=account)
 
 
-# TWS Account Window
-# reqAccountUpdates(True, account) - sub. for the account and portfolio info
-# unless there is a position change this information is updated every three minutes
-#       updateAccountValue
-#       updatePortfolio
-#       updateAccountTime
-
-# TWS Account Summary window
-# reqAccountSummary - subscription for the account data
-#       accountSummary
-
-# Эта подписка есть в любом случае.
-# reqPositions()
-# Subscribes to position updates for all accessible accounts.
-
-# PnL для всего аккаунта
-# reqPnL(17001, "DU111519", "")
-#       pnl
-
-
 def orderStatus(
     orderId,
     status: str,
@@ -374,7 +286,7 @@ def orderStatus(
     av_fill_price = avgFillPrice if avgFillPrice < 10**10 else None
 
     if permId and permId in APP._orders_by_pid:
-        # TODO для активного ордера проверить время его получения
+        # TODO: для активного ордера проверить время его получения
         order, contract, state = APP._orders_by_pid[permId]
     else:
         log.error(f"Order not found, {permId}")
@@ -391,7 +303,7 @@ def orderStatus(
     state.status = status
     APP._orders_by_pid[permId] = order, contract, state
 
-    # TODO закешировать?
+    # TODO: закешировать?
     account = Account.objects.get(uid=order.account)
 
     with transaction.atomic():
@@ -533,8 +445,8 @@ def initial_sync(ib):
                 c = contracts_by_id[contract.conId]
                 orders_to_create.append(Order.from_ib(order, account, c, state))
             else:
-                # TODO проверить изменения ордеров из базы, которые не в финальном состоянии
-                # ! сделать нормально
+                # TODO: проверить изменения ордеров из базы, которые не в финальном состоянии
+                # FIXME: сделать нормально
                 db_order = orders_by_id[order.permId]
                 if state.status != db_order.status:
                     cprint(f"UPDATE in DB {order} {orders_by_id[order.permId]}", "magenta")
@@ -605,52 +517,6 @@ def initial_sync(ib):
         raise Exception("Executions updated")
 
 
-def market_data_subscribe(ib):
-    #####
-    # ib.reqMarketDataType(3)
-    # contract = StockContract("AAPL")
-    # contract = FutContract("ZW", "ZW   MAY 23", exchange="CBOT")
-    # contract = FutContract("MCL", "MCLJ3", exchange="NYMEX")
-    # contract = FutContract("DAX", "FDXS MAR 23", exchange="EUREX", currency="EUR")
-    # contract = FutContract("GE", "GEH3", exchange="CME")
-
-    contract = FutContract("MES", "MESH3", exchange="CME")
-    # contract = FxContract("EUR")    # +++
-    # contract = CryptoContract("ETH")   # +++  AGGTRADES
-
-    # print("contract", contract)
-    # cd = ib.get_contract_details(contract)
-    # print("details", cd)
-    # print()
-
-    # Норм тема.
-    # {'reqId': 37724159, 'time': 1678662094, 'midPoint': 3896.125}
-    # ib.reqTickByTickData(ib.r_id, contract, "MidPoint", 0, False)
-
-    # Данные приходят отдельными сообщениями по типам данных
-    # tickSnapshot приходит один раз, собирая данные за 10 секунд
-    # ib.reqMktData(ib.r_id, contract, "", False, False, [])
-
-    # Это самое удобное
-    # ! сделать из этого trades
-    ib.reqRealTimeBars(ib.r_id, contract, 5, "TRADES", False, [])
-
-    # ! сделать из этого минутные бары
-    # при открытии нового бара передавать предыдущий в redis.
-    ib.reqHistoricalData(
-        ib.r_id,
-        contract,
-        endDateTime="",  # 20230309-22:59:52
-        durationStr="600 S",
-        barSizeSetting="1 min",
-        whatToShow="TRADES",
-        useRTH=0,
-        formatDate=2,
-        keepUpToDate=True,
-        chartOptions=[],
-    )
-
-
 class Command(BaseCommand):
     """
     Синхронизация состояния базы с IB через TWS.
@@ -677,6 +543,7 @@ class Command(BaseCommand):
                         process_bot_action(app, message)
                 except Exception as e:
                     log.error(f"Redis pubsub get_message error: {e}")
+                    log.exception(e)
                     pass
 
                 # регулярные запросы
@@ -691,6 +558,7 @@ class Command(BaseCommand):
                 # Переконнект
                 if not app or go and not app.isConnected():
                     app = IBSync()
+                    # TODO: брать из настроек
                     app.connect("127.0.0.1", 7497, 0)
 
                     log.info(f"Server Version: {app.decoder.serverVersion}")
@@ -733,11 +601,6 @@ class Command(BaseCommand):
 
                     # Начать real-time обработку сообщений orderStatus
                     app.orderStatus = orderStatus
-
-                    # TODO: Тестовая подписка на market data
-                    market_data_subscribe(app)
-                    app.realtimeBar = realtimeBar
-                    app.historicalDataUpdate = historicalDataUpdate
 
                     app.pnl = pnl
                     app.updatePortfolio = updatePortfolio
