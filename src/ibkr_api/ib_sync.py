@@ -23,6 +23,13 @@ TIMEOUT_HISTORICAL = 150
 
 
 class Results(list):
+    """
+    TWS возвращает данные частями, асинхронно.
+    Results хранит результаты, пока ответ не завершен.
+    Ответ завершается специальным сообщением или ошибкой.
+    Группа ответов идентифицируется по r_id.
+    """
+
     def __init__(self, r_id: int = 0):
         self.r_id = r_id
         self.finished = False
@@ -58,6 +65,44 @@ class IBSync(IBClient):
     @property
     def r_id(self):
         return random.randint(10000000, 99999999)
+
+    def contract_for_sid(self, sid: str) -> Contract:
+        """
+        Делает IB Contract по строке SID.
+
+        TODO: поддержка "FUT+CONTFUT" и/или "CONTFUT".
+        """
+
+        sid = sid.upper()
+
+        contract = Contract()
+
+        # stocks
+        if sid.count("_") == 1:
+            exch_str, security_str = sid.split("_")
+            exch_str = exch_str.replace("NASDAQ", "ISLAND")
+            contract.secType = "STK"
+            contract.symbol = security_str
+            contract.exchange = "SMART"
+            contract.primaryExchange = exch_str
+            contract.currency = "USD"
+
+        if sid.count("_") == 2:
+            exch_str, security_str, exp_str = sid.split("_")
+            contract.secType = "FUT"
+            contract.symbol = security_str
+            contract.exchange = exch_str
+            contract.primaryExchange = exch_str
+            contract.currency = "USD"
+            contract.lastTradeDateOrContractMonth = f"20{exp_str}"
+
+        if contract.symbol:
+            return contract
+        else:
+            raise Exception(f"Can't make a contract from SID: {sid}")
+
+    ##########################
+    ### Errors
 
     def error(
         self,

@@ -13,7 +13,7 @@ from django.db import transaction
 from ibapi.order import Order as IBOrder
 from termcolor import colored, cprint
 
-from ibkr_api.client import IBThread, IbContract
+from ibkr_api.client import IbContract, IBThread
 from ibkr_api.ib_sync import IBSync
 from main.models import Account, Contract, Order, Position, Trade
 
@@ -23,9 +23,9 @@ log = logging.getLogger("sync")
 
 DEF_CONFIG = "../config/bot.yaml"
 
-APP = None
-
 BOT_ID_PREFIX = "bot_"
+
+SYNC_CHANNEL = "SYNC"
 
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -34,12 +34,6 @@ def ts_to_dt(ts):
     return datetime.utcfromtimestamp(ts)
 
 
-redis_client = redis.Redis()
-pubsub = redis_client.pubsub()
-
-
-SYNC_CHANNEL = "SYNC"
-
 """
 Важные ошибки, которые нужно обработать:
 ERROR 1100 Connectivity between IB and Trader Workstation has been lost.
@@ -47,178 +41,307 @@ ERROR 1102 Connectivity between IB and Trader Workstation has been restored...
 """
 
 
-def pnl(reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
-    account = Account.objects.get(uid=APP.account_id)
-    values = APP.values[account.uid]
+class IBSyncExtended(IBSync):
+    def __init__(self, redis_client):
+        super().__init__()
+        self.redis_client = redis_client
 
-    account.daily_pnl = dailyPnL
-    account.unrealized_pnl = unrealizedPnL
-    account.realized_pnl = realizedPnL
+    def pnl(
+        self, reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float
+    ):
+        account = Account.objects.get(uid=self.account_id)
+        values = self.values[account.uid]
 
-    # TODO: добавить Cushion — Excess liquidity as a percentage of net liquidation value
+        account.daily_pnl = dailyPnL
+        account.unrealized_pnl = unrealizedPnL
+        account.realized_pnl = realizedPnL
 
-    # FIXME: KeyError: 'NetLiquidation'; pnl может приходить раньше values.
+        # TODO: добавить Cushion — Excess liquidity as a percentage of net liquidation value
 
-    account.net_value = values["NetLiquidation"]
-    account.margin_used = values["MaintMarginReq"]
-    account.cash_value = values["CashBalance"]
-    account.ex_liq_sec = values["ExcessLiquidity-S"]
-    account.ex_liq_com = values["ExcessLiquidity-C"]
+        # FIXME: KeyError: 'NetLiquidation'; pnl может приходить раньше values.
 
-    account.save()
+        account.net_value = values["NetLiquidation"]
+        account.margin_used = values["MaintMarginReq"]
+        account.cash_value = values["CashBalance"]
+        account.ex_liq_sec = values["ExcessLiquidity-S"]
+        account.ex_liq_com = values["ExcessLiquidity-C"]
 
-    # Этих слишком много. Депозит постоянно обновляется.
-    # action = {"types": ["account"]}
-    # a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-    # log.info(f"Redis sync-message: {action}, {a}")
+        account.save()
 
+    def updatePortfolio(
+        self,
+        contract,
+        position,
+        marketPrice,
+        marketValue,
+        averageCost,
+        unrealizedPNL,
+        realizedPNL,
+        accountName,
+    ):
+        account = Account.objects.get(uid=accountName)
+        db_position = Position.objects.get(
+            account=account, contract__conid=contract.conId
+        )
 
-def updatePortfolio(
-    contract,
-    position,
-    marketPrice,
-    marketValue,
-    averageCost,
-    unrealizedPNL,
-    realizedPNL,
-    accountName,
-):
-    account = Account.objects.get(uid=accountName)
-    db_position = Position.objects.get(account=account, contract__conid=contract.conId)
+        if db_position.amount != position:
+            log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
 
-    if db_position.amount != position:
-        log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
+        db_position.avg_price = averageCost
+        db_position.unrealized_pnl = unrealizedPNL
+        db_position.save(update_fields=["avg_price", "unrealized_pnl"])
 
-    db_position.avg_price = averageCost
-    db_position.unrealized_pnl = unrealizedPNL
-    db_position.save(update_fields=["avg_price", "unrealized_pnl"])
+        action = {
+            "types": ["position"],
+            "info": {"contract": contract.conId, "amount": db_position.amount},
+        }
+        a = self.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        log.info(f"Redis sync-message: {action}, {a}")
 
-    action = {
-        "types": ["position"],
-        "info": {"contract": contract.conId, "amount": db_position.amount},
-    }
-    a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-    log.info(f"Redis sync-message: {action}, {a}")
+    def orderStatus(
+        self,
+        orderId,
+        status: str,
+        filled: Decimal,
+        remaining: Decimal,
+        avgFillPrice: float,
+        permId: int,
+        parentId: int,
+        lastFillPrice: float,
+        clientId: int,
+        whyHeld: str,
+        mktCapPrice: float,
+    ):
+        """
+        Что за хрень здесь происходит?
 
+        Событие orderStatus приходит, когда меняется статус ордера,
+        и после любых изменений ордера. Но событие не содержит сам ордер,
+        поэтому ордер добывается из сохраненных событий openOrder.
 
-def process_bot_action(ib, message):
-    data = json.loads(message.get("data").decode())
-    log.info(colored(f"message.data: {data}", "yellow"))
+        В openOrder приходят данные ордера и контракта, но нет
+        оставшегося количества. Если мы отслеживаем исполнение,
+        то нет смысла там сохранять ордер.
+        """
 
-    if data.get("action") == "create":
-        create_order(ib, data)
-        return
+        av_fill_price = avgFillPrice if avgFillPrice < 10**10 else None
 
-    if data.get("action") == "update":
-        update_order(ib, data)
-        return
-
-    if data.get("action") == "cancel":
-        cancel_order(ib, data)
-        return
-
-    log.error(f"Unknown bot action: {message}")
-
-
-def create_order(ib, data):
-
-    # TODO: сделать контракт из data.sid
-
-    # ib_contract - нужен для отправки ордера в IB - может ли быть без conid?
-    # db_contract - нужен для сохранения ордера в базе
-
-    contract = IbContract("")
-    contract = FutContract("MES", "MESM3", exchange="CME")
-
-    print("contract.conId", contract)
-    cd = ib.get_contract_details(contract)[0]
-    print("contract.conId", cd)
-
-    account = Account.objects.get(uid=ib.account_id)
-    instrument = Contract.objects.get(conid=cd.contract.conId)
-
-    print("instrument", instrument)
-
-    oid = ib.nextValidOrderId
-    ib.nextValidOrderId += 1
-
-    stop_price = Decimal(data.get("stop_price"))
-
-    amount = Decimal(data.get("amount"))
-    action = "BUY" if amount > 0 else "SELL"
-    side = Order.Side.buy if amount > 0 else Order.Side.sell
-
-    local_id = data.get("local_id")
-
-    # Отправить ордер в TWS
-    ib_order = IBOrder()
-    ib_order.orderId = oid
-    ib_order.orderRef = local_id
-    ib_order.action = action
-    ib_order.totalQuantity = abs(amount)
-
-    # order.goodTillDate = "20200923 15:13:20 EST"
-    # order.tif = "GTD"
-
-    # ib_order.orderType = "MKT"
-    # order = Order.market_order(account, instrument, side, abs(amount))
-
-    ib_order.orderType = "STP LMT"
-    ib_order.outsideRth = True
-    ib_order.auxPrice = stop_price
-    if ib_order.action == "BUY":
-        ib_order.lmtPrice = stop_price + Decimal(0.25)
-    else:
-        ib_order.lmtPrice = stop_price - Decimal(0.25)
-    order = Order.stop_order(account, instrument, side, abs(amount))
-
-    cprint(f"ib_order: {ib_order}", "blue")
-
-    # создать ордер в базе данных
-    order.local_id = local_id
-    order.save()
-
-    ib.placeOrder(oid, contract, ib_order)
-
-    order.status = "Sent"
-    order.save(update_fields=["status"])
-
-
-def update_order(ib, data):
-    local_id = data.get("local_id")
-    stop_price = Decimal(data.get("stop_price"))
-
-    for ib_order, contract, orderState in ib._orders_by_pid.values():
-        if ib_order.orderRef == local_id:
-            cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
-            ib_order.auxPrice = stop_price
-            if ib_order.action == "BUY":
-                ib_order.lmtPrice = stop_price + Decimal(0.25)
-            else:
-                ib_order.lmtPrice = stop_price - Decimal(0.25)
-            ib.placeOrder(ib_order.orderId, contract, ib_order)
-
+        if permId and permId in self._orders_by_pid:
+            # TODO: для активного ордера проверить время его получения
+            order, contract, state = self._orders_by_pid[permId]
+        else:
+            log.error(f"Order not found, {permId}")
             return
 
-    log.error(f"Order not found: {data}")
+        cprint(
+            f"OrderStatus: oId: {orderId}, pId: {permId}, status: {state.status} >> {status}, "
+            f"fill_pr: {av_fill_price}, filled: {filled}, remaining: {remaining}, "
+            f"price: {order.lmtPrice}, held: {whyHeld}",
+            "red",
+        )
 
+        # Обновление статуса ордера в кэше
+        state.status = status
+        self._orders_by_pid[permId] = order, contract, state
 
-def cancel_order(ib, data):
-    local_id = data.get("local_id")
+        # TODO: закешировать?
+        account = Account.objects.get(uid=order.account)
 
-    inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
+        with transaction.atomic():
+            # Контракт достается из базы или создается
+            try:
+                db_contract = Contract.objects.get(conid=contract.conId)
+            except Contract.DoesNotExist:
+                log.warn(f"Create new contract {contract.conId}")
+                db_contract = Contract.from_ib(contract)
+                db_contract.save()
 
-    # FIXME: _orders_by_pid обновляется в openOrder и не ловит состояние canceled
-    for ib_order, contract, orderState in ib._orders_by_pid.values():
-        if ib_order.orderRef == local_id and orderState.status not in inactive:
-            cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
-            ib.cancelOrder(ib_order.orderId, "")
+            try:
+                # Два варианта:
+                # - ордер создан на стороне IB, мы сразу знаем permId
+                # - ордер создан через базу и лежит там без permId
+                # Про ref нужно понимать, что чужие ref могут быть не уникальными.
+                # Если в ref лежит наш идентификатор, то нужно сначала искать ордер
+                # в базе по нему. Если не нашлось, то поискать по permId.
+
+                cprint(f"Order: perm: {order.permId}, ref: {order.orderRef}", "yellow")
+
+                db_order = None
+
+                if BOT_ID_PREFIX and BOT_ID_PREFIX in str(order.orderRef):
+                    try:
+                        db_order = Order.objects.get(local_id=order.orderRef)
+                        db_order.order_id = order.permId  # сохранить себе permId
+                    except Order.DoesNotExist:
+                        log.warn(f"Bot order not found in DB: {order.orderRef}")
+
+                # Ордер не из бота или не нашелся
+                if not db_order:
+                    db_order = Order.objects.get(order_id=order.permId)
+
+                db_order.amount = order.totalQuantity
+                db_order.limit_price = order.lmtPrice
+
+            except Order.DoesNotExist:
+                # Если ордера всё еще нет в базе - создать
+                db_order = Order.from_ib(order, account, db_contract, state)
+
+            log.info(f"Order in DB {db_order}")
+
+            # Используется последнее известное значение позиции контракта
+            try:
+                known_ib_position, avg_price = self._positions_by_conid[contract.conId]
+            except KeyError:
+                known_ib_position, avg_price = 0, None
+
+            # Редактирование или создание позиции
+            try:
+                # TODO: не редактировать, если не было изменений
+                # orderStatus возникает при редактировании цены ордера,
+                # поэтому часто это не связано с изменением позиции.
+                db_position = Position.objects.get(
+                    account=account, contract=db_contract
+                )
+                if db_position.amount != known_ib_position:
+                    cprint(f"Pos: {db_position.amount} -> {known_ib_position}", "green")
+                    db_position.amount = known_ib_position
+                    db_position.avg_price = avg_price
+                    db_position.save()
+            except Position.DoesNotExist:
+                cprint(f"Pos NEW: {known_ib_position}", "green")
+                db_position = Position.from_ib(
+                    account, db_contract, known_ib_position, avg_price
+                )
+                db_position.save()
+
+            db_order.avg_fill_price = av_fill_price
+            db_order.filled = filled
+            db_order.status = status
+            db_order.save()
+
+            action = {"types": ["order", "position"]}
+            a = self.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+            log.info(f"Redis sync-message: {action}, {a}")
+
+    #################################
+
+    def process_bot_action(self, message):
+        data = json.loads(message.get("data").decode())
+        log.info(colored(f"message.data: {data}", "yellow"))
+
+        if data.get("action") == "create":
+            self.create_order(data)
             return
 
-    log.error(f"Order not found: {data}")
+        if data.get("action") == "update":
+            self.update_order(data)
+            return
+
+        if data.get("action") == "cancel":
+            self.cancel_order(data)
+            return
+
+        log.error(f"Unknown bot action: {message}")
+
+    def create_order(self, data):
+        # ib_contract - нужен для отправки ордера в IB - может ли быть без conid?
+        # db_contract - нужен для сохранения ордера в базе
+
+        sid = data["sid"]
+
+        ib_contract = self.contract_for_sid(sid)
+
+        print("ib_contract", ib_contract)
+
+        # FIXME: это можно не делать, если хранить SID в базе
+        cd = self.get_contract_details(ib_contract)[0]
+
+        db_account = Account.objects.get(uid=self.account_id)
+        db_contract = Contract.objects.get(conid=cd.contract.conId)
+
+        print("instrument", db_contract)
+
+        oid = self.nextValidOrderId
+        self.nextValidOrderId += 1
+
+        stop_price = float(data.get("stop_price"))
+
+        amount = Decimal(data.get("amount"))
+        action = "BUY" if amount > 0 else "SELL"
+        side = Order.Side.buy if amount > 0 else Order.Side.sell
+
+        local_id = data.get("local_id")
+
+        # Отправить ордер в TWS
+        ib_order = IBOrder()
+        ib_order.orderId = oid
+        ib_order.orderRef = local_id
+        ib_order.action = action
+        ib_order.totalQuantity = abs(amount)
+
+        # order.goodTillDate = "20200923 15:13:20 EST"
+        # order.tif = "GTD"
+
+        # ib_order.orderType = "MKT"
+        # order = Order.market_order(db_account, db_contract, side, abs(amount))
+
+        ib_order.orderType = "STP LMT"
+        ib_order.outsideRth = True
+        ib_order.auxPrice = stop_price
+        if ib_order.action == "BUY":
+            ib_order.lmtPrice = stop_price + 0.25
+        else:
+            ib_order.lmtPrice = stop_price - 0.25
+
+        db_order = Order.stop_order(db_account, db_contract, side, abs(amount))
+
+        cprint(f"ib_order: {ib_order}", "blue")
+
+        # создать ордер в базе данных
+        db_order.local_id = local_id
+        db_order.save()
+
+        self.placeOrder(oid, ib_contract, ib_order)
+
+        db_order.status = "Sent"
+        db_order.save(update_fields=["status"])
+
+    def update_order(self, data):
+        local_id = data.get("local_id")
+        stop_price = Decimal(data.get("stop_price"))
+
+        for ib_order, contract, orderState in self._orders_by_pid.values():
+            if ib_order.orderRef == local_id:
+                cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
+                ib_order.auxPrice = stop_price
+                if ib_order.action == "BUY":
+                    ib_order.lmtPrice = stop_price + Decimal(0.25)
+                else:
+                    ib_order.lmtPrice = stop_price - Decimal(0.25)
+                self.placeOrder(ib_order.orderId, contract, ib_order)
+
+                return
+
+        log.error(f"Order not found: {data}")
+
+    def cancel_order(self, data):
+        local_id = data.get("local_id")
+
+        inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
+
+        # FIXME: _orders_by_pid обновляется в openOrder и не ловит состояние canceled
+        for ib_order, contract, orderState in self._orders_by_pid.values():
+            if ib_order.orderRef == local_id and orderState.status not in inactive:
+                cprint(f"ib_order: {ib_order} {orderState.status}", "blue")
+                self.cancelOrder(ib_order.orderId, "")
+                return
+
+        log.error(f"Order not found: {data}")
 
 
 ##################
+# инициализация и синхронизация
+# TODO: разбить initial_sync на кусочки поменьше
 
 
 def get_executions(ib):
@@ -249,136 +372,13 @@ def get_executions(ib):
         Trade.objects.bulk_create(trades_to_create)
 
         action = {"types": ["trade"]}
-        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
         log.info(f"Redis sync-message: {action}, {a}")
 
     # Пересчитать цены ордеров, для которых загружены сделки.
     # updated_orders
     # Получить сделки для этих ордеров, посчитать, сохранить.
     # trades = Trade.objects.filter(account=account)
-
-
-def orderStatus(
-    orderId,
-    status: str,
-    filled: Decimal,
-    remaining: Decimal,
-    avgFillPrice: float,
-    permId: int,
-    parentId: int,
-    lastFillPrice: float,
-    clientId: int,
-    whyHeld: str,
-    mktCapPrice: float,
-):
-    """
-    Что за хрень здесь происходит?
-
-    Событие orderStatus приходит, когда меняется статус ордера,
-    и после любых изменений ордера. Но событие не содержит сам ордер,
-    поэтому ордер добывается из сохраненных событий openOrder.
-
-    В openOrder приходят данные ордера и контракта, но нет
-    оставшегося количества. Если мы отслеживаем исполнение,
-    то нет смысла там сохранять ордер.
-    """
-
-    av_fill_price = avgFillPrice if avgFillPrice < 10**10 else None
-
-    if permId and permId in APP._orders_by_pid:
-        # TODO: для активного ордера проверить время его получения
-        order, contract, state = APP._orders_by_pid[permId]
-    else:
-        log.error(f"Order not found, {permId}")
-        return
-
-    cprint(
-        f"OrderStatus: oId: {orderId}, pId: {permId}, status: {state.status} >> {status}, "
-        f"fill_pr: {av_fill_price}, filled: {filled}, remaining: {remaining}, "
-        f"price: {order.lmtPrice}, held: {whyHeld}",
-        "red",
-    )
-
-    # Обновление статуса ордера в кэше
-    state.status = status
-    APP._orders_by_pid[permId] = order, contract, state
-
-    # TODO: закешировать?
-    account = Account.objects.get(uid=order.account)
-
-    with transaction.atomic():
-        # Контракт достается из базы или создается
-        try:
-            db_contract = Contract.objects.get(conid=contract.conId)
-        except Contract.DoesNotExist:
-            log.warn(f"Create new contract {contract.conId}")
-            db_contract = Contract.from_ib(contract)
-            db_contract.save()
-
-        try:
-            # Два варианта:
-            # - ордер создан на стороне IB, мы сразу знаем permId
-            # - ордер создан через базу и лежит там без permId
-            # Про ref нужно понимать, что чужие ref могут быть не уникальными.
-            # Если в ref лежит наш идентификатор, то нужно сначала искать ордер
-            # в базе по нему. Если не нашлось, то поискать по permId.
-
-            cprint(f"Order: perm: {order.permId}, ref: {order.orderRef}", "yellow")
-
-            db_order = None
-
-            if BOT_ID_PREFIX and BOT_ID_PREFIX in str(order.orderRef):
-                try:
-                    db_order = Order.objects.get(local_id=order.orderRef)
-                    db_order.order_id = order.permId  # сохранить себе permId
-                except Order.DoesNotExist:
-                    log.warn(f"Bot order not found in DB: {order.orderRef}")
-
-            # Ордер не из бота или не нашелся
-            if not db_order:
-                db_order = Order.objects.get(order_id=order.permId)
-
-            db_order.amount = order.totalQuantity
-            db_order.limit_price = order.lmtPrice
-
-        except Order.DoesNotExist:
-            # Если ордера всё еще нет в базе - создать
-            db_order = Order.from_ib(order, account, db_contract, state)
-
-        log.info(f"Order in DB {db_order}")
-
-        # Используется последнее известное значение позиции контракта
-        try:
-            known_ib_position, avg_price = APP._positions_by_conid[contract.conId]
-        except KeyError:
-            known_ib_position, avg_price = 0, None
-
-        # Редактирование или создание позиции
-        try:
-            # TODO: не редактировать, если не было изменений
-            # orderStatus возникает при редактировании цены ордера,
-            # поэтому часто это не связано с изменением позиции.
-            db_position = Position.objects.get(account=account, contract=db_contract)
-            if db_position.amount != known_ib_position:
-                cprint(f"Pos: {db_position.amount} -> {known_ib_position}", "green")
-                db_position.amount = known_ib_position
-                db_position.avg_price = avg_price
-                db_position.save()
-        except Position.DoesNotExist:
-            cprint(f"Pos NEW: {known_ib_position}", "green")
-            db_position = Position.from_ib(
-                account, db_contract, known_ib_position, avg_price
-            )
-            db_position.save()
-
-        db_order.avg_fill_price = av_fill_price
-        db_order.filled = filled
-        db_order.status = status
-        db_order.save()
-
-        action = {"types": ["order", "position"]}
-        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-        log.info(f"Redis sync-message: {action}, {a}")
 
 
 def initial_sync(ib):
@@ -440,24 +440,25 @@ def initial_sync(ib):
     for contract, order, state in ib_orders:
         # print("IB ORDER", order, ">", order.orderRef, state.status)
 
-        if order.permId:
-            if order.permId not in orders_by_id:
-                c = contracts_by_id[contract.conId]
-                orders_to_create.append(Order.from_ib(order, account, c, state))
-            else:
-                # TODO: проверить изменения ордеров из базы, которые не в финальном состоянии
-                # FIXME: сделать нормально
-                db_order = orders_by_id[order.permId]
-                if state.status != db_order.status:
-                    cprint(f"UPDATE in DB {order} {orders_by_id[order.permId]}", "magenta")
-                    db_order.status = state.status
-                    db_order.save(update_fields=["status"])
+        if not order.permId:
+            continue
+
+        if db_order := orders_by_id.get(order.permId):
+            # TODO: проверить изменения ордеров из базы, которые не финализированы
+            # FIXME: сделать нормально
+            if state.status != db_order.status:
+                cprint(f"UPDATE in DB {order} {orders_by_id[order.permId]}", "magenta")
+                db_order.status = state.status
+                db_order.save(update_fields=["status"])
+        else:
+            c = contracts_by_id[contract.conId]
+            orders_to_create.append(Order.from_ib(order, account, c, state))
 
     if orders_to_create:
         Order.objects.bulk_create(orders_to_create)
 
         action = {"types": ["order"]}
-        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
         log.info(f"Redis sync-message: {action}, {a}")
 
     ############
@@ -496,7 +497,7 @@ def initial_sync(ib):
         Position.objects.bulk_update(positions_to_update, ["avg_price", "amount"])
 
         action = {"types": ["position"]}
-        a = redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
+        a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
         log.info(f"Redis sync-message: {action}, {a}")
 
     log.info("Check initial_sync")
@@ -517,6 +518,9 @@ def initial_sync(ib):
         raise Exception("Executions updated")
 
 
+############################
+
+
 class Command(BaseCommand):
     """
     Синхронизация состояния базы с IB через TWS.
@@ -526,9 +530,16 @@ class Command(BaseCommand):
         parser.add_argument("--config", type=str, dest="config", default=DEF_CONFIG)
 
     def handle(self, **kwargs):
-        app = None
+
+        # TODO: настроить из конфига
+        redis_client = redis.Redis()
+        pubsub = redis_client.pubsub()
+
+        ib = IBSyncExtended(redis_client)
         thread = None
 
+        # NOTE: не уверен, что правильно подписываться
+        # снаружи, но "event loop" находится здесь.
         pubsub.subscribe("BOT_ACTIONS")
 
         try:
@@ -536,35 +547,35 @@ class Command(BaseCommand):
                 go = datetime.now().second % 10 == 0
                 go_2 = datetime.now().second % 13 == 0
 
-                # Обработка команд от бота: создание и редактирование ордеров
-                try:
-                    message = pubsub.get_message(timeout=0.1)
-                    if message and message.get("type") == "message":
-                        process_bot_action(app, message)
-                except Exception as e:
-                    log.error(f"Redis pubsub get_message error: {e}")
-                    log.exception(e)
-                    pass
+                # Обработка команд от бота
+                if ib and ib.isConnected():
+                    try:
+                        message = pubsub.get_message(timeout=0.1)
+                        if message and message.get("type") == "message":
+                            ib.process_bot_action(message)
+                    except Exception as e:
+                        log.error(f"Redis pubsub get_message error: {e}")
+                        log.exception(e)
+                        pass
 
                 # регулярные запросы
-                if go_2 and app and app.isConnected():
+                if go_2 and ib and ib.isConnected():
                     try:
-                        get_executions(app)
+                        get_executions(ib)
                     except Exception as e:
                         log.error(f"Get executions error: {e}")
 
                     time.sleep(1)
 
                 # Переконнект
-                if not app or go and not app.isConnected():
-                    app = IBSync()
+                if not ib or go and not ib.isConnected():
+                    # NOTE: плохо, что приходится пересоздавать объект
+                    ib = IBSyncExtended(redis_client)
+
                     # TODO: брать из настроек
-                    app.connect("127.0.0.1", 7497, 0)
+                    ib.connect("127.0.0.1", 7497, 0)
 
-                    log.info(f"Server Version: {app.decoder.serverVersion}")
-
-                    global APP
-                    APP = app
+                    log.info(f"Server Version: {ib.decoder.serverVersion}")
 
                     if thread:
                         try:
@@ -573,17 +584,17 @@ class Command(BaseCommand):
                             raise
 
                     # Endless message loop
-                    thread = IBThread(app)
+                    thread = IBThread(ib)
                     thread.start()
 
                     # Не соединилось, попробовать еще раз
-                    if not app.isConnected():
+                    if not ib.isConnected():
                         time.sleep(1)
                         continue
 
                     # Check if the API is connected via orderid
                     while True:
-                        if isinstance(app.nextValidOrderId, int):
+                        if isinstance(ib.nextValidOrderId, int):
                             cprint(f"Connected", "green")
                             break
                         time.sleep(0.5)
@@ -592,18 +603,15 @@ class Command(BaseCommand):
                     while True:
                         try:
                             with transaction.atomic():
-                                initial_sync(app)
+                                initial_sync(ib)
                                 break
                         except Exception as e:
                             log.error(f"Initial sync error: {e}")
                             log.exception(e)
                             time.sleep(3)
 
-                    # Начать real-time обработку сообщений orderStatus
-                    app.orderStatus = orderStatus
-
-                    app.pnl = pnl
-                    app.updatePortfolio = updatePortfolio
+                    # Начать real-time обработку сообщений
+                    # ib.real_time = True
 
                     # Нет ничего про профит, поэтому все равно придется брать AccountUpdates
                     # ib.reqAccountSummary(ib.r_id, "All", "NetLiquidation,InitMarginReq")
@@ -612,22 +620,22 @@ class Command(BaseCommand):
                     # С этой хренью новые ордеры из TWS получают id от данного клиента.
                     # Работает только для подключения с ClientId = 0.
                     # Пока непонятно, что с ордерами из мобильного приложения, например.
-                    app.reqAutoOpenOrders(True)
+                    ib.reqAutoOpenOrders(True)
                     time.sleep(0.1)
 
                     # это подписка, но её нельзя отменить
-                    app.reqAccountUpdates(True, app.account_id)
+                    ib.reqAccountUpdates(True, ib.account_id)
                     time.sleep(0.1)
 
                     # На это нельзя подписываться много раз, заебет.
                     # Но при одной подписке оно реально приходит на каждое изменение.
                     # Выглядит удобно.
-                    app.reqPnL(app.r_id, app.account_id, "")
+                    ib.reqPnL(ib.r_id, ib.account_id, "")
                     time.sleep(0.1)
 
                     # Получить исторические сделки, посчитать av_fill_price
                     try:
-                        get_executions(app)
+                        get_executions(ib)
                     except Exception as e:
                         log.error(f"Get executions error: {e}")
 
@@ -640,5 +648,5 @@ class Command(BaseCommand):
             log.info("Stop\n")
 
         finally:
-            if app:
-                app.disconnect()
+            if ib:
+                ib.disconnect()
