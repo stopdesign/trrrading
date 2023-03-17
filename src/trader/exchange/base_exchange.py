@@ -4,7 +4,7 @@ from copy import copy
 from decimal import ROUND_DOWN, Decimal
 from typing import Callable
 
-from trader.data_types import Bar, BidAsk, Order
+from trader.data_types import Bar, BidAsk, Order, Trade
 
 log = logging.getLogger("base_exchange")
 
@@ -21,6 +21,7 @@ class BaseExchange:
         self.positions = {}
         self.orders = []
         self.account = {}
+        self.ticks = {}
         self.quotes = {}  # последнее значение bid-ask
         self.bars = defaultdict(list)  # market data bar including indicators values
         self.dt_last = None
@@ -28,6 +29,8 @@ class BaseExchange:
 
     # NOTE: код из старого класса Exchange
     def get_price(self, symbol: str, side: str) -> Decimal:
+        if tick := self.ticks.get(symbol):
+            return tick["price"]
         if quotes := self.quotes.get(symbol):
             if side == "sell":
                 return quotes["bid"]
@@ -62,6 +65,21 @@ class BaseExchange:
     def on_bar(self, dt, bar: Bar):
         self.dt_last = dt
         self.bars[bar.symbol].append(copy(bar))
+
+    def add_tick(self, dt, symbol, payload):
+        last_tick = self.ticks.get(symbol)
+        if last_tick and last_tick["dt"] > dt:
+            return
+
+        if symbol not in self.ticks:
+            self.ticks[symbol] = {}
+
+        self.ticks[symbol]["price"] = Decimal(payload.price)
+        self.ticks[symbol]["dt"] = dt
+        self.dt_last = dt
+
+    def on_tick(self, dt, tick: Trade):
+        self.add_tick(dt, tick.symbol, tick)
 
     def get_net_value(self) -> Decimal:
         net = Decimal(self.account.get("net_value", "NaN"))

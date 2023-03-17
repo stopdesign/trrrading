@@ -29,7 +29,7 @@ class ChBr(BaseStrategy):
     def on_bar(self, bar: Bar):
         pass
 
-    def on_trade(self, trade: Trade):
+    def on_tick(self, trade: Trade):
         """
         Проверить сигнал стратегии при появлении новой цены.
         """

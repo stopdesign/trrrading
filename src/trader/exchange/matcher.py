@@ -65,16 +65,25 @@ class LocalMatcher:
             price = self.exchange.get_price(instrument, side)  # "mid"
 
         if order.type == "limit":
-            pass
+            price = self.exchange.get_price(instrument, side)
+            min_error = 0.01 #TODO get instrument tick
+            if price:
+                if side == "buy" and order.limit_price < price:
+                    process_order = True
+                if side == "sell" and price < order.limit_price:
+                    process_order = True
 
         if order.type == "stop":
             # TODO: сделать нормальный алгоритм
             price = self.exchange.get_price(instrument, "mid")
+            # log.info(f"price: {price}, order_price: {order.stop_price}, side: {side}")
             if order.amount > 0 and price > order.stop_price:
+                # self.exchange.place_order(Order(order.instrument, type="market", amount=order.amount), delay_execution=True)
                 process_order = True
                 # price = Decimal(order.stop_price)
                 # price = (Decimal(order.stop_price) + Decimal(price)) / 2
             if order.amount < 0 and price < order.stop_price:
+                # self.exchange.place_order(Order(order.instrument, type="market", amount=order.amount), delay_execution=True)
                 process_order = True
                 # price = Decimal(order.stop_price)
                 # price = (Decimal(order.stop_price) + Decimal(price)) / 2

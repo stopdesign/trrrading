@@ -51,5 +51,5 @@ class BaseStrategy:
     def on_quote(self, data):
         pass
 
-    def on_trade(self, data):
+    def on_tick(self, data):
         pass

@@ -24,7 +24,8 @@ class EventManager:
     def __init__(self, on_event: Callable):
         self.on_event = on_event
         self.dt_last = None
-        self.quotes = False  # в данных есть quotes
+        #TODO может, сделать флаг про то, чтобы bar разбивать или на quotes, или на ticks?
+        self.quotes = True  # в данных есть quotes, их не надо дополнительно генерировать
 
         self.prev_bar_dt = datetime(2000, 1, 1)
         self.in_the_gap = True
@@ -99,7 +100,7 @@ class EventManager:
             quote = BidAsk.from_redis_quote(payload)
             self.on_event("quote", quote.date, quote.symbol, quote)
 
-        # Это single trade
+        # Это single tick/trade
         elif payload.get("price"):
             dt = payload["dt"]
             symbol = payload["sid"]
@@ -108,7 +109,7 @@ class EventManager:
                 symbol=symbol,
                 price=Decimal(payload["price"]),
             )
-            self.on_event("trade", dt, symbol, trade)
+            self.on_event("tick", dt, symbol, trade)
 
         # Это trade bar
         elif payload.get("o"):
@@ -129,7 +130,7 @@ class EventManager:
             #         price=trade.price,
             #         rth=trade.rth,
             #     )
-            #     self.on_event("trade", bar.date, bar.symbol, trade)
+            #     self.on_event("tick", bar.date, bar.symbol, trade)
 
             # # Теперь bar преобразуется в одну сделку с ценой close
             # trade = Trade(
@@ -138,6 +139,6 @@ class EventManager:
             #     price=bar.close,
             #     rth=bar.rth,
             # )
-            # self.on_event("trade", bar.date, bar.symbol, trade)
+            # self.on_event("tick", bar.date, bar.symbol, trade)
 
             self.on_event("bar", bar.date, bar.symbol, bar)

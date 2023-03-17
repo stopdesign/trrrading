@@ -87,7 +87,7 @@ class ChBrStop(BaseStrategy):
                 target_amount = +int(10_000 / ub)
                 self.stop_order(target_amount - current_amount, ub)
 
-    def on_trade(self, trade: Trade):
+    def on_tick(self, trade: Trade):
         """
         Проверить сигнал стратегии при появлении новой цены.
         """

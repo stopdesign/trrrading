@@ -127,10 +127,11 @@ class Trader:
             # self.exchange.process_orders()
 
         # TODO: переименовать в tick
-        if event == "trade":
+        if event == "tick":
+            self.exchange.on_tick(dt, payload)
             # 3. Передать trade в стратегии
             for strategy in self.strategies:
-                strategy.on_trade(copy(payload))
+                strategy.on_tick(copy(payload))
 
             # 4. Запустить обработку ордеров
             self.exchange.process_orders()

@@ -1,11 +1,13 @@
 import logging
 from collections import defaultdict
-from datetime import datetime
+from copy import deepcopy
+from datetime import datetime, timedelta
 from typing import Callable
 
 from .event_manager import EventManager
 from .market_calendar import MarketCalendar
 from .sources.base_source import BaseSource
+from ..data_types import Bar
 
 log = logging.getLogger("data_provider")
 
@@ -59,7 +61,7 @@ class DataProvider:
 
         self.last_processed_dt = defaultdict(lambda: datetime.min)
 
-    def on_market_event(self, payload):
+    def on_market_event(self, payload, split_bar=False):
         """
         Обработка данных из события, передача в event_manager
         """
@@ -69,8 +71,9 @@ class DataProvider:
 
             dt, symbol = payload["dt"], payload["sid"]
 
+            is_bar = "o" in payload
             # Для OHLC проверить, что эти данные новее всех уже обработанных
-            if "o" in payload:
+            if is_bar:
                 if self.last_processed_dt[symbol] >= dt:
                     log.warning(f"Interval has been processed: {symbol}, {dt}")
                     return
@@ -78,6 +81,14 @@ class DataProvider:
 
             payload["rth"] = self.schedule.is_rth(symbol, dt)
             if payload["rth"]:
+                if is_bar and split_bar:
+                    bar = Bar.from_redis(payload)
+                    o, h, l, c = bar.open, bar.high, bar.low, bar.close
+                    prices = [o, h, l, c] if (h - o) < (h - l) else [o, l, h, c]
+                    #double check t in case bar.date means smth different
+                    trades = [deepcopy(payload) | {'price': p, 'dt': bar.date +  timedelta(seconds=t)} for p, t in zip(prices, [1, 20, 40, 60])]
+                    for trade_payload in trades:
+                        self.event_manager.notify(trade_payload)
                 # Формат данных, проверка large gap и вызов Trader.on_event
                 self.event_manager.notify(payload)
         else:
@@ -106,7 +117,7 @@ class DataProvider:
         log.info(f"backtest data length: {len(records)}")
 
         for ts, symbol, payload in records:
-            self.on_market_event(payload)
+            self.on_market_event(payload, split_bar=True)
 
     def replay(self, dt_start, dt_end):
         """
