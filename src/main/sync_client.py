@@ -63,7 +63,7 @@ class SyncClient:
     def update_broker_data(self):
         # обновить данные в self.positions, self.account...
         db_positions = DBPosition.objects.filter(account=self.db_account)
-        db_positions = db_positions.order_by('-id')[:100]
+        db_positions = db_positions.order_by("-id")[:100]
 
         for key in list(self.positions.keys()):
             self.positions.pop(key)
@@ -79,7 +79,7 @@ class SyncClient:
         self.orders.clear()
         # вытащить только актуальные ордеры, а не всю историю
         db_orders = DBOrder.objects.filter(account=self.db_account)
-        db_orders = db_orders.order_by('-id')[:10]
+        db_orders = db_orders.order_by("-id")[:10]
 
         for order in db_orders:
             amount = order.amount

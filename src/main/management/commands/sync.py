@@ -575,14 +575,6 @@ class Command(BaseCommand):
                     # TODO: брать из настроек
                     ib.connect("127.0.0.1", 7497, 0)
 
-                    log.info(f"Server Version: {ib.decoder.serverVersion}")
-
-                    if thread:
-                        try:
-                            thread.join()
-                        except:
-                            raise
-
                     # Endless message loop
                     thread = IBThread(ib)
                     thread.start()
@@ -594,7 +586,7 @@ class Command(BaseCommand):
 
                     # Check if the API is connected via orderid
                     while True:
-                        if isinstance(ib.nextValidOrderId, int):
+                        if ib.nextValidOrderId > 0:
                             cprint(f"Connected", "green")
                             break
                         time.sleep(0.5)

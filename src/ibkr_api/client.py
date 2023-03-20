@@ -1,9 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract
-from ibapi.common import TickerId
-from ibapi.execution import ExecutionFilter
 import threading
 from termcolor import colored, cprint
 import logging
@@ -17,16 +15,22 @@ class IBClient(EWrapper, EClient):
     def __init__(self):
         EClient.__init__(self, self)
         self.order_status = {}
-        self.nextValidOrderId = None
+        self.nextValidOrderId = -1
         self.account_id = None
         self.values = {}
+        self.tws_time = datetime.min
 
     def connectAck(self):
+        """
+        Callback initially acknowledging connection attempt.
+        Connection handshake not complete until nextValidID is received.
+        """
         super().connectAck()
-        log.warn("Connected")
+        log.warn("Connection attempt...")
 
     def connectionClosed(self):
         super().connectionClosed()
+        self.nextValidOrderId = -1
         log.warn("connectionClosed")
 
     def nextValidId(self, orderId):
@@ -53,6 +57,7 @@ class IBClient(EWrapper, EClient):
     def updateAccountTime(self, timestamp: str):
         pass
         # super().updateAccountTime(timestamp)
+        # TODO: проверить, можно ли использовать для группировки приходящих updateAccountValue
         # cprint(f"AccountTime: {timestamp}", "yellow")
 
     def orderBound(self, orderId: int, apiClientId: int, apiOrderId: int):
@@ -60,9 +65,8 @@ class IBClient(EWrapper, EClient):
         cprint(f"OrderBound. OrderId: {orderId}, ApiClientId: {apiClientId}, ApiOrderId: {apiOrderId}", "blue")
 
     def currentTime(self, time):
-        dt = datetime.utcfromtimestamp(time)
-        # .strftime('%Y-%m-%d %H:%M:%S')
-        print(f'Current TWS time: {dt} UTC')
+        self.tws_time = datetime.utcfromtimestamp(time)
+        # print(f'Current TWS time: {self.tws_time} UTC')
 
     def pnl(self, reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
         cprint(f"Account dailyPnL: {dailyPnL}, unrealizedPnL: {unrealizedPnL}, realizedPnL: {realizedPnL}", "cyan")

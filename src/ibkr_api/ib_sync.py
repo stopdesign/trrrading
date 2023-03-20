@@ -77,8 +77,16 @@ class IBSync(IBClient):
 
         contract = Contract()
 
+        # crypto
+        if "PAXOS_" in sid:
+            exch_str, security_str = sid.split("_")
+            contract.secType = "CRYPTO"
+            contract.symbol = security_str
+            contract.exchange = exch_str
+            contract.currency = "USD"
+
         # stocks
-        if sid.count("_") == 1:
+        elif sid.count("_") == 1:
             exch_str, security_str = sid.split("_")
             exch_str = exch_str.replace("NASDAQ", "ISLAND")
             contract.secType = "STK"
@@ -87,7 +95,8 @@ class IBSync(IBClient):
             contract.primaryExchange = exch_str
             contract.currency = "USD"
 
-        if sid.count("_") == 2:
+        # futures
+        elif sid.count("_") == 2:
             exch_str, security_str, exp_str = sid.split("_")
             contract.secType = "FUT"
             contract.symbol = security_str
@@ -259,6 +268,9 @@ class IBSync(IBClient):
         You can also provide yyyymmddd-hh:mm:ss time is in UTC.
         Note that there is a dash between the date and time in UTC notation.
         """
+        if contract.secType == "CRYPTO" and data_type == "TRADES":
+            data_type = "AGGTRADES"
+
         r_id = self.r_id
         self._historical_data = Results(r_id)
         self.reqHistoricalData(

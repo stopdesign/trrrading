@@ -109,8 +109,6 @@ class IBSyncData(IBSync):
 
 def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
 
-    symbol, exchange = str(symbol).upper().split(".")
-
     # FIXME: валидировать тип данных для контракта
 
     # Разные заголовки и переменные для разных типов данных
@@ -126,6 +124,8 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
     else:
         log.error(f"Unknown data_type: {data_type}")
         return
+
+    symbol, exchange = str(symbol).upper().split(".")
 
     # Абстрактное описание контракта, не включающее дату экспирации
     base_contract = IbContract(symbol, secType="CONTFUT", exchange=exchange)

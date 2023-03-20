@@ -94,12 +94,10 @@ class ChBrStop(BaseStrategy):
             return
 
     def on_order_event(self, payload):
-        in_tws = ["PreSubmitted", "Submitted"]
-        too_old = datetime.now(timezone.utc) - timedelta(minutes=10)
+        in_tws = ["Submitted"]  # stop-order в состоянии triggered, например
+        too_old = datetime.now(timezone.utc) - timedelta(minutes=3)
 
-        # TODO: отменять только тот ордер, цена которого лучше рынка
         for o in self.exchange.orders:
-            if o.status in in_tws:
-                # print(">>>>", o.local_id, o.created_at, too_old)
-                if o.created_at and o.created_at < too_old:
-                    self.exchange.cancel_order(o)
+            if o.status in in_tws and o.created_at and o.created_at < too_old:
+                self.exchange.cancel_order(o)
+
