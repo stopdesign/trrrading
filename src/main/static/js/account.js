@@ -39,10 +39,16 @@ const Account = ({ account }) => {
     fetchData()
   }, [])
 
+  const connections = values["connections"] || []
+
   return html`
-      <div className="account_panel">
+      <div class=account_panel>
           <p>Account:  ${values.uid}</p>
-          <p>Last Connected:  ${values["last_connected"]}</p>
+          <div class=connections>
+            ${connections.map(con => html`<div key=${con[0]}>
+                <b>${con[0]}</b> - <span class="status status-${con[1]}">${con[1]}</span>
+              </div>`)}
+          </div>
           <br/>
           <p>Net Value:  ${values["net_value"]}</p>
           <p>Margin Used:  ${values["margin_used"]}</p>

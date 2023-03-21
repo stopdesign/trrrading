@@ -754,7 +754,7 @@ class Tradis:
                 if delay > 30:
                     sid = req["sid"]
                     rt = req["request_type"]
-                    log.warning(f"Stale: {r_id}, {sid}, {rt}, delay: {delay:0.2f}")
+                    log.warning(f"Stale: {r_id}, {sid}, {rt}, delay: {delay:0.0f}")
 
         # Нужно взять список того, на что нужно подписаться.
         # Проверить каждый пункт по активным подпискам. Если их нет - подписать.
@@ -792,9 +792,11 @@ class Tradis:
         # print(f"maintain OK, delay: {delay}")
 
         # Вывести строку статусов, если с прошлого раза они изменились
-        if self.last_known_connections_status != str(self.ib.connections):
+        str_connections = json.dumps(self.ib.connections)
+        if self.last_known_connections_status != str_connections:
             self.print_connection_status()
-            self.last_known_connections_status = str(self.ib.connections)
+            self.last_known_connections_status = str_connections
+            self.rc.set("connections", str_connections)
 
         self.request_tws_time()
 
@@ -871,7 +873,7 @@ class Tradis:
                     dt = datetime.utcnow()
                     # Это новая минута и прошло достаточно секунд от начала
                     if dt.minute != prev_dt.minute and dt.second > 30:
-                        log.info("CHECK DataMiner <<<<<<<<<<")
+                        log.info("*** DataMiner update instruments ***")
                         prev_dt = dt
                         try:
                             dm = DataMiner(self.ib, self.rc)

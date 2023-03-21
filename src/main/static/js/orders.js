@@ -43,6 +43,7 @@ const draw_order = function (ac, order) {
 
 const create_chart = (el) => {
   // noinspection JSPotentiallyInvalidConstructorUsage
+  // https://github.com/serdimoa/charting/blob/master/Featuresets.md
   window.tv = new TradingView.widget({
     debug: false,
     fullscreen: false,
@@ -52,13 +53,34 @@ const create_chart = (el) => {
     datafeed: new Datafeeds.UDFCompatibleDatafeed("/tv"),
     library_path: "/static/admin/js/charting_library/",
     locale: "en",
+    enabled_features: [
+      // "disable_resolution_rebuild",
+      "high_density_bars",
+    ],
     disabled_features: [
       "symbol_search_hot_key",
       "symbol_search",
       "left_toolbar",
       "control_bar",
       "edit_buttons_in_legend",
-      "header_widget",
+
+      // "chart_zoom", "chart_scroll",
+
+      "header_settings",
+      "header_compare",
+      "header_screenshot",
+      "header_fullscreen_button",
+      "header_undo_redo",
+      "header_indicators",
+      "header_symbol_search",
+      "compare_symbol",
+      "symbol_info",
+      "property_pages",
+      "display_market_status",
+      "remove_library_container_border",
+
+      "border_around_the_chart",
+
       "pane_context_menu",
       "scales_context_menu",
       "legend_context_menu",
@@ -69,6 +91,9 @@ const create_chart = (el) => {
     height: "500px",
     toolbar_bg: '#f4f7f9',
   });
+
+  // document.getElementById("tv_chart_container").contentDocument.body.style.fontFamily = "Tahoma";
+
 }
 
 
@@ -79,7 +104,7 @@ const Order = ({data, curOrder, setOrder}) => {
       >
           <td>${data["order_id"]}</td>
           <td>${data["local_id"]}</td>
-          <td>${data.symbol}</td>
+          <td>${data.sid}</td>
           <td>${data.side}</td>
           <td>${data.amount}</td>
           <td>${data.filled}</td>
@@ -178,7 +203,8 @@ const Orders = ({account, symbol}) => {
       const ac = window.tv.chart();
       const to = ac.getVisibleRange().to;
       ac.setVisibleRange(
-        {from: to - 3600 * 24 * 6, to: to},
+        // Сколько данных показывать по умолчанию
+        {from: to - 3600 * 12, to: to},
         {applyDefaultRightMargin: true}
       );
       setResized(true);
@@ -256,7 +282,7 @@ const Orders = ({account, symbol}) => {
                   <tr>
                       <td>order_id</td>
                       <td>local_id</td>
-                      <td>symbol</td>
+                      <td>instrument</td>
                       <td>side</td>
                       <td>amount</td>
                       <td>filled</td>

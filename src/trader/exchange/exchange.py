@@ -28,6 +28,7 @@ class Exchange(BaseExchange):
         self.sync_client.place_order(order)
 
     def update_order(self, order: Order, **kwargs):
+        # TODO: проверить, есть ли изменения параметров
         log.info(colored(f"UPDATE ORDER: {order} {kwargs}", "cyan"))
         self.sync_client.update_order(order, **kwargs)
 
@@ -36,12 +37,12 @@ class Exchange(BaseExchange):
         self.sync_client.cancel_order(order)
 
     def on_broker_update(self, payload):
-        log.info(f"Update broker data: {payload}")
-        self.sync_client.update_broker_data()
+        # log.info(f"Update broker data: {payload}")
+        self.sync_client.update_broker_data(payload)
 
-        # для каждого изменившегося ордера вызвать дернуть событие
+        # для каждого изменившегося ордера вызвать событие
         for order in self.orders:
-            # TODO: только при изменении ордера
+            # FIXME: только при изменении ордера
             self.on_event("order", dt=self.dt_last, payload=order)
 
     def process_orders(self):

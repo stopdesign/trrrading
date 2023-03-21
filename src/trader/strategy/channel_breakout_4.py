@@ -48,7 +48,7 @@ class ChBrStop(BaseStrategy):
 
     def set_or_change_stops(self):
         active = ["New", "Sent", "PreSubmitted", "Submitted"]
-        in_tws = ["PreSubmitted", "Submitted"]
+        in_tws = ["PreSubmitted"]  # у Submitted нельзя менять цену
 
         # как-то получить актуальный ордер
         # что делать, если есть два ордера?
@@ -66,23 +66,26 @@ class ChBrStop(BaseStrategy):
         # как-то получить позицию по данному инструменту
         position = self.exchange.positions[self.symbol]
 
+        ub = round(channel["ub"] / 0.25) * 0.25
+        lb = round(channel["lb"] / 0.25) * 0.25
+
         for order in orders:
             if order.status in in_tws:
                 if order.amount > 0:
-                    self.update_order(order, stop_price=channel["ub"])
+                    self.update_order(order, stop_price=ub)
                 if order.amount < 0:
-                    self.update_order(order, stop_price=channel["lb"])
+                    self.update_order(order, stop_price=lb)
 
         if not orders:
             if position.amount >= 0:
                 current_amount = position.amount
-                target_amount = -int(10_000 / channel["lb"])
-                self.stop_order(target_amount - current_amount, channel["lb"])
+                target_amount = -int(10_000 / lb)
+                self.stop_order(target_amount - current_amount, lb)
 
             if position.amount <= 0:
                 current_amount = position.amount
-                target_amount = +int(10_000 / channel["ub"])
-                self.stop_order(target_amount - current_amount, channel["ub"])
+                target_amount = +int(10_000 / ub)
+                self.stop_order(target_amount - current_amount, ub)
 
     def on_trade(self, trade: Trade):
         """
@@ -95,7 +98,7 @@ class ChBrStop(BaseStrategy):
 
     def on_order_event(self, payload):
         in_tws = ["Submitted"]  # stop-order в состоянии triggered, например
-        too_old = datetime.now(timezone.utc) - timedelta(minutes=3)
+        too_old = datetime.now(timezone.utc) - timedelta(minutes=5)
 
         for o in self.exchange.orders:
             if o.status in in_tws and o.created_at and o.created_at < too_old:

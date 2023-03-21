@@ -206,7 +206,15 @@ def bt_events(request):
 def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
-    last_connected = cache.get("last_connected", "---")[:19]
+
+    redis_client = redis.Redis(decode_responses=True)
+
+    try:
+        connections = json.loads(str(redis_client.get("connections")))
+        connections = list(connections.items())
+    except:
+        connections = []
+
     res = {
         "uid": account.uid,
         "daily_pnl": account.daily_pnl,
@@ -217,7 +225,7 @@ def account(request):
         "cash_value": account.cash_value,
         "ex_liq_sec": account.ex_liq_sec,
         "ex_liq_com": account.ex_liq_com,
-        "last_connected": last_connected,
+        "connections": connections,
     }
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
@@ -228,9 +236,8 @@ def orders(request):
     symbol = request.GET.get("symbol")
     res = []
     if symbol:
-        symbol = symbol.split(".")[0]
         try:
-            contract = Contract.objects.get(symbol=symbol)
+            contract = Contract.objects.get(sid=symbol)
             all_orders = Order.objects.filter(
                 account_id=account_id,
                 contract=contract
@@ -253,7 +260,7 @@ def orders(request):
             "id": order.id,
             "order_id": order.order_id,
             "local_id": order.local_id,
-            "symbol": order.contract.ticker,
+            "sid": order.contract.sid,
             "amount": order.amount,
             "filled": order.filled,
             "status": order.status,
@@ -340,7 +347,7 @@ def config(request):
       "supports_marks": False,
       "supports_timescale_marks": False,
       "supports_time": False,
-      "supported_resolutions": ["1", "5", "15", "30", "1H", "2H", "3H", "4H", "1D", "1W"],
+      "supported_resolutions": ["1", "3", "5", "10", "15", "30"]
     }
     content = json.dumps(data, indent=2, default=str)
     return HttpResponse(content, content_type="application/json")
@@ -348,7 +355,7 @@ def config(request):
 
 def symbols(request):
     symbol = request.GET.get("symbol")
-    if "GLOBEX" in symbol:
+    if symbol.count("_") == 2:
         session = "24x7"
         contract_type = "futures"
     else:
@@ -368,7 +375,7 @@ def symbols(request):
       "has_no_volume": True,
       "description": f"{symbol}",
       "type": contract_type,
-      "supported_resolutions": ["1", "5", "15", "30", "1H", "2H", "3H", "4H", "1D", "1W"],
+      "supported_resolutions": ["1", "3", "5", "10", "15", "30"],
       "pricescale": 100,
       "ticker": symbol,
     }
@@ -391,10 +398,10 @@ def history(request):
         return HttpResponse(content, content_type="application/json")
 
     r = redis.Redis(
-        host=settings.TREDIS_HOST,
-        port=settings.TREDIS_PORT,
-        db=settings.TREDIS_DB,
-        password=settings.TREDIS_PASSWORD,
+        # host=settings.TREDIS_HOST,
+        # port=settings.TREDIS_PORT,
+        # db=settings.TREDIS_DB,
+        # password=settings.TREDIS_PASSWORD,
     )
 
     from_ts = int(request.GET.get("from"))
@@ -421,7 +428,7 @@ def history(request):
     if data_in_db:
         for line in data_in_db:
             j = orjson.loads(line.decode('utf-8'))
-            if "o" in j:
+            if "o" in j and j["o"] > 0:
                 dt = datetime.strptime(j["dt"], "%Y-%m-%d %H:%M:%S")
                 # rth = 0
                 # if 14 <= dt.hour < 21 or (13 <= dt.hour < 14 and dt.minute > 30):
@@ -432,7 +439,7 @@ def history(request):
                 res["h"].append(j["h"])
                 res["l"].append(j["l"])
                 res["c"].append(j["c"])
-                res["v"].append(j["vol"])
+                res["v"].append(j["v"])
 
     # TODO: сделать возврат последнего интервала с данными
     if not len(res["t"]):

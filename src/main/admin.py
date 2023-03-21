@@ -1,13 +1,14 @@
 import json
 from decimal import Decimal
+
 from django.contrib import admin
-from django.forms import widgets
 from django.db.models import Count
+from django.forms import widgets
+
 from project.admin import admin_site
-from project.helpers.admin_decorators import short_description, boolean
-from .models import (
-    Exchange, Order, Position, Trade, OrderEvent, Account, Run, Contract
-)
+from project.helpers.admin_decorators import boolean, short_description
+
+from .models import Account, Contract, Order, OrderEvent, Position, Run, Trade
 
 
 class PrettyJSONWidget(widgets.Textarea):
@@ -70,9 +71,7 @@ class RunAdmin(admin.ModelAdmin):
         "finished_at",
     )
 
-    list_filter = (
-        "account",
-    )
+    list_filter = ("account",)
 
     actions_on_top = False
     actions_on_bottom = True
@@ -84,10 +83,9 @@ class RunAdmin(admin.ModelAdmin):
         return qs.annotate(num_orders=Count("orders"))
 
     def get_readonly_fields(self, request, obj=None):
-        readonly_fields = (
-            [f.name for f in self.opts.local_fields] +
-            [f.name for f in self.opts.local_many_to_many]
-        )
+        readonly_fields = [f.name for f in self.opts.local_fields] + [
+            f.name for f in self.opts.local_many_to_many
+        ]
         return readonly_fields
 
     def get_num_orders(self, obj):
@@ -97,32 +95,18 @@ class RunAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(Exchange, site=admin_site)
-class ExchangeAdmin(admin.ModelAdmin):
-    list_display = (
-        "symbol",
-        "name",
-    )
-    actions_on_top = False
-    actions = None
-
-
 @admin.register(Contract, site=admin_site)
 class ContractAdmin(admin.ModelAdmin):
     list_display = (
-        "symbol",
-        "local_symbol",
-        "main_exchange",
-        "conid",
-        "min_tick",
+        "sid",
         "sec_type",
+        "min_tick",
         "multiplier",
     )
-    list_filter = (
-        "sec_type",
-    )
+    list_filter = ("sec_type",)
     actions_on_top = False
-    actions = None
+    actions_on_bottom = True
+    # actions = None
 
 
 class TradeInline(admin.TabularInline):
@@ -132,7 +116,6 @@ class TradeInline(admin.TabularInline):
         "amount",
         "price",
         "exec_id",
-        "exchange",
         "commission",
         "time",
     )
@@ -261,11 +244,10 @@ class PositionAdmin(admin.ModelAdmin):
         "unrealized_pnl",
         "updated_at",
     )
-    list_filter = (
-        "account",
-    )
+    list_filter = ("account",)
     actions_on_top = False
-    actions = None
+    actions_on_bottom = True
+    # actions = None
 
 
 @admin.register(Trade, site=admin_site)
@@ -275,7 +257,6 @@ class TradeAdmin(admin.ModelAdmin):
         "amount",
         "price",
         "exec_id",
-        "exchange",
         "time",
         "commission",
         "created_at",

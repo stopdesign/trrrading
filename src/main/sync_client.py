@@ -24,7 +24,7 @@ class SyncClient:
         self.orders = orders
 
         self.db_account = DBAccount.objects.get(uid=self.account["uid"])
-        self.update_broker_data()
+        self.update_broker_data({"types": ["init"]})
 
         self.redis_client = redis.Redis()
 
@@ -60,7 +60,9 @@ class SyncClient:
         }
         self.redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
 
-    def update_broker_data(self):
+    def update_broker_data(self, payload):
+        # TODO: Смотреть payload и обновлять только нужный тип объектов
+
         # обновить данные в self.positions, self.account...
         db_positions = DBPosition.objects.filter(account=self.db_account)
         db_positions = db_positions.order_by("-id")[:100]

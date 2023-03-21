@@ -66,6 +66,30 @@ class IBSync(IBClient):
     def r_id(self):
         return random.randint(10000000, 99999999)
 
+    def sid_for_contract(self, contract: Contract) -> str:
+
+        exchange = str(contract.primaryExchange or contract.exchange)
+        symbol = str(contract.symbol)
+
+        sid = f"{exchange}_{symbol}"
+
+        if contract.secType == "STK":
+            sid = f"{exchange}_{symbol}"
+
+        if contract.secType == "FUT":
+            sid = f"{exchange}_{symbol}"
+            exp_str = contract.lastTradeDateOrContractMonth
+            sid += "_" + exp_str[2:6]
+
+        if contract.secType == "CRYPTO":
+            sid = f"{exchange}_{symbol}"
+
+        if contract.secType == "CASH":
+            local_symbol = str(contract.localSymbol)
+            sid = f"{exchange}_{local_symbol}"
+
+        return sid.upper()
+
     def contract_for_sid(self, sid: str) -> Contract:
         """
         Делает IB Contract по строке SID.
@@ -83,6 +107,7 @@ class IBSync(IBClient):
             contract.secType = "CRYPTO"
             contract.symbol = security_str
             contract.exchange = exch_str
+            contract.primaryExchange = exch_str
             contract.currency = "USD"
 
         # stocks
@@ -179,7 +204,7 @@ class IBSync(IBClient):
         return list(self._open_orders + self._completed_orders)
 
     def openOrder(self, orderId, contract, order, orderState):
-        # super().openOrder(orderId, contract, order, orderState)
+        super().openOrder(orderId, contract, order, orderState)
         if not self._open_orders.finished:
             self._open_orders.append((contract, order, orderState))
         if order.permId:
@@ -188,7 +213,7 @@ class IBSync(IBClient):
             log.error(f"OpenOrder without permId: {order}")
 
     def completedOrder(self, contract, order, orderState):
-        # super().completedOrder(contract, order, orderState)
+        super().completedOrder(contract, order, orderState)
         if not self._completed_orders.finished:
             self._completed_orders.append((contract, order, orderState))
         if order.permId:
@@ -230,8 +255,12 @@ class IBSync(IBClient):
     ### Contracts
 
     @timeout(TIMEOUT)
-    def get_contract_details(self, contract: Contract):
+    def get_contract_details(self, contract: Contract) -> list[ContractDetails]:
         self._contract_details = Results()
+        if contract.exchange == "NASDAQ":
+            contract.exchange = "ISLAND"
+        if contract.primaryExchange == "NASDAQ":
+            contract.primaryExchange = "ISLAND"
         self.reqContractDetails(self.r_id, contract)
         while not self._contract_details.finished:
             time.sleep(0.001)

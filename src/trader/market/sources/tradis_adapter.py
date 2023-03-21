@@ -50,7 +50,7 @@ class TradisAdapter(BaseSource):
 
         # Легкий фикс формата
         try:
-            symbol = data["sid"]
+            sid = data["sid"]
             data["dt"] = parse_dt(data["dt"])
         except KeyError:
             log.error(f"Bad format: {data}")
@@ -58,17 +58,17 @@ class TradisAdapter(BaseSource):
 
         # Биржа совсем закрыта
         if "closed" in data:
-            # log.info(f"{symbol}, {data['dt']} closed market bar")
+            # log.info(f"{sid}, {data['dt']} closed market bar")
             return
 
         # Биржа открыта, но пришел пустой бар
         if "empty" in data:
-            # log.info(f"{symbol}, {data['dt']} empty bar")
+            # log.info(f"{sid}, {data['dt']} empty bar")
             return
 
         # Сервис Market data работает, но актуальных данных в нем нет
         if data.get("delay"):
-            log.warning(f"{symbol}, {data['dt']} delay")
+            log.warning(f"{sid}, {data['dt']} delay")
             return
 
         if not ("price" in data or "vol" in data or "o" in data):
@@ -81,14 +81,14 @@ class TradisAdapter(BaseSource):
 
         return data
 
-    def load(self, symbols, dt_1, dt_2):
+    def load(self, sids, dt_1, dt_2):
         t1 = dt_to_ts(dt_1)
         t2 = dt_to_ts(dt_2)
 
         all_data = []
 
         # Загрузить все данные, разметить
-        for s in symbols:
+        for s in sids:
             lns = self.redis.zrangebyscore(f"{s}:TRADES", t1, t2, withscores=True)
             if self.quotes:
                 lns += self.redis.zrangebyscore(f"{s}:QUOTES", t1, t2, withscores=True)
@@ -98,7 +98,7 @@ class TradisAdapter(BaseSource):
             for data_str, score in sorted(lns):
                 data = orjson.loads(data_str)
                 # Легкий фикс формата
-                data["symbol"] = s
+                data["sid"] = s
                 data["dt"] = parse_dt(data["dt"])
 
                 # # Если данные поменялись, но vol == 0 — поставить 1
@@ -112,20 +112,20 @@ class TradisAdapter(BaseSource):
                 if self.schedule.is_rth(s, data["dt"]):
                     all_data.append((score, s, data))
 
-        log.info(f"{symbols}, {dt_1}, {dt_2}, {len(all_data)}")
+        log.info(f"{sids}, {dt_1}, {dt_2}, {len(all_data)}")
 
         # Отсортировать по score и символу
         return sorted(all_data)
 
-    def listen(self, symbols, on_market_event, on_broker_event):
+    def listen(self, sids, on_market_event, on_broker_event):
         """
         Подписка на события в Redis pubsub.
         """
         pubsub = self.redis.pubsub()
 
         # Подписка на pubsub
-        for symbol in symbols:
-            pubsub.subscribe([f"{symbol}:TRADES", f"{symbol}:BARS"])
+        for sid in sids:
+            pubsub.subscribe([f"{sid}:TRADES", f"{sid}:BARS"])
 
         # FIXME: плохо всё это держать в одной подписке, т.к. ломается timeout
         # Ну или нужно руками считать timeout по типам сообщений.
