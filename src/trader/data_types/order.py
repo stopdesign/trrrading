@@ -4,10 +4,9 @@ from datetime import datetime
 from decimal import Decimal
 from secrets import token_hex
 
-
 @dataclass(slots=True)
 class Order:
-    instrument: str
+    sid: str
     type: str
     amount: int
     status: str = "New"
@@ -16,6 +15,7 @@ class Order:
     stop_price: float = float("nan")
     fill_price: Decimal = Decimal("nan")
     created_at: datetime | None = None
+    strategy: None = None
 
     @staticmethod
     def new_local_id():
@@ -26,7 +26,7 @@ class Order:
             self.local_id = Order.new_local_id()
 
     def __repr__(self):
-        txt = f"{self.local_id}, {self.instrument}, {self.type}, {self.amount:+0.2f}, "
+        txt = f"{self.local_id}, {self.sid}, {self.type}, {self.amount:+0.2f}, "
 
         if self.type == "limit":
             txt += f"limit={self.limit_price:0.2f}, "

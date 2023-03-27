@@ -4,7 +4,7 @@ from decimal import Decimal
 
 @dataclass
 class Position:
-    symbol: str
+    sid: str
     capital: Decimal
     amount: Decimal = Decimal("nan")
     avg_price: Decimal = Decimal("nan")

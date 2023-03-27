@@ -27,8 +27,8 @@ class BaseExchange:
         self.on_event = on_event
 
     # NOTE: код из старого класса Exchange
-    def get_price(self, symbol: str, side: str) -> Decimal:
-        if quotes := self.quotes.get(symbol):
+    def get_price(self, sid: str, side: str) -> Decimal:
+        if quotes := self.quotes.get(sid):
             if side == "sell":
                 return quotes["bid"]
             if side == "buy":
@@ -38,30 +38,30 @@ class BaseExchange:
         return Decimal("nan")
 
     # NOTE: код из старого класса Exchange
-    def add_quote(self, dt, symbol, payload):
+    def add_quote(self, dt, sid: str, payload):
         """
         Сохранить BID и ASK как актуальное состояние стакана на бирже.
         """
-        current_quote = self.quotes.get(symbol)
+        current_quote = self.quotes.get(sid)
         if current_quote and current_quote["dt"] > dt:
             return
-        if symbol not in self.quotes:
-            self.quotes[symbol] = {}
+        if sid not in self.quotes:
+            self.quotes[sid] = {}
         # ask и bid могут приходить независимо
         if payload.ask:
-            self.quotes[symbol]["ask"] = Decimal(payload.ask)
-            self.quotes[symbol]["dt"] = dt
+            self.quotes[sid]["ask"] = Decimal(payload.ask)
+            self.quotes[sid]["dt"] = dt
         if payload.bid:
-            self.quotes[symbol]["bid"] = Decimal(payload.bid)
-            self.quotes[symbol]["dt"] = dt
+            self.quotes[sid]["bid"] = Decimal(payload.bid)
+            self.quotes[sid]["dt"] = dt
         self.dt_last = dt
 
     def on_quote(self, dt, bid_ask: BidAsk):
-        self.add_quote(dt, bid_ask.symbol, bid_ask)
+        self.add_quote(dt, bid_ask.sid, bid_ask)
 
     def on_bar(self, dt, bar: Bar):
         self.dt_last = dt
-        self.bars[bar.symbol].append(copy(bar))
+        self.bars[bar.sid].append(copy(bar))
 
     def get_net_value(self) -> Decimal:
         net = Decimal(self.account.get("net_value", "NaN"))
@@ -70,7 +70,7 @@ class BaseExchange:
         #     position = self.__positions[strategy.market_system]
         #     if position.amount and not math.isnan(position.amount):
         #         side = "sell" if position.amount > 0 else "buy"
-        #         price = self.exchange.get_price(strategy.symbol, side)
+        #         price = self.exchange.get_price(strategy.sid, side)
         #         net += position.amount * (price - position.avg_price)
         #     net += position.profit
         return net.quantize(Decimal("0.01"), ROUND_DOWN)
@@ -78,7 +78,7 @@ class BaseExchange:
     def place_order(self, order: Order):
         raise NotImplementedError
 
-    def update_order(self, order: Order):
+    def update_order(self, order: Order, **kwargs):
         raise NotImplementedError
 
     def cancel_order(self, order: Order):

@@ -71,6 +71,15 @@ class IBSync(IBClient):
         exchange = str(contract.primaryExchange or contract.exchange)
         symbol = str(contract.symbol)
 
+        exchange = exchange.replace("ISLAND", "NASDAQ")
+
+        # FIXME: Это полная ерунда, но пока другое не придумал.
+        if exchange == "QBALGO":
+            if symbol[0] == "Z":
+                exchange = "CBOT"  # зерновые фьючерсы
+            else:
+                exchange = "NYMEX"  # нефть, газ
+
         sid = f"{exchange}_{symbol}"
 
         if contract.secType == "STK":
@@ -101,8 +110,18 @@ class IBSync(IBClient):
 
         contract = Contract()
 
+        # cash
+        if "IDEALPRO_" in sid or "." in sid:
+            exch_str, security_str = sid.split("_")
+            cur_1, cur_2 = security_str.split(".")
+            contract.secType = "CASH"
+            contract.symbol = cur_1
+            contract.exchange = exch_str
+            contract.primaryExchange = exch_str
+            contract.currency = cur_2
+
         # crypto
-        if "PAXOS_" in sid:
+        elif "PAXOS_" in sid:
             exch_str, security_str = sid.split("_")
             contract.secType = "CRYPTO"
             contract.symbol = security_str
@@ -178,6 +197,7 @@ class IBSync(IBClient):
         self, account: str, contract: Contract, position: Decimal, avgCost: float
     ):
         super().position(account, contract, position, avgCost)
+        log.warning(f"position: {contract.conId} {position} {avgCost}")
         if account == self.account_id:
             self._positions_by_conid[contract.conId] = (position, avgCost)
         if not self._positions.finished:

@@ -41,10 +41,11 @@ logging.basicConfig(
 BASE_DIR = "../data/ib"
 
 ib_params = {
+    # "host": "108.61.229.69",
     "host": "127.0.0.1",
-    "clientId": random.randint(20, 99),
+    "clientId": 888,
     "timeout": 5,
-    "port": 7497,
+    "port": 4002,
 }
 
 
@@ -109,7 +110,53 @@ class IBSyncData(IBSync):
 
 def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
 
-    # FIXME: валидировать тип данных для контракта
+    symbol, exchange = str(symbol).upper().split(".")
+
+    # Абстрактное описание контракта, не включающее дату экспирации
+    base_contract = IbContract(symbol, secType="FUT", exchange=exchange)
+    base_contract.includeExpired = True
+
+    # Получение списка контрактов с разными датами
+    details = ib.get_contract_details(base_contract)
+
+    # Сортировка по дате экспирации (или типа того)
+    details = [(c.contract.lastTradeDateOrContractMonth, c) for c in details]
+
+    yesterday = datetime.now(tz=timezone.utc).date() - timedelta(days=1)
+
+    for _, cd in sorted(details):
+        contract = cd.contract
+        exp_date_str = cd.realExpirationDate
+
+        # Распарсить дату экспирации, вычесть полгода
+        # Сделать поправку на first_day и dt_start
+
+        exp_date = datetime.strptime(exp_date_str, "%Y%m%d").date()
+        dt_1 = exp_date - timedelta(days=180)
+        dt_1 = max(dt_1, dt_start)
+
+        # Пропустить, если полученный dt_1 больше now
+        if dt_1 > yesterday:
+            log.info(f"Skip {contract.localSymbol}")
+            continue
+
+        # Получить первый день контракта
+        ts = ib.get_head_timestamp(contract)
+        first_day = datetime.utcfromtimestamp(int(ts)).date()
+
+        # Последние две недели обычно можно не грузить
+        exp_date = exp_date - timedelta(weeks=2)
+
+        dt_1 = max(dt_1, first_day)
+        dt_2 = min(exp_date, yesterday)
+
+        if dt_1 >= dt_2:
+            continue
+
+        get_one_contract(ib, contract, data_type, dt_1, dt_2, force)
+
+
+def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
 
     # Разные заголовки и переменные для разных типов данных
     if data_type == "TRADES":
@@ -125,47 +172,16 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
         log.error(f"Unknown data_type: {data_type}")
         return
 
-    symbol, exchange = str(symbol).upper().split(".")
-
-    # Абстрактное описание контракта, не включающее дату экспирации
-    base_contract = IbContract(symbol, secType="CONTFUT", exchange=exchange)
-    base_contract.includeExpired = True
-
-    # Получение списка контрактов с разными датами
-    details = ib.get_contract_details(base_contract)
-
-    # for c in details:
-    #     print(c.contract.symbol, c.contract.localSymbol, c.contractMonth)
-
-    # Сортировка по дате экспирации (или типа того)
-    details = [(c.contract.lastTradeDateOrContractMonth, c) for c in details]
-    contract = sorted(details)[-1][1].contract
-
-    # FIXME:
-    contract = base_contract
-
-    # FIXME: отформатировать идентификатор контракта
-    # local_symbol = str(contract.localSymbol).upper()
-    # local_symbol = local_symbol.replace(" ", "")
-    # local_symbol = local_symbol.replace(symbol, "")
-
-    local_symbol = "CONT"
-
-    # Создание имени файла и пути по шаблону
-    f_name = f"{symbol}_{local_symbol}-{data_type.lower()}.csv"
-    f_path = os.path.abspath(f"{BASE_DIR}/{exchange}/{f_name}")
-
-    # Получить первый день контракта
-    ts = ib.get_head_timestamp(contract)
-    first_day = datetime.utcfromtimestamp(int(ts)).date()
+    sid = ib.sid_for_contract(contract)
+    exchange = sid.split("_", 1)[0]
 
     # Что грузить, summary
-    log.info(f"First day: {first_day}, load: [{dt_start}, {dt_end}], {data_type}")
+    log.info(f"{sid}, load: [{dt_start}, {dt_end}], {data_type}")
 
-    # Подкрутить даты
-    yesterday = datetime.now(tz=timezone.utc).date() - timedelta(days=1)
-    dt_end = min(dt_end or yesterday, yesterday)
-    dt_start = max(dt_start, first_day)
+    # Создание имени файла и пути по шаблону
+    f_name = f"{sid}-{data_type.lower()}.csv"
+    f_path = os.path.abspath(f"{BASE_DIR}/{exchange}/{f_name}")
+
 
     # Проверить наличие файла и добыть последний сохраненный интервал
     valid_file_with_data = False
@@ -181,9 +197,9 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
             try:
                 valid_file_with_data = True
                 last_interval_dt = get_last_interval_dt(f_path)
-                log.info(f"Last existing interval for {symbol}: {last_interval_dt}")
+                log.info(f"Last existing interval for {sid}: {last_interval_dt}")
             except:
-                log.error(f"Can't get last existing interval for {symbol}")
+                log.error(f"Can't get last existing interval for {sid}")
                 return
 
     # Если файла не было, создать новый файл с заголовком
@@ -208,8 +224,6 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
         # Форматирование даты для запроса к IB
         end_dt = t1.strftime("%Y%m%d-%H:%M:%S")
 
-        log.info(f"LOAD day: {day}, from: '{t0}', to: '{t1}'")
-
         # Запрос к IB
         day_data = ib.get_historical_data(
             contract=contract,
@@ -224,12 +238,15 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
         # войдут и предыдущие дни, поэтому нужно отрезать всё до t0.
         day_data_clean = []
         for line in day_data:
-            if int(line.date) >= t0_ts:
+            if int(line.date) >= t0_ts and line.close > 0:
                 day_data_clean.append(line)
 
         # Добавить данные в файл
         txt = ""
+        sum_vol = 0
         for line in day_data_clean:
+            # print( datetime.fromtimestamp(int(line.date)), line )
+            sum_vol += int(line.barCount)
             # FIXME: Форматирование данных (разное для разных типов данных)
             # ibapi.utils.floatMaxString(self.open),
             # ibapi.utils.floatMaxString(self.high),
@@ -239,6 +256,8 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
             # ibapi.utils.decimalMaxString(self.wap),  - округлить до 4 знаков
             # ibapi.utils.intMaxString(self.barCount)
             txt += row_tmpl.format(**line.__dict__)
+
+        log.info(f"Loaded: {day}, from: '{t0}', to: '{t1}', sum_vol: {sum_vol}")
 
         # Дописать данные в файл
         with open(f_path, "a") as f:
@@ -284,8 +303,10 @@ def main(**kwargs):
 
     app = IBSyncData()
 
+    print(ib_params)
+
     try:
-        app.connect(ib_params["host"], ib_params["port"], ib_params["clientId"])
+        app.connect(ib_params["host"], ib_params["port"], 900)
 
         # Endless message loop
         thread = IBThread(app)

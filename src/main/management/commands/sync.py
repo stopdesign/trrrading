@@ -46,7 +46,7 @@ class IBSyncExtended(IBSync):
     def __init__(self, redis_client):
         super().__init__()
         self.redis_client = redis_client
-        self.lock_for_sync = False
+        self.lock_for_sync = False  # запрет обработки событий до синхронизации базы
 
     def pnl(
         self, reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float
@@ -112,8 +112,9 @@ class IBSyncExtended(IBSync):
             "types": ["position"],
             "info": {"contract": sid, "amount": db_position.amount},
         }
-        a = self.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-        log.info(f"To Redis: {action}, {a}")
+        msg = json.dumps(action, default=str)
+        a = self.redis_client.publish(SYNC_CHANNEL, msg)
+        log.info(f"To Redis: {msg}, {a}")
 
     def orderStatus(
         self,
@@ -181,7 +182,8 @@ class IBSyncExtended(IBSync):
                 db_contract = Contract.objects.get(sid=sid)
             except Contract.DoesNotExist:
                 log.warn(f"Create new contract {sid}")
-                db_contract = Contract.from_ib(contract, sid)
+                cd = self.get_contract_details(contract)
+                db_contract = Contract.from_ib(contract, cd, sid)
                 db_contract.save()
 
             try:
@@ -209,6 +211,7 @@ class IBSyncExtended(IBSync):
 
                 db_order.amount = order.totalQuantity
                 db_order.limit_price = order.lmtPrice
+                db_order.stop_price = order.auxPrice
 
             except Order.DoesNotExist:
                 # Если ордера всё еще нет в базе - создать
@@ -231,12 +234,12 @@ class IBSyncExtended(IBSync):
                     account=account, contract=db_contract
                 )
                 if db_position.amount != known_ib_position:
-                    log.info(f"Pos, IB: {known_ib_position}, DB: {db_position.amount}")
+                    log.info(f"Pos, DB: {db_position.amount}, IB: {known_ib_position}")
                     db_position.amount = known_ib_position
                     db_position.avg_price = avg_price
                     db_position.save()
             except Position.DoesNotExist:
-                log.info(colored(f"Pos, IB: {known_ib_position}, DB: --", "green"))
+                log.info(colored(f"Pos, DB: --, IB: {known_ib_position}", "green"))
                 db_position = Position.from_ib(
                     account, db_contract, known_ib_position, avg_price
                 )
@@ -248,8 +251,9 @@ class IBSyncExtended(IBSync):
             db_order.save()
 
             action = {"types": ["order", "position"]}
-            a = self.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-            log.info(f"To Redis: {action}, {a}")
+            msg = json.dumps(action, default=str)
+            a = self.redis_client.publish(SYNC_CHANNEL, msg)
+            log.info(f"To Redis: {msg}, {a}")
 
     #################################
 
@@ -272,6 +276,9 @@ class IBSyncExtended(IBSync):
         log.error(f"Unknown bot action: {message}")
 
     def create_order(self, data):
+        """
+        Создание ордера в IB
+        """
         # ib_contract - нужен для отправки ордера в IB
         # db_contract - нужен для сохранения ордера в базе
 
@@ -303,6 +310,8 @@ class IBSyncExtended(IBSync):
         # order.goodTillDate = "20200923 15:13:20 EST"
         # order.tif = "GTD"
 
+        # FIXME: поддерживать разные типы ордеров
+
         # ib_order.orderType = "MKT"
         # order = Order.market_order(db_account, db_contract, side, abs(amount))
 
@@ -328,6 +337,9 @@ class IBSyncExtended(IBSync):
         db_order.save(update_fields=["status"])
 
     def update_order(self, data):
+        """
+        Редактирование ордера в IB
+        """
         local_id = data.get("local_id")
         stop_price = Decimal(data.get("stop_price"))
 
@@ -346,6 +358,9 @@ class IBSyncExtended(IBSync):
         log.error(f"Order not found: {data}")
 
     def cancel_order(self, data):
+        """
+        Отмена ордера в IB
+        """
         local_id = data.get("local_id")
 
         inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
@@ -395,6 +410,9 @@ def get_executions(ib):
         action = {"types": ["trade"]}
         a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
         log.info(f"To Redis: {action}, {a}")
+
+    # Бывает так, что событие ордера не было поймано вовремя.
+    # Тогда среднюю цену можно восстановить только по сделкам.
 
     # Пересчитать цены ордеров, для которых загружены сделки.
     # updated_orders
@@ -446,13 +464,16 @@ def initial_sync(ib: IBSyncExtended):
     uniq_contracts = {c.conId: c for c in all_contracts}
 
     for con_id, contract in uniq_contracts.items():
+        cd = None
         if not contract.primaryExchange:
-            cd = ib.get_contract_details(contract)
-            contract = cd[0].contract
+            cd = ib.get_contract_details(contract)[0]
+            contract = cd.contract
             uniq_contracts[con_id] = contract
         sid = ib.sid_for_contract(contract)
         if sid not in contracts_by_sid:
-            c = Contract.from_ib(contract, sid)
+            if not cd:
+                cd = ib.get_contract_details(contract)[0]
+            c = Contract.from_ib(contract, cd, sid)
             contracts_by_sid[sid] = c
             contracts_to_create.append(c)
             log.info(f"Create contract: {c.sid}")
@@ -572,6 +593,7 @@ class Command(BaseCommand):
         pubsub = redis_client.pubsub()
 
         ib = IBSyncExtended(redis_client)
+        ib.lock_for_sync = True
 
         # NOTE: не уверен, что правильно подписываться
         # снаружи, но "event loop" находится здесь.
@@ -611,6 +633,7 @@ class Command(BaseCommand):
 
                     # NOTE: плохо, что приходится пересоздавать объект
                     ib = IBSyncExtended(redis_client)
+                    ib.lock_for_sync = True
 
                     ib.connect(gateway["host"], gateway["port"], 0)
 

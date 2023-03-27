@@ -112,19 +112,19 @@ class PolygonAdapter(BaseSource):
         all_data = []
 
         for symbol in list(symbols):
-            ss = symbol.split(".")[0]
+            ss = symbol.split("_")[1]
 
             if self.offline:
                 data = self.load_from_file(ss, dt_1, dt_2)
             else:
                 data = self.load_from_api(ss, dt_1, dt_2)
-            
+
             if not data:
                 log.error(f"No data for {symbol}")
                 continue
-            
+
             data = sorted(data, key=lambda d: d['t'])
-            
+
             prev_t = None
             payload = {}
             for line in data:
@@ -143,7 +143,7 @@ class PolygonAdapter(BaseSource):
                     if self.schedule.is_rth(symbol, dt):
                         payload = payload.copy()
                         payload["dt"] = dt
-                        payload["vol"] = 0
+                        payload["v"] = 0
                         all_data.append((prev_t, symbol, payload))
 
                 dt = ts_to_dt(line["t"])
@@ -156,11 +156,11 @@ class PolygonAdapter(BaseSource):
                         "h": line["h"],
                         "l": line["l"],
                         "c": line["c"],
-                        "vol": line["v"],
-                        "symbol": symbol,
+                        "v": line["v"],
+                        "sid": symbol,
                     }
                     all_data.append((line["t"], symbol, payload))
-                
+
                 prev_t = line["t"]
 
         log.info(f"{dt_1}, {dt_2}, {len(all_data)}")

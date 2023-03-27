@@ -4,49 +4,46 @@ from decimal import Decimal
 from termcolor import colored
 
 from trader.data_types import Bar, Order, Trade
-from trader.indicator.donchian_channels import DonchianChannels
-from trader.strategy import BaseStrategy
+from trader.exchange import Consolidator, Data
+from trader.indicator import DonchianChannels
+
+from .base import BaseStrategy
 
 log = logging.getLogger("strategy")
 
 
 class ChBr(BaseStrategy):
-
     def on_start(self):
+        # Подписка на данные
+        self.data_1m = Data(self.sid, rth=1, on_bar=self.on_bar)
 
-        self.instrument = str(self.symbol)
-
-        # TODO можно перейти на такой формат подписки.
-        # Тогда это можно передать в индикатор как источник данных.
-        # self.ura = DataSource("URA", "5m", rth=True, on_bar=self.on_bar)
-
-        self.dc = DonchianChannels(self.length)
+        self.dc = DonchianChannels(self.data_1m, self.length)
 
     def market_order(self, amount):
-        order = Order(self.instrument, type="market", amount=amount)
+        order = Order(self.sid, type="market", amount=amount)
         self.place_order(order)
 
     def on_bar(self, bar: Bar):
         pass
 
-    def on_trade(self, trade: Trade):
+    def on_tick(self, trade: Trade):
         """
         Проверить сигнал стратегии при появлении новой цены.
         """
         if not self.warmed:
             return
 
-        bars = self.bars[self.instrument]
+        bars = self.bars[self.sid]
         bar = bars[-1] if bars else None
         channel = self.dc.value
 
         if not bar:
             return
 
-        print(colored(channel, "blue"), bar, colored(trade, "green"))
+        # print(colored(channel, "blue"), bar, colored(trade, "green"))
 
         if not (channel["lb"] and channel["ub"]):
-            log.error(f"Indicator wasn't warmed up? {self.instrument} {channel}")
+            log.error(f"Indicator wasn't warmed up? {self.sid} {channel}")
             return
 
         if not bar.rth:  # trade.rth пока нет
@@ -55,15 +52,15 @@ class ChBr(BaseStrategy):
         for order in self.orders:
             # TODO: проверить, что инструмент совпадает
             active = ["New", "Sent", "PreSubmitted", "Submitted"]
-            if order.instrument == self.instrument and order.status in active:
+            if order.sid == self.sid and order.status in active:
                 log.warn(f"strategy has live order, {order}")
                 return
 
-        position = self.positions[self.instrument]
+        position = self.positions[self.sid]
 
         # log.info(
         #     f"strategy on trade, {channel}, {trade}, "
-        #     f"symbol: {position.symbol}, "
+        #     f"sid: {position.sid}, "
         #     f"amount: {position.amount}"
         # )
 

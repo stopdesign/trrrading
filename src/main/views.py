@@ -112,8 +112,10 @@ def bt_raw(request):
     result_id = symbol[:17]
     strategy_id = symbol.split("#")[0][18:]
 
+    print(strategy_id)
+
     base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
-    ohlc_file = f"{base_dir}/{strategy_id}_ohlc.jsonl"
+    ohlc_file = f"{base_dir}/{strategy_id}-ohlc.jsonl"
 
     content = "[" + open(ohlc_file).read().replace("\n", ",\n").strip(",\n") + "]"
 
@@ -135,12 +137,12 @@ def strategies(request):
     res = []
     result = request.GET.get("result", "")
     base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result))
-    files = glob.glob(f"{base_dir}/*_ohlc.jsonl")
+    files = glob.glob(f"{base_dir}/*-ohlc.jsonl")
     for file in files:
         file = os.path.basename(file)
-        instrument, strategy, _ = file.split("_")
+        instrument, strategy, data_type = file.split("-")
         res.append({
-            "id": f"{instrument}_{strategy}",
+            "id": f"{instrument}-{strategy}",
             "strategy": strategy,
             "instrument": instrument,
         })
@@ -172,7 +174,7 @@ def bt_events(request):
     strategy_id = request.GET.get("strategy")
 
     base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
-    ohlc_file = f"{base_dir}/{strategy_id}_events.jsonl"
+    ohlc_file = f"{base_dir}/{strategy_id}-events.jsonl"
 
     content = open(ohlc_file).read()
 
@@ -257,15 +259,18 @@ def orders(request):
             price = "-"
         created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S") if order.created_at else None
         res.append({
-            "id": order.id,
+            "id": order.pk,
             "order_id": order.order_id,
             "local_id": order.local_id,
             "sid": order.contract.sid,
+            "type": order.type,
             "amount": order.amount,
             "filled": order.filled,
             "status": order.status,
             "price": price,
-            "side": order.action.lower(),
+            "limit_price": order.limit_price,
+            "stop_price": order.stop_price,
+            "side": str(order.action).lower(),
             "time": dt_to_ts(order.created_at) if order.created_at else None,
             "created": created_at,
         })
@@ -285,7 +290,7 @@ def backtest_data(request):
     strategy_id = symbol.split("#")[0][18:]
 
     base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
-    ohlc_file = f"{base_dir}/{strategy_id}_ohlc.jsonl"
+    ohlc_file = f"{base_dir}/{strategy_id}-ohlc.jsonl"
 
     content = open(ohlc_file).read()
 

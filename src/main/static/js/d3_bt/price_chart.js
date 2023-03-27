@@ -268,6 +268,7 @@ export class PriceChart {
       high: +d.high,
       low: +d.low,
       close: +d.close,
+      ind: data[this.bisectTime(data, d.time)].ind,
       idx: data[this.bisectTime(data, d.time)].idx,
     }))
 
@@ -279,6 +280,7 @@ export class PriceChart {
       high: +d.high,
       low: +d.low,
       close: +d.close,
+      ind: data[this.bisectTime(data, d.time)].ind,
       idx: data[this.bisectTime(data, d.time)].idx,
     }))
 
@@ -379,6 +381,9 @@ export class PriceChart {
       small = this.data_10m.slice(i0, i1)
       path_svg = line_zoomed(small)
       // stroke = "#a08"  // фиолетовый
+
+      // рисовать индикаторы
+      draw_indicators = true
     }
     else if (dataSize > 5000) {
       // 10-минутные данные, вертикальные палки
@@ -392,6 +397,9 @@ export class PriceChart {
         path_svg += `M${dt},${l}V${h}`  // зеленый
       }
       // stroke = "#5a5"
+
+      // рисовать индикаторы
+      draw_indicators = true
     }
     else if (dataSize > 1500) {
       // минутные данные, вертикальные палки
@@ -476,12 +484,12 @@ export class PriceChart {
 
       this.ind_2.attr("d", line_2(data))
 
-      const line_3 = d3.line()
-        // .defined(d => d.date.getHours() < 7)
-        .x(d => this.xScaleZoomed(d.idx))
-        .y(d => this.yScale(d.ind[1].ma))
+      // const line_3 = d3.line()
+      //   // .defined(d => { let h = d.date.getHours(); return 6 <= h && h < 12 })
+      //   .x(d => this.xScaleZoomed(d.idx))
+      //   .y(d => this.yScale(d.ind[1].ma))
 
-      this.ind_3.attr("d", line_3(data))
+      // this.ind_3.attr("d", line_3(data))
 
     }
   }

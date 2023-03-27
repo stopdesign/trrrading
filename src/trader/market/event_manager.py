@@ -26,7 +26,7 @@ class EventManager:
         self.dt_last = None
         self.quotes = False  # в данных есть quotes
 
-        self.prev_bar_dt = datetime(2000, 1, 1)
+        self.prev_bar_dt = datetime.min
         self.in_the_gap = True
 
     # FIXME: сомневаюсь, что это должно быть здесь
@@ -39,7 +39,7 @@ class EventManager:
         for price in {bar.open, bar.high, bar.low, bar.close}:
             trade = Trade(
                 date=bar.date + timedelta(seconds=time_shift),
-                symbol=bar.symbol,
+                sid=bar.sid,
                 price=price,
                 rth=bar.rth,
             )
@@ -97,25 +97,25 @@ class EventManager:
         # Это quote bar
         if self.quotes and payload.get("av_bid"):
             quote = BidAsk.from_redis_quote(payload)
-            self.on_event("quote", quote.date, quote.symbol, quote)
+            self.on_event("quote", quote.date, quote.sid, quote)
 
-        # Это single trade
+        # Это tick
         elif payload.get("price"):
             dt = payload["dt"]
-            symbol = payload["sid"]
+            sid = payload["sid"]
             trade = Trade(
                 date=dt,
-                symbol=symbol,
+                sid=sid,
                 price=Decimal(payload["price"]),
             )
-            self.on_event("trade", dt, symbol, trade)
+            self.on_event("tick", dt, sid, trade)
 
         # Это trade bar
         elif payload.get("o"):
             # Симуляция quote из trade bar
             if not self.quotes:
                 quote = BidAsk.from_redis_trade(payload)
-                self.on_event("quote", quote.date, quote.symbol, quote)
+                self.on_event("quote", quote.date, quote.sid, quote)
 
             bar = Bar.from_redis(payload)
 
@@ -125,19 +125,19 @@ class EventManager:
             # for trade in self.bar_to_trades(bar):
             #     trade = Trade(
             #         date=trade.date,
-            #         symbol=trade.symbol,
+            #         sid=trade.sid,
             #         price=trade.price,
             #         rth=trade.rth,
             #     )
-            #     self.on_event("trade", bar.date, bar.symbol, trade)
+            #     self.on_event("tick", bar.date, bar.sid, trade)
 
-            # # Теперь bar преобразуется в одну сделку с ценой close
-            # trade = Trade(
-            #     date=bar.date,
-            #     symbol=bar.symbol,
-            #     price=bar.close,
-            #     rth=bar.rth,
-            # )
-            # self.on_event("trade", bar.date, bar.symbol, trade)
+            # Теперь bar преобразуется в одну сделку с ценой close
+            trade = Trade(
+                date=bar.date,
+                sid=bar.sid,
+                price=bar.close,
+                rth=bar.rth,
+            )
+            self.on_event("tick", bar.date, bar.sid, trade)
 
-            self.on_event("bar", bar.date, bar.symbol, bar)
+            self.on_event("bar", bar.date, bar.sid, bar)

@@ -11,14 +11,16 @@ class DonchianChannels(BaseIndicator):
         "lb": {"type": "line", "color": "red"},
     }
 
-    def init(self, length):
+    def init(self, source, length):
+        self.source = source
         self.data = TalippDonchianChannels(length)
 
     def on_bar(self, bar: Bar):
         skip = False
 
-        if not bar.rth:
-            skip = True
+        # FIXME: пробрасывать из конфига индикатора
+        # if not bar.rth:
+            # skip = True
 
         if bar.volume == 0:
             skip = True

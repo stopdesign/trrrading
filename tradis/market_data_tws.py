@@ -19,10 +19,8 @@ from ibapi.contract import Contract
 from pandas import date_range
 from pandas.tseries.offsets import CustomBusinessDay
 from pandas_market_calendars import MarketCalendar
-from rich import print
-from rich.logging import RichHandler
-from rich.text import Text
-from rich.traceback import install
+
+import coloredlogs
 
 p = os.path.abspath("..")
 if p not in sys.path:
@@ -34,14 +32,10 @@ from src.ibkr_api.ib_sync import IBSync
 # Логгер для этого файла
 log = logging.getLogger()
 
-logging.basicConfig(
-    level="INFO",
-    format="%(message)s",
-    datefmt="%X",
-    handlers=[RichHandler(rich_tracebacks=True)],
+coloredlogs.install(
+    "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
 )
 
-install(show_locals=True)
 
 
 def ts_to_dt(ts):
@@ -80,7 +74,7 @@ class CustomCBOT(mcal.exchange_calendar_cme.CMEAgricultureExchangeCalendar):
 
 class CustomPaxos(MarketCalendar, ABC):
     regular_market_times = {
-        "market_open": ((None, time(16), -1),),  # offset by -1 day
+        "market_open": ((None, time(16, 1), -1),),  # offset by -1 day
         "market_close": ((None, time(16)),),
     }
 
@@ -375,7 +369,7 @@ class DataMiner:
     data_delay: int = 0
     load_limit: int = 1000  # сколько данных максимум забирать из базы
     load_margin: int = 5  # сколько данных в любом случае забирать
-    load_history_mode: bool = False
+    load_history_mode: bool = True
 
     def __init__(self, ib, rc: redis.Redis) -> None:
         self.rc = rc
@@ -724,7 +718,8 @@ class Tradis:
         self.ib.reqCurrentTime()
 
     def print_connection_status(self):
-        text = Text("Connections: ")
+        # text = Text("Connections: ")
+        text = "Connections: "
         for key, value in self.ib.connections.items():
             if value == "connected":
                 color = "green"
@@ -736,7 +731,8 @@ class Tradis:
                 color = "white"
             else:
                 color = "yellow"
-            text.append(f"{key} ", style=f"bold {color}")
+            # text.append(f"{key} ", style=f"bold {color}")
+            text += f"{key}: {value}, "
         print(text)
 
     def maintain(self):
@@ -747,6 +743,7 @@ class Tradis:
         if not self.ib.isConnected():
             return
 
+        # Проверить delay всех активных соединений
         for r_id, req in self.ib.request.items():
             now = datetime.utcnow()
             if not req.get("canceled"):
@@ -754,10 +751,10 @@ class Tradis:
                 if delay > 30:
                     sid = req["sid"]
                     rt = req["request_type"]
-                    log.warning(f"Stale: {r_id}, {sid}, {rt}, delay: {delay:0.0f}")
+                    log.warning(f"Stale: {r_id}, {sid}, {rt}, delay: {delay:0.0f} sec")
 
-        # Нужно взять список того, на что нужно подписаться.
-        # Проверить каждый пункт по активным подпискам. Если их нет - подписать.
+        # subscriptions - подписки, которые нужно поддерживать живыми.
+        # Если их нет среди активных подписок - подписать.
         for sub in self.subscriptions:
             # поискать такое в активных запросах
             has_active = False
@@ -809,8 +806,9 @@ class Tradis:
             try:
                 host = self.gateway["host"]
                 port = self.gateway["port"]
+                client_id = 45
                 self.ib.tws_time = datetime.min
-                self.ib.connect(host, port, randint(100, 199))
+                self.ib.connect(host, port, client_id)
             except Exception as e:
                 log.error(f"TWS connect exception: {e}")
                 log.exception(e)

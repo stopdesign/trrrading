@@ -6,7 +6,7 @@ from decimal import Decimal
 @dataclass(slots=True)
 class Bar:
     date: datetime
-    symbol: str
+    sid: str
     open: Decimal
     high: Decimal
     low: Decimal
@@ -15,17 +15,17 @@ class Bar:
     rth: bool = None
 
     def __repr__(self):
-        return f"Bar({self.symbol}, date={self.date}, rth={self.rth})"
+        return f"Bar({self.sid}, date={self.date}, rth={self.rth}, v={self.volume})"
 
     @classmethod
     def from_redis(cls, data: dict):
         return cls(
             date=data["dt"],
-            symbol=data["sid"],
+            sid=data["sid"],
             open=data["o"],
             high=data["h"],
             low=data["l"],
             close=data["c"],
-            volume=data.get("v") or data.get("vol", None),
+            volume=data.get("v") or data.get("vol") or 0,
             rth=data["rth"],
         )

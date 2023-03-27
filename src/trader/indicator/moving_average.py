@@ -10,11 +10,14 @@ class MovingAverage(BaseIndicator):
         "ma": {"type": "line", "color": "blue"},
     }
 
-    def init(self, length):
-        self.data = SMA(length)
+    def init(self, source, interval):
+        self.source = source
+        self.data = SMA(interval)
 
     def on_bar(self, bar: Bar):
         skip = False
+
+        # print(self.source, bar)
 
         if not bar.rth:
             skip = True

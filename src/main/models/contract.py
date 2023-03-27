@@ -1,31 +1,6 @@
-import re
+from decimal import Decimal
+
 from django.db import models
-from calendar import month_abbr
-
-
-MONTHS = list(month_abbr)
-
-
-def month_code_to_number(code):
-    """
-    Some code by ChatGPT.
-    """
-    code = code.upper()
-    month_codes = {
-        "F": 1,
-        "G": 2,
-        "H": 3,
-        "J": 4,
-        "K": 5,
-        "M": 6,
-        "N": 7,
-        "Q": 8,
-        "U": 9,
-        "V": 10,
-        "X": 11,
-        "Z": 12,
-    }
-    return month_codes[code]
 
 
 class Contract(models.Model):
@@ -37,21 +12,27 @@ class Contract(models.Model):
         crypto = "CRYPTO", "Crypto"
 
     sid = models.CharField(max_length=50, default="")
-    multiplier = models.DecimalField(default=1, max_digits=10, decimal_places=4)
-    min_tick = models.DecimalField(default=0.01, max_digits=8, decimal_places=4)
     sec_type = models.CharField(max_length=50, choices=Type.choices, default=Type.stk)
+    multiplier = models.DecimalField(
+        default=Decimal(1), max_digits=10, decimal_places=4
+    )
+    min_tick = models.DecimalField(
+        default=Decimal(0.01), max_digits=10, decimal_places=6
+    )
+    price_magnifier = models.PositiveIntegerField(default=1, null=False)
 
     def __str__(self):
-        return f"{self.sid}"
+        return self.sid
 
     @classmethod
-    def from_ib(cls, contract, sid):
+    def from_ib(cls, contract, contract_details, sid):
         multiplier = contract.multiplier or 1
         return cls(
             sid=sid,
             multiplier=multiplier,
-            min_tick=0.01,
+            min_tick=Decimal(contract_details.minTick),
             sec_type=contract.secType,
+            price_magnifier=Decimal(contract_details.priceMagnifier),
         )
 
     class Meta:

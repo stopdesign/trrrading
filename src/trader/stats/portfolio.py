@@ -57,29 +57,17 @@ class PortfolioStats:
         """
         Вывести список позиций.
         """
-        symbols = sorted(list({s.symbol for s in self.trader.strategies}))
-        for symbol in symbols:
-            if p := self.exchange.positions.get(symbol):
-                log.info(colored(f"Position: {symbol}, {p.amount:+0.0f}", "cyan"))
+        instruments = sorted(list({s.sid for s in self.trader.strategies}))
+        for sid in instruments:
+            if p := self.exchange.positions.get(sid):
+                log.info(colored(f"Position: {sid}, {p.amount:+0.0f}", "cyan"))
             else:
-                log.info(colored(f"Position: {symbol}, unknown", "yellow"))
+                log.info(colored(f"Position: {sid}, unknown", "yellow"))
 
     def account_info(self):
         bot_margin = 0
         log.info(colored(f"Net Value:   {self.prev_net_value:6.0f}", "blue"))
         log.info(colored(f"Margin Used: {bot_margin:6.0f}\n", "blue"))
-
-    def save_events(self, base_dir):
-        """
-        Сохранение сделок на диск.
-        """
-        file_name = "URA.ARCA_strategy_events.jsonl"
-        path = os.path.join(base_dir, file_name)
-        txt = ""
-        for trade in self.exchange.trades:
-            txt += json.dumps(trade, default=str) + "\n"
-        with open(path, "w") as f:
-            f.write(txt)
 
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")

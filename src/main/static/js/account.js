@@ -42,11 +42,11 @@ const Account = ({ account }) => {
   const connections = values["connections"] || []
 
   return html`
-      <div class=account_panel>
+      <div className=account_panel>
           <p>Account:  ${values.uid}</p>
-          <div class=connections>
+          <div className=connections>
             ${connections.map(con => html`<div key=${con[0]}>
-                <b>${con[0]}</b> - <span class="status status-${con[1]}">${con[1]}</span>
+                <b>${con[0]}</b> - <span className="status status-${con[1]}">${con[1]}</span>
               </div>`)}
           </div>
           <br/>

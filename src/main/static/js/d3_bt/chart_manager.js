@@ -24,7 +24,7 @@ export class ChartManager {
 
     const base = "http://127.0.0.1:8000"
 
-    let ohlc = await d3.json(`${base}/bt/raw?symbol=${bt_uid}_${symbol}`);
+    let ohlc = await d3.json(`${base}/bt/raw?symbol=${bt_uid}-${symbol}`);
     let events = await d3.json(`${base}/bt/events?result=${bt_uid}&strategy=${symbol}`);
 
     console.log([...events])

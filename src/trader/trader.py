@@ -7,8 +7,10 @@ from datetime import datetime, timedelta
 import redis
 from termcolor import colored
 
+from trader.strategy.base import BaseStrategy
+
 from .exchange import Emulator, Exchange
-from .market import DataProvider, PolygonAdapter, TradisAdapter
+from .market import DataProvider, PolygonAdapter, TradisAdapter, TwsOfflineAdapter
 from .stats import PortfolioStats
 from .strategy import all_strategies
 
@@ -51,21 +53,6 @@ class Trader:
 
         run_config = config["backtest"] if backtest else config["live"]
 
-        self.symbols = sorted(list({c["symbol"] for c in config["strategies"]}))
-        self.config_start_end(run_config, warm_up=timedelta(days=10))
-        self.config_sources(run_config, config["sources"])
-
-        # Добывает данные, запускает события
-        self.data_provider = DataProvider(
-            symbols=self.symbols,
-            history=self.history_source,  # исторические данные одной кучей
-            feed=self.feed_source,  # real-time потоковые данные
-            dt_prior=self.dt_prior,
-            dt_start=self.dt_start,
-            dt_end=self.dt_end,
-            on_event=self.on_event,
-        )
-
         # Объект, работающий с ордерами
         if self.backtest or self.replay:
             self.exchange = Emulator(self.on_event)
@@ -75,12 +62,33 @@ class Trader:
 
         # Инициализация стратегий и список индикаторов
         self.strategies = []
+        self.data_sources = []
+        self.consolidators = []
         self.indicators = []
         for cfg in config["strategies"]:
-            strategy_class = all_strategies[cfg["strategy"]]
-            strategy = strategy_class(exchange=self.exchange, **cfg)
+            klass: type[BaseStrategy] = all_strategies[cfg["strategy"]]
+            strategy = klass(exchange=self.exchange, **cfg)
             self.strategies.append(strategy)
-            self.indicators += list(strategy.indicators)
+            self.data_sources.extend(strategy.data_sources)
+            self.consolidators.extend(strategy.consolidators)
+            self.indicators.extend(strategy.indicators)
+
+        # Список всех инструментов, используемых в стратегиях
+        self.instruments = list(sorted(set([ds.sid for ds in self.data_sources])))
+
+        self.config_start_end(run_config, warm_up=timedelta(days=10))
+        self.config_sources(run_config, config["sources"])
+
+        # Добывает данные, запускает события
+        self.data_provider = DataProvider(
+            instruments=self.instruments,
+            history=self.history_source,  # исторические данные одной кучей
+            feed=self.feed_source,  # real-time потоковые данные
+            dt_prior=self.dt_prior,
+            dt_start=self.dt_start,
+            dt_end=self.dt_end,
+            on_event=self.on_event,
+        )
 
         # Прогреть индикторы прогоном исторических данных
         self.data_provider.warm_up()
@@ -95,13 +103,16 @@ class Trader:
         self.portfolio_stats.portfolio_info()
         # self.portfolio_stats.account_info()
 
-    def on_event(self, event, dt, symbol=None, payload=None):
+    def on_event(self, event, dt, sid=None, payload=None):
         """
         В стриме биржи возникло новое событие.
         Порядок событий пока хрен знает какой.
         """
-        if dt and dt > self.dt_start and not self.backtest:
-            # log.info(f"EVENT {event} {symbol} {payload}")
+        if dt and dt > self.dt_start: # and not self.backtest:
+            from time import sleep
+            # print()
+            # sleep(0.001)
+            # log.info(f"EVENT {colored(event, 'red')} {sid} {payload}")
             pass
 
         if event == "quote":
@@ -115,22 +126,30 @@ class Trader:
             # 1. Добавить bar в хранилище баров
             self.exchange.on_bar(dt, payload)
 
-            # 2. Обновить индикаторы, собрать их новые значения
-            for indicator in self.indicators:
-                indicator.add_bar(copy(payload))
+            # Наполнить источники данных и консолидаторы
+            for source in self.data_sources + self.consolidators:
+                if source.sid == payload.sid:
+                    source.add_bar(copy(payload))
 
-            # 3. Передать bar в стратегии
-            for strategy in self.strategies:
-                strategy.on_bar(copy(payload))
+            # Обновить индикаторы, собрать их новые значения
+            for indicator in self.indicators:
+                if indicator.source.sid == payload.sid:
+                    indicator.update_source(dt)
+
+            # Теперь источники данных и консолидаторы могут дернуть события
+            for source in self.data_sources + self.consolidators:
+                if source.sid == payload.sid:
+                    source.trigger_events()
 
             # # 4. Запустить обработку ордеров
             # self.exchange.process_orders()
 
-        # TODO: переименовать в tick
-        if event == "trade":
+        if event == "tick":
+
+            # FIXME: переделать на работу через data_sources
             # 3. Передать trade в стратегии
             for strategy in self.strategies:
-                strategy.on_trade(copy(payload))
+                strategy.on_tick(copy(payload))
 
             # 4. Запустить обработку ордеров
             self.exchange.process_orders()
@@ -184,6 +203,8 @@ class Trader:
             self.history_source = TradisAdapter(redis_client)
         elif "polygon" in history:
             self.history_source = PolygonAdapter(**history_conf)
+        elif history == "tws_offline":
+            self.history_source = TwsOfflineAdapter(**history_conf)
         else:
             raise ValueError(f"Unknown history source: {history}")
 
@@ -233,42 +254,68 @@ class Trader:
 
     def save_backtest_data(self):
         """
-        FIXME: код стал еще более ебаным
+        - почистить старое
+        - создать директорию для результатов
+        - для каждой рыночной системы сохранить
+            - ohlc и индикаторы
+            - сделки
         """
         import os
+        import shutil
+        from datetime import timezone
 
-        # создание директории для всяких там результатов бэктеста
+        base_res_dir = os.path.join(os.path.dirname(__file__), "../../res")
+        base_res_dir = os.path.abspath(base_res_dir)
+
+        # Удаление старых результатов
+        results = list(sorted(os.listdir(base_res_dir)))
+        for old_result in results[:-30]:  # всё, кроме последних N
+            path = os.path.join(base_res_dir, old_result)
+            shutil.rmtree(path)
+
+        # Создание директории для результатов
         dt = datetime.utcnow()  # server time
         day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
         ts = (dt - day).total_seconds()
         dir_name = f"{day:%Y-%m-%d}_{ts:06.0f}/"
-        base_dir = os.path.join(os.path.dirname(__file__), "../../res", dir_name)
-        base_dir = os.path.abspath(base_dir)
+        base_dir = os.path.join(base_res_dir, dir_name)
         os.makedirs(base_dir)
 
-        # self.strategy_stats.save_ohlc(path, self.dt_start)
-
-        from datetime import timezone
+        # Сохранение метаданных про запуск:
+        # параметры стратегии, параметры запуска...
 
         def dt_to_ts(dt):
             return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
-        # сохранение баров и индикаторов
-        for symbol in self.symbols:
-            file_name = f"URA.ARCA_strategy_ohlc.jsonl"
-            path = os.path.join(base_dir, file_name)
+        # Cохранение баров и индикаторов
+        for strategy in self.strategies:
+            ms = strategy.market_system
+            sid = strategy.sid
+            path = os.path.join(base_dir, f"{ms}-ohlc.jsonl")
             txt = ""
-            for bar in self.exchange.bars[symbol]:
-                if bar.date >= self.dt_start:
-                    ts = dt_to_ts(bar.date)
-                    last_bar = asdict(bar)
-                    last_bar["ts"] = ts
-                    last_bar["ind"] = []
-                    for ind in self.indicators:
-                        last_bar["ind"].append(ind.values_by_ts.get(ts, {}))
-                    txt += json.dumps(last_bar, default=str) + "\n"
+            for bar in self.exchange.bars[sid]:
+                if bar.date < self.dt_start:
+                    continue
+                ts = dt_to_ts(bar.date)
+                last_bar = asdict(bar)
+                last_bar["ts"] = ts
+                last_bar["ind"] = []
+                for ind in self.indicators:
+                    if ind.source.sid == sid:
+                        ind_values = ind.values_by_ts.get(ts, {})
+                        last_bar["ind"].append(ind_values)
+                txt += json.dumps(last_bar, default=str) + "\n"
             with open(path, "w") as f:
                 f.write(txt)
 
-        # сохранение сделок и депозита
-        self.portfolio_stats.save_events(base_dir)
+        # Сохранение сделок и депозита
+
+        for strategy in self.strategies:
+            ms = strategy.market_system
+            path = os.path.join(base_dir, f"{ms}-events.jsonl")
+            txt = ""
+            for trade in self.exchange.trades:
+                if trade["ms"] == ms:
+                    txt += json.dumps(trade, default=str) + "\n"
+            with open(path, "w") as f:
+                f.write(txt)

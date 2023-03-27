@@ -52,6 +52,13 @@ class Emulator(BaseExchange):
         self.orders.append(order)
         self.matcher.process_order(order)
 
+    def update_order(self, order: Order, **kwargs):
+        updated = False
+        for key, value in kwargs.items():
+            if getattr(order, key, None) != value:
+                updated = True
+            setattr(order, key, value)
+
     def process_orders(self):
         """
         Посмотреть список ордеров и изобразить их исполнение по известным ценам.

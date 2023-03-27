@@ -31,7 +31,7 @@ class DataProvider:
 
     def __init__(
         self,
-        symbols: list,
+        instruments: list,
         on_event: Callable,
         dt_prior: datetime,
         dt_start: datetime,
@@ -39,7 +39,7 @@ class DataProvider:
         history: BaseSource,
         feed: BaseSource|None = None,
     ):
-        self.symbols = symbols
+        self.instruments = instruments
 
         self.dt_prior = dt_prior
         self.dt_start = dt_start
@@ -47,7 +47,7 @@ class DataProvider:
         self.on_event = on_event
 
         # Инициализация календаря для всех нужных символов и дней
-        self.schedule = MarketCalendar(self.symbols, dt_prior, dt_end)
+        self.schedule = MarketCalendar(self.instruments, dt_prior, dt_end)
 
         self.history = history
         self.feed = feed
@@ -67,16 +67,18 @@ class DataProvider:
         # Дополнить payload информацией о расписании биржи
         if "sid" in payload and "dt" in payload:
 
-            dt, symbol = payload["dt"], payload["sid"]
+            dt, sid = payload["dt"], payload["sid"]
 
             # Для OHLC проверить, что эти данные новее всех уже обработанных
             if "o" in payload:
-                if self.last_processed_dt[symbol] >= dt:
-                    log.warning(f"Interval has been processed: {symbol}, {dt}")
+                if self.last_processed_dt[sid] >= dt:
+                    log.warning(f"Interval has been processed: {sid}, {dt}")
                     return
-                self.last_processed_dt[symbol] = dt
+                self.last_processed_dt[sid] = dt
 
-            payload["rth"] = self.schedule.is_rth(symbol, dt)
+            # Пробрасывать эту настройк из стратегии, из подписки
+            payload["rth"] = self.schedule.is_rth(sid, dt)
+
             if payload["rth"]:
                 # Формат данных, проверка large gap и вызов Trader.on_event
                 self.event_manager.notify(payload)
@@ -92,34 +94,34 @@ class DataProvider:
         событий по ним для прогрева индикаторов.
         """
 
-        records = self.history.load(self.symbols, self.dt_prior, self.dt_start)
+        records = self.history.load(self.instruments, self.dt_prior, self.dt_start)
 
         log.info(f"warm_up data length: {len(records)}")
 
-        for ts, symbol, payload in records:
+        for ts, instrument, payload in records:
             self.on_market_event(payload)
 
     def backtest(self):
         """ """
-        records = self.history.load(self.symbols, self.dt_start, self.dt_end)
+        records = self.history.load(self.instruments, self.dt_start, self.dt_end)
 
         log.info(f"backtest data length: {len(records)}")
 
-        for ts, symbol, payload in records:
+        for ts, instrument, payload in records:
             self.on_market_event(payload)
 
     def replay(self, dt_start, dt_end):
         """
         Заменит warm_up и backtest.
         """
-        records = self.history.load(self.symbols, dt_start, dt_end)
+        records = self.history.load(self.instruments, dt_start, dt_end)
 
         # сбросить проверку
         self.last_processed_dt = defaultdict(lambda: datetime.min)
 
         log.info(f"replay data length: {len(records)}")
 
-        for ts, symbol, payload in records:
+        for ts, instrument, payload in records:
             self.on_market_event(payload)
 
 
@@ -132,4 +134,4 @@ class DataProvider:
         if not self.feed:
             raise Exception("No feed source to listen")
 
-        self.feed.listen(self.symbols, self.on_market_event, self.on_broker_event)
+        self.feed.listen(self.instruments, self.on_market_event, self.on_broker_event)

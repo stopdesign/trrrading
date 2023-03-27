@@ -102,6 +102,7 @@ class ContractAdmin(admin.ModelAdmin):
         "sec_type",
         "min_tick",
         "multiplier",
+        "price_magnifier",
     )
     list_filter = ("sec_type",)
     actions_on_top = False
@@ -140,9 +141,7 @@ class OrderAdmin(admin.ModelAdmin):
         "order_id",
         "local_id",
         "account",
-        "run",
         "contract",
-        "string_repr",
         "get_status_bool",
         "status",
         "amount",
@@ -150,8 +149,8 @@ class OrderAdmin(admin.ModelAdmin):
         "get_rth",
         "type",
         "action",
+        "stop_price",
         "limit_price",
-        "signal_price",
         "avg_fill_price",
         # "get_slippage",
         # "get_commission",
@@ -166,7 +165,6 @@ class OrderAdmin(admin.ModelAdmin):
         "filled",
         "status",
         "system_comment",
-        "string_repr",
         "order_settings",
     )
     list_filter = (

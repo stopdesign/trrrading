@@ -1,16 +1,17 @@
 from collections import namedtuple
+
+from trader.data_types import Order
+from trader.exchange import BaseExchange, Consolidator, Data
 from trader.indicator.base import BaseIndicator
-from trader.exchange import BaseExchange
 
 
 class BaseStrategy:
-
     exchange: BaseExchange
 
     def __init__(self, **kwargs):
         self.exchange = kwargs.pop("exchange")
-        self.name = kwargs.pop("strategy", None)
-        self.symbol = kwargs.get("symbol")
+        self.name = str(kwargs.pop("strategy", None))
+        self.sid: str = str(kwargs.get("sid"))
         self.length = kwargs.get("length")
         self.params = namedtuple(self.name, kwargs.keys())(*kwargs.values())
         self.data = []
@@ -22,7 +23,6 @@ class BaseStrategy:
         self.account = self.exchange.account
         self.orders = self.exchange.orders
 
-        self.place_order = self.exchange.place_order
         self.update_order = self.exchange.update_order
 
         self.on_start()
@@ -30,13 +30,34 @@ class BaseStrategy:
     def __repr__(self):
         return str(self.params)
 
+    def place_order(self, order: Order):
+        order.strategy = self
+        self.exchange.place_order(order)
+
+    def update_order(self, *args, **kwargs):
+        self.exchange.update_order(*args, **kwargs)
+
     @property
     def market_system(self):
-        return f"{self.symbol}_{self.name}"
+        return f"{self.sid}-{self.name}"
 
     @property
     def indicators(self):
-        return filter(lambda a: isinstance(a, BaseIndicator), self.__dict__.values())
+        for attr in vars(self).values():
+            if isinstance(attr, BaseIndicator):
+                yield attr
+
+    @property
+    def data_sources(self):
+        for attr in vars(self).values():
+            if isinstance(attr, Data):
+                yield attr
+
+    @property
+    def consolidators(self):
+        for attr in vars(self).values():
+            if isinstance(attr, Consolidator):
+                yield attr
 
     def on_start(self):
         pass
@@ -51,5 +72,5 @@ class BaseStrategy:
     def on_quote(self, data):
         pass
 
-    def on_trade(self, data):
+    def on_tick(self, data):
         pass

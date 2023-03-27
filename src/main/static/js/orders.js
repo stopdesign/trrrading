@@ -2,11 +2,11 @@ import {React, html, useEffect, useState} from "./deps.js";
 
 
 const draw_order = function (ac, order) {
-  let color;
-  let icon_shape;
-  let arrow_pos;
+  let color
+  let icon_shape
+  let arrow_pos
 
-  let price = parseFloat(order["price"]);
+  let price = parseFloat(order["price"])
 
   if (order["side"] === "buy") {
     color = "#080";
@@ -18,33 +18,66 @@ const draw_order = function (ac, order) {
     arrow_pos = price + 0.2; // + (range_range/20);
   }
 
-  const arrow_bg = ac.createShape(
-    {time: order["time"], price: price},
-    {
-      shape: 'icon',
-      overrides: {color: "#fff", size: 36, scale: 1},
-      icon: icon_shape,
-      zOrder: "top",
-      disableSelection: true,
-    }
-  );
-  const arrow = ac.createShape(
-    {time: order["time"], price: price},
-    {
-      shape: 'icon',
-      overrides: {color: color, size: 30, scale: 1},
-      icon: icon_shape,
-      zOrder: "top",
-      disableSelection: true,
-    }
-  );
+  const s = order["status"]
+  if (s.includes("Submitted") || s.includes("Inactive")) {
+    // console.log(order)
+
+    const t1 = order["time"]
+    const t2 = order["time"] + 3600
+
+    const LINESTYLE_SOLID = 0
+    const LINESTYLE_DOTTED = 1
+    const LINESTYLE_DASHED = 2
+    const LINESTYLE_LARGE_DASHED = 3
+
+    const limit_price = parseFloat(order["limit_price"])
+    const points = [{time: t1, price: limit_price}, {time: t2, price: limit_price}]
+    ac.createMultipointShape(points, {
+      shape: "trend_line",
+      overrides: {
+        linecolor: color,
+        linewidth: 1,
+        linestyle: LINESTYLE_SOLID,
+        extendLeft: true,
+        extendRight: true,
+      },
+    })
+
+  }
+
+  if (s.includes("Filled")) {
+
+    const arrow_bg = ac.createShape(
+      {time: order["time"], price: price},
+      {
+        shape: 'icon',
+        overrides: {color: "#fff", size: 26, scale: 1},
+        icon: icon_shape,
+        zOrder: "top",
+        disableSelection: true,
+      }
+    )
+    const arrow = ac.createShape(
+      {time: order["time"], price: price},
+      {
+        shape: 'icon',
+        overrides: {color: color, size: 20, scale: 1},
+        icon: icon_shape,
+        zOrder: "top",
+        disableSelection: true,
+      }
+    )
+
+  }
 }
 
 
 const create_chart = (el) => {
+  const Datafeeds = window["Datafeeds"]
+
   // noinspection JSPotentiallyInvalidConstructorUsage
   // https://github.com/serdimoa/charting/blob/master/Featuresets.md
-  window.tv = new TradingView.widget({
+  window["tv"] = new TradingView.widget({
     debug: false,
     fullscreen: false,
     symbol: "A",
@@ -63,9 +96,7 @@ const create_chart = (el) => {
       "left_toolbar",
       "control_bar",
       "edit_buttons_in_legend",
-
       // "chart_zoom", "chart_scroll",
-
       "header_settings",
       "header_compare",
       "header_screenshot",
@@ -78,9 +109,8 @@ const create_chart = (el) => {
       "property_pages",
       "display_market_status",
       "remove_library_container_border",
-
+      "uppercase_instrument_names",
       "border_around_the_chart",
-
       "pane_context_menu",
       "scales_context_menu",
       "legend_context_menu",
@@ -88,16 +118,25 @@ const create_chart = (el) => {
       "right_bar_stays_on_scroll",
     ],
     width: "100%",
-    height: "500px",
+    height: "480px",
     toolbar_bg: '#f4f7f9',
   });
 
-  // document.getElementById("tv_chart_container").contentDocument.body.style.fontFamily = "Tahoma";
+  // const iframe = document.getElementById("tv_chart_container").getElementsByTagName("iframe")[0]
+  // iframe.contentDocument.body.style.fontFamily = "Hack";
 
 }
 
 
 const Order = ({data, curOrder, setOrder}) => {
+
+  let price = data.price
+  try {
+    price = data.price.toFixed(2)
+  } catch {
+    price = data.price
+  }
+
   return html`
       <tr onClick=${() => setOrder(data.id === curOrder.id ? {} : data)}
           className=${data.id === curOrder.id ? "active" : ""}
@@ -106,9 +145,12 @@ const Order = ({data, curOrder, setOrder}) => {
           <td>${data["local_id"]}</td>
           <td>${data.sid}</td>
           <td>${data.side}</td>
+          <td>${data.type}</td>
           <td>${data.amount}</td>
           <td>${data.filled}</td>
-          <td>${data.price}</td>
+          <td>${data.stop_price}</td>
+          <td>${data.limit_price}</td>
+          <td>${price}</td>
           <td>${data.status}</td>
           <td>${data.created}</td>
       </tr>
@@ -117,12 +159,12 @@ const Order = ({data, curOrder, setOrder}) => {
 
 
 const draw_orders = (orders) => {
-  const ac = window.tv.chart();
+  const ac = window["tv"].chart();
   const range = ac.getVisibleRange();
 
   // Удалить все ордеры с графика
   ac.getAllShapes().forEach(({id, name}) => {
-    if (name === "icon") {
+    if (name === "icon" || name === "trend_line") {
       ac.removeEntity(id);
     }
   });
@@ -153,8 +195,8 @@ const Orders = ({account, symbol}) => {
     console.error("create a chart");
     create_chart("tv_chart_container");
 
-    window.tv.onChartReady(() => {
-      const ac = window.tv.chart();
+    window["tv"].onChartReady(() => {
+      const ac = window["tv"].chart();
       const ser = ac.getSeries();
 
       ser.setChartStyleProperties(0, {
@@ -200,11 +242,11 @@ const Orders = ({account, symbol}) => {
 
     if (dataLoaded && !resized) {
       console.warn("first time");
-      const ac = window.tv.chart();
+      const ac = window["tv"].chart();
       const to = ac.getVisibleRange().to;
       ac.setVisibleRange(
         // Сколько данных показывать по умолчанию
-        {from: to - 3600 * 12, to: to},
+        {from: to - 3600 * 3, to: to},
         {applyDefaultRightMargin: true}
       );
       setResized(true);
@@ -238,7 +280,7 @@ const Orders = ({account, symbol}) => {
     const chartDiv = document.getElementById("tv_chart_container");
     if (symbol) {
       // Показать график и выставить новый символ
-      const ac = window.tv.activeChart();
+      const ac = window["tv"].activeChart();
       // удалить всё с графика
       ac.getAllShapes().forEach(({id, name}) => ac.removeEntity(id));
       ac.setSymbol(symbol);
@@ -258,7 +300,7 @@ const Orders = ({account, symbol}) => {
   useEffect(() => {
     console.log("selectedOrder", selectedOrder.id, selectionOnChart);
     if (selectedOrder && selectedOrder.time) {
-      const ac = window.tv.activeChart();
+      const ac = window["tv"].activeChart();
       const id = ac.createShape({time: selectedOrder.time}, {shape: 'vertical_line'});
       if (selectionOnChart) {
         ac.removeEntity(selectionOnChart);
@@ -266,7 +308,7 @@ const Orders = ({account, symbol}) => {
       setSelectionOnChart(id);
     } else {
       if (selectionOnChart) {
-        const ac = window.tv.activeChart();
+        const ac = window["tv"].activeChart();
         ac.removeEntity(selectionOnChart);  // removeAllShapes
         setSelectionOnChart();
       }
@@ -284,8 +326,11 @@ const Orders = ({account, symbol}) => {
                       <td>local_id</td>
                       <td>instrument</td>
                       <td>side</td>
+                      <td>type</td>
                       <td>amount</td>
                       <td>filled</td>
+                      <td>stop price</td>
+                      <td>limit price</td>
                       <td>price</td>
                       <td>status</td>
                       <td>created</td>

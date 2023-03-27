@@ -53,40 +53,38 @@ class LocalMatcher:
         """
         Тип ордера: market, limit, stop.
         """
-        process_order = False
+        execute = False
         price = None
-
-        instrument = order.instrument
 
         side = "buy" if order.amount > 0 else "sell"
 
         if order.type == "market":
-            process_order = True
-            price = self.exchange.get_price(instrument, side)  # "mid"
+            execute = True
+            price = self.exchange.get_price(order.sid, side)  # "mid"
 
         if order.type == "limit":
             pass
 
         if order.type == "stop":
             # TODO: сделать нормальный алгоритм
-            price = self.exchange.get_price(instrument, "mid")
+            price = self.exchange.get_price(order.sid, "mid")
             if order.amount > 0 and price > order.stop_price:
-                process_order = True
+                execute = True
                 # price = Decimal(order.stop_price)
                 # price = (Decimal(order.stop_price) + Decimal(price)) / 2
             if order.amount < 0 and price < order.stop_price:
-                process_order = True
+                execute = True
                 # price = Decimal(order.stop_price)
                 # price = (Decimal(order.stop_price) + Decimal(price)) / 2
 
-        if process_order and price:
+        if execute and price:
             order.status = "filled"
             order.fill_price = price
 
             # log.info(f"FILL {order}")
 
             # обновить позицию
-            position = self.exchange.positions.get(instrument)
+            position = self.exchange.positions.get(order.sid)
 
             new_amount = position.amount + order.amount
             trade_profit = position.update(new_amount, price)
@@ -101,7 +99,9 @@ class LocalMatcher:
                 profit_str = colored(profit_str, "red")
 
             log.info(
-                f"Fill {order.local_id}, {side:>4}, price: {order.fill_price:0.2f}, "
+                f"Fill {order.local_id}, "
+                f"{side.upper():>4} {order.sid:>10}, "
+                f"price: {order.fill_price:0.2f}, "
                 f"trade: {profit_str}, "
                 f"net: {self.exchange.account['net_value']:10.2f} "
             )
@@ -112,7 +112,8 @@ class LocalMatcher:
             data = {
                 "dt": self.exchange.dt_last,
                 "time": dt_to_ts(self.exchange.dt_last),
-                "symbol": order.instrument,
+                "ms": order.strategy.market_system,
+                "sid": order.sid,
                 "side": side,
                 "amount": abs(order.amount),
                 "profit": trade_profit,

@@ -83,8 +83,9 @@ class Order(models.Model):
             status=state.status,
             amount=order.totalQuantity,
             filled=filled,
-            type=cls.Type.lmt,
+            type=cls.Type.lmt,  # FIXME: распарсить тип ордера
             limit_price=order.lmtPrice,
+            stop_price=order.auxPrice,
             is_bot=False,
             outside_rth=order.outsideRth,
         )
