@@ -1,5 +1,3 @@
-import json
-import os.path
 import logging
 import numpy as np
 from decimal import Decimal

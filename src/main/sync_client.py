@@ -32,7 +32,7 @@ class SyncClient:
         action = {
             "action": "create",
             "local_id": order.local_id,
-            "sid": order.instrument,
+            "sid": order.sid,
             "amount": order.amount,
             "type": order.type,
             "limit_price": order.limit_price,
@@ -72,7 +72,7 @@ class SyncClient:
         for position in db_positions:
             sid = position.contract.sid
             self.positions[sid] = Position(
-                symbol=sid,
+                sid=sid,
                 capital=Decimal(100_000),
                 amount=position.amount,
                 avg_price=position.avg_price,
@@ -88,7 +88,7 @@ class SyncClient:
             if order.action == DBOrder.Side.sell:
                 amount = -order.amount
             o = Order(
-                instrument=order.contract.sid,
+                sid=order.contract.sid,
                 local_id=order.local_id,
                 type=order.type,
                 amount=amount,

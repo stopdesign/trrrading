@@ -1,92 +1,19 @@
 import glob
-import os.path
-import redis
-import orjson
 import json
-from datetime import timezone, datetime, timedelta
+import os.path
+from datetime import datetime, timedelta, timezone
+
+import orjson
+import redis
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
-from django.core.cache import cache
+
 from main.models import Account, Contract, Order, Position
-
-
-MD_STATES = ["ok", "error", "closed", "empty", "delay", "fix", "late", "none"]
-
-
-def get_stats_for_hour(data):
-
-    cnt = {state: 0 for state in MD_STATES}
-
-    for line in data:
-        try:
-            j = orjson.loads(line.decode())
-        except ValueError:
-            cnt["error"] += 1
-            continue
-
-        for state in MD_STATES:
-            if j.get(state):
-                cnt[state] += 1
-                break
-        else:
-            cnt["ok"] += 1
-
-    cnt["none"] = min(60, 60 - len(data))
-
-    return dict(cnt)
-
-
-def get_dash_csv_data(redis_client):
-    """
-    CSV со статусами по часам.
-    """
-    end = datetime.utcnow()
-    start = end - timedelta(hours=170)
-    start = start.replace(minute=0, second=0, microsecond=0)
-
-    dash_csv_data = "ticker,hour," + ",".join(MD_STATES) + "\n"
-
-    for key in redis_client.keys("*:TRADES"):
-        key = key.decode()
-
-        cur_hour = start
-        for n in range(300):
-            # Запросить данные для этого интервала
-            cur_hour_ts = dt_to_ts(cur_hour)
-            data = redis_client.zrangebyscore(key, cur_hour_ts, cur_hour_ts + 3599)
-
-            stats = get_stats_for_hour(data)
-            stats = dict(key=key, dt=str(cur_hour), **stats)
-
-            dash_csv_data += ",".join(map(str, stats.values())) + "\n"
-
-            cur_hour += timedelta(hours=1)
-            if cur_hour > end:
-                break
-
-    return dash_csv_data
 
 
 def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
-
-
-def market_data_status_api(request):
-    redis_client = redis.Redis(
-        # host=settings.TREDIS_HOST,
-        # port=settings.TREDIS_PORT,
-        # db=settings.TREDIS_DB,
-        # password=settings.TREDIS_PASSWORD,
-    )
-    data = get_dash_csv_data(redis_client)
-    return HttpResponse(data, content_type="text/plain")
-
-
-def data_inspector(request):
-    context = {
-    }
-    return render(request, 'data_inspector.html', context)
 
 
 def dashboard(request):

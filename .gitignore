@@ -9,6 +9,7 @@
 /coverage
 /node_modules
 /tradingview/
+/tradis/
 *_local.*
 *.sqlite3*
 reload

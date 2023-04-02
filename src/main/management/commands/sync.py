@@ -1,21 +1,18 @@
 import json
 import logging
-from posixpath import abspath
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from posixpath import abspath
 
 import redis
 import yaml
-from django.conf import settings
-from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from ib_sync import IBSync, IBThread
 from ibapi.order import Order as IBOrder
 from termcolor import colored, cprint
 
-from ibkr_api.client import IbContract, IBThread
-from ibkr_api.ib_sync import IBSync
 from main.models import Account, Contract, Order, Position, Trade
 
 # Логгер для этого файла

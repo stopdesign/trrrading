@@ -40,11 +40,11 @@ class HullMA(BaseIndicator):
     def on_bar(self, bar: Bar):
         skip = False
 
-        if not bar.rth:
-            skip = True
+        # if not bar.rth:
+        #     skip = True
 
-        if bar.volume == 0:
-            skip = True
+        # if bar.volume == 0:
+        #     skip = True
 
         # При каких-то условиях добавить данные в индикатор
         if not skip:

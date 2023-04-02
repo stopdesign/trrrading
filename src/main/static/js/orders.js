@@ -19,8 +19,8 @@ const draw_order = function (ac, order) {
   }
 
   const s = order["status"]
-  if (s.includes("Submitted") || s.includes("Inactive")) {
-    // console.log(order)
+  if (s.includes("Submitted") || s.includes("PreSubmitted")) {
+    console.log(order)
 
     const t1 = order["time"]
     const t2 = order["time"] + 3600
