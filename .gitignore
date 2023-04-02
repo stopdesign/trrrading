@@ -10,6 +10,8 @@
 /node_modules
 /tradingview/
 /tradis/
+/antifreeze/
+/tradis_dashboard/
 *_local.*
 *.sqlite3*
 reload
