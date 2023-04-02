@@ -5,6 +5,7 @@
 /data/
 /opt/data*
 /lean/
+/opt/
 /config/
 /coverage
 /node_modules

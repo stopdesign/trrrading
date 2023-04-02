@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import redis
 from termcolor import colored
 
-from trader.strategy.base import BaseStrategy
+from .strategy.base import BaseStrategy
 
 from .exchange import Emulator, Exchange
 from .market import DataProvider, PolygonAdapter, TradisAdapter, TwsOfflineAdapter
@@ -108,10 +108,7 @@ class Trader:
         В стриме биржи возникло новое событие.
         Порядок событий пока хрен знает какой.
         """
-        if dt and dt > self.dt_start: # and not self.backtest:
-            from time import sleep
-            # print()
-            # sleep(0.001)
+        if dt and dt > self.dt_start and not self.backtest:
             # log.info(f"EVENT {colored(event, 'red')} {sid} {payload}")
             pass
 
@@ -154,11 +151,11 @@ class Trader:
             # 4. Запустить обработку ордеров
             self.exchange.process_orders()
 
-        # Событие ордера, которое нужно передать в стратегию
-        if event == "order":
-            # TODO: пробрасывать только в стратегию, которая ордер создала
-            for strategy in self.strategies:
-                strategy.on_order_event(payload)
+        # # Событие ордера, которое нужно передать в стратегию
+        # if event == "order":
+        #     # TODO: пробрасывать только в стратегию, которая ордер создала
+        #     for strategy in self.strategies:
+        #         strategy.on_order_event(payload)
 
         # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
         if event == "broker":
