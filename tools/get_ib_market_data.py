@@ -10,31 +10,17 @@ from datetime import datetime, timedelta, timezone
 from time import sleep
 
 import click
+import coloredlogs
+from ib_sync import IbContract, IBSync, IBThread
 from pandas_market_calendars import MarketCalendar
-from rich import print
-from rich.logging import RichHandler
-
-p = os.path.abspath("..")
-if p not in sys.path:
-    sys.path.insert(0, p)
-
-from src.ibkr_api.client import IbContract, IBThread
-from src.ibkr_api.ib_sync import IBSync
 
 # Логгер для этого файла
 log = logging.getLogger()
 
 # log.setLevel(logging.INFO)
 
-# coloredlogs.install(
-#     "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
-# )
-
-logging.basicConfig(
-    level="INFO",
-    format="%(message)s",
-    datefmt="%X",
-    handlers=[RichHandler(rich_tracebacks=True)],
+coloredlogs.install(
+    "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
 )
 
 

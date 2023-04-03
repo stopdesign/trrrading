@@ -586,7 +586,7 @@ class Command(BaseCommand):
         gateway = config["gateway"]
 
         # TODO: настроить из конфига
-        redis_client = redis.Redis()
+        redis_client = redis.Redis(**config["redis"])
         pubsub = redis_client.pubsub()
 
         ib = IBSyncExtended(redis_client)
