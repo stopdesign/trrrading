@@ -117,11 +117,12 @@ DATETIME_FORMAT = 'd.m.Y, H:i:s'
 SHORT_DATETIME_FORMAT = 'd.m.Y, H:i:s'
 
 STATIC_URL = "/static/"
-MEDIA_URL = "/md/"
+MEDIA_URL = "/media/"
 
 APPEND_SLASH = False
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True  # ??
+CORS_ORIGIN_ALLOW_ALL = True
 
 # Add reversion models to admin interface:
 ADD_REVERSION_ADMIN = True
