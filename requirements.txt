@@ -10,7 +10,7 @@ oath==1.4.4
 click==8.0.1
 git+ssh://git@github.com/stopdesign/ib_sync@main#egg=ib_sync
 
-psycopg2
+psycopg2-binary
 
 django==4.2
 django-environ==0.4.5
