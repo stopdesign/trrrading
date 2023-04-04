@@ -1,6 +1,0 @@
-yfinance
-matplotlib
-jupyter
-quantstats
-pyfolio
-plotly

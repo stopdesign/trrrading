@@ -1,7 +1,6 @@
-import React from "https://unpkg.com/es-react@latest/dev/react.js";
-import ReactDOM from "https://unpkg.com/es-react@latest/dev/react-dom.js";
-import PropTypes from "https://unpkg.com/es-react@latest/dev/prop-types.js";
-import htm from "https://unpkg.com/htm@latest?module";
+import React from "./vendor/es-react/react.js"
+import ReactDOM from "./vendor/es-react/react-dom.js"
+import htm from "./vendor/htm.module.js"
 
 const html = htm.bind(React.createElement);
 
@@ -10,7 +9,6 @@ const {useEffect, useState} = React;
 export {
   React,
   ReactDOM,
-  PropTypes,
   html,
   useEffect,
   useState,
