@@ -18,7 +18,7 @@ clean: # Clean project
 
 pip: # Install python dependencies
 	$(VENV) pip install -r $(BASE_DIR)/requirements.txt \
-	--upgrade -q --no-python-version-warning
+	--upgrade --no-python-version-warning
 
 static: # Django: collectstatic
 	$(VENV) $(MANAGE) collectstatic --noinput
@@ -36,7 +36,7 @@ touch_reload: # Reload instance
 	cd $(BASE_DIR) && touch reload
 
 update: # Run multiple targets
-	pip migrate static touch_reload
+	make pip migrate static touch_reload
 
 deploy: # Deploy via ssh
 	$(SSH) "cd $(SERVER_PATH) && git reset --hard HEAD"
