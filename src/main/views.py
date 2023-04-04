@@ -136,7 +136,13 @@ def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
 
-    redis_client = redis.Redis(decode_responses=True)
+    redis_client = redis.Redis(
+        host=settings.TREDIS_HOST,
+        port=settings.TREDIS_PORT,
+        db=settings.TREDIS_DB,
+        password=settings.TREDIS_PASSWORD,
+        decode_responses=True,
+    )
 
     try:
         connections = json.loads(str(redis_client.get("connections")))
@@ -330,10 +336,11 @@ def history(request):
         return HttpResponse(content, content_type="application/json")
 
     r = redis.Redis(
-        # host=settings.TREDIS_HOST,
-        # port=settings.TREDIS_PORT,
-        # db=settings.TREDIS_DB,
-        # password=settings.TREDIS_PASSWORD,
+        host=settings.TREDIS_HOST,
+        port=settings.TREDIS_PORT,
+        db=settings.TREDIS_DB,
+        password=settings.TREDIS_PASSWORD,
+        decode_responses=True,
     )
 
     from_ts = int(request.GET.get("from"))
@@ -359,7 +366,7 @@ def history(request):
 
     if data_in_db:
         for line in data_in_db:
-            j = orjson.loads(line.decode('utf-8'))
+            j = orjson.loads(line)
             if "o" in j and j["o"] > 0:
                 dt = datetime.strptime(j["dt"], "%Y-%m-%d %H:%M:%S")
                 # rth = 0
