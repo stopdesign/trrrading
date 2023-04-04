@@ -1,7 +1,8 @@
+from decimal import Decimal
 import logging
 from datetime import datetime, timedelta, timezone
 
-from trader.data_types import Bar, Order, Trade
+from trader.data_types import Bar, Order, Trade, Position
 from trader.exchange import Consolidator, Data
 from trader.indicator import DonchianChannels, MovingAverage
 
@@ -75,13 +76,15 @@ class ChBrStop(BaseStrategy):
             log.error(f"Indicator wasn't warmed up? {self.sid} {channel}")
             return
 
+        # FIXME: сделать удобный способ добывать позиции, без get
         # как-то получить позицию по данному инструменту
-        position = self.exchange.positions[self.sid]
+        def_pos = Position(self.sid, capital=Decimal(100000), amount=Decimal(0))
+        position = self.exchange.positions.get(self.sid, def_pos)
 
         ub = round(channel["ub"] / 0.25) * 0.25
         lb = round(channel["lb"] / 0.25) * 0.25
 
-        money = 3000
+        money = 10000
 
         for order in orders:
             if order.status in in_tws:

@@ -8,6 +8,7 @@ cryptography==37.0.2
 coloredlogs==15.0.1
 oath==1.4.4
 click==8.0.1
+talipp==1.9.1
 git+ssh://git@github.com/stopdesign/ib_sync@main#egg=ib_sync
 
 psycopg2-binary

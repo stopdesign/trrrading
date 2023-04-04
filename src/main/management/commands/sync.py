@@ -59,7 +59,7 @@ class IBSyncExtended(IBSync):
         account.unrealized_pnl = unrealizedPnL
         account.realized_pnl = realizedPnL
 
-        # TODO: добавить Cushion — Excess liquidity as a percentage of net liquidation value
+        log.info(f"PNL event, update account, unrealizedPnL: {unrealizedPnL:+0.2f}")
 
         # FIXME: KeyError: 'NetLiquidation'; pnl может приходить раньше values.
 
@@ -89,10 +89,17 @@ class IBSyncExtended(IBSync):
 
         sid = self.sid_for_contract(contract)
 
+        log.warn(f"updatePortfolio: {sid} {position}")
+
         db_position = Position.objects.get(account=account, contract__sid=sid)
 
         if db_position.amount != position:
             log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
+
+        # FIXME: нужно чтобы SYNC с разными client_id получали все ордеры
+
+        # Или хрен с ним, пусть пишет в базу position?
+        # db_position.amount = position
 
         db_position.avg_price = averageCost
         db_position.unrealized_pnl = unrealizedPNL
@@ -153,7 +160,7 @@ class IBSyncExtended(IBSync):
         log.info(
             colored(
                 (
-                    f"OrderStatus: oId: {orderId}, "
+                    f"OrderStatus: oId: {orderId}, clientId: {clientId}, "
                     f"pId: {permId}, {state.status} >> {status}, "
                     f"amnt: {filled}/{remaining}, "
                     f"price: {order.lmtPrice}, "
@@ -284,7 +291,16 @@ class IBSyncExtended(IBSync):
         ib_contract = self.contract_for_sid(sid)
 
         db_account = Account.objects.get(uid=self.account_id)
-        db_contract = Contract.objects.get(sid=sid)
+
+        # Контракта может не быть в базе
+        try:
+            db_contract = Contract.objects.get(sid=sid)
+        except:
+            # Получить контракт из IBKR, сохранить в базе
+            log.info(f"Create contract: {sid}")
+            cd = self.get_contract_details(ib_contract)[0]
+            db_contract = Contract.from_ib(ib_contract, cd, sid)
+            db_contract.save()
 
         oid = self.nextValidOrderId
         self.nextValidOrderId += 1
@@ -377,7 +393,7 @@ class IBSyncExtended(IBSync):
 # TODO: разбить initial_sync на кусочки поменьше
 
 
-def get_executions(ib):
+def get_executions(ib: IBSyncExtended):
     account = Account.objects.get(uid=ib.account_id)
 
     # TODO: выбрать только последние пару дней
@@ -399,7 +415,11 @@ def get_executions(ib):
                 trades_to_create.append(Trade.from_ib(exec, account, order))
                 updated_orders.append(order)
             else:
-                log.error(f"Execution without order: {exec.execId}, o: {exec.permId}")
+                log.error(
+                    f"Execution without order: {exec.execId}, "
+                    f"order.perm_id: {exec.permId}, "
+                    f"client_id: {exec.clientId}, "
+                )
 
     if trades_to_create:
         Trade.objects.bulk_create(trades_to_create)
@@ -454,7 +474,7 @@ def initial_sync(ib: IBSyncExtended):
     ib_executions = ib.get_executions()
 
     ############
-    # Создаются контракты, которых не было в базе
+    # Создаются неизвестные контракты из ордеров и позиций
 
     contracts_to_create = []
     all_contracts = [r[0] for r in ib_orders] + [r[1] for r in ib_positions]
@@ -632,7 +652,8 @@ class Command(BaseCommand):
                     ib = IBSyncExtended(redis_client)
                     ib.lock_for_sync = True
 
-                    ib.connect(gateway["host"], gateway["port"], 0)
+                    client_id = gateway.get("sync_client_id", 0)
+                    ib.connect(gateway["host"], gateway["port"], client_id)
 
                     # Endless message loop
                     IBThread(ib).start()
@@ -672,7 +693,12 @@ class Command(BaseCommand):
                     # С этой хренью новые ордеры из TWS получают id от данного клиента.
                     # Работает только для подключения с ClientId = 0.
                     # Пока непонятно, что с ордерами из мобильного приложения, например.
-                    ib.reqAutoOpenOrders(True)
+                    if client_id == 0:
+                        ib.reqAutoOpenOrders(bAutoBind=True)
+                    else:
+                        log.error("Client ID != 0, using reqOpenOrders")
+                        ib.reqOpenOrders()
+
                     time.sleep(0.1)
 
                     # это подписка, но её нельзя отменить
