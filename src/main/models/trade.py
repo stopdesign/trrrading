@@ -1,4 +1,32 @@
+import datetime as dt
+from zoneinfo import ZoneInfo
+
 from django.db import models
+
+
+# FIXME: вынести в утилиты
+def parseIBDatetime(s: str) -> dt.date | dt.datetime:
+    """Parse string in IB date or datetime format to datetime."""
+    if len(s) == 8:
+        # YYYYmmdd
+        y = int(s[0:4])
+        m = int(s[4:6])
+        d = int(s[6:8])
+        t = dt.date(y, m, d)
+    elif s.isdigit():
+        t = dt.datetime.fromtimestamp(int(s), dt.timezone.utc)
+    elif s.count(' ') >= 2 and '  ' not in s:
+        # 20221125 10:00:00 Europe/Amsterdam
+        s0, s1, s2 = s.split(' ', 2)
+        t = dt.datetime.strptime(s0 + s1, '%Y%m%d%H:%M:%S')
+        t = t.replace(tzinfo=ZoneInfo(s2))
+    else:
+        # YYYYmmdd  HH:MM:SS
+        # or
+        # YYYY-mm-dd HH:MM:SS.0
+        ss = s.replace(' ', '').replace('-', '')[:16]
+        t = dt.datetime.strptime(ss, '%Y%m%d%H:%M:%S')
+    return t
 
 
 class Trade(models.Model):
@@ -43,7 +71,6 @@ class Trade(models.Model):
     @classmethod
     def from_ib(cls, execution, account, order):
         # filled = order.filledQuantity if order.filledQuantity < UNSET_DOUBLE else 0
-        # Распарсить execution.time
         return cls(
             account=account,
             order=order,
@@ -51,7 +78,7 @@ class Trade(models.Model):
             price=execution.price,
             exec_id=execution.execId,
             exchange=execution.exchange,
-            time=None,
+            time=parseIBDatetime(execution.time),
             commission=0,  # приходит отдельно
         )
 

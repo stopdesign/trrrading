@@ -1,54 +1,28 @@
 import {React, html, useEffect, useState} from "./deps.js";
 
 
-const draw_order = function (ac, order) {
+const draw_trade = function (ac, order) {
   let color
   let icon_shape
-  let arrow_pos
 
-  let price = parseFloat(order["price"])
+  // console.log(order.executions)
 
   if (order["side"] === "buy") {
     color = "#080";
     icon_shape = "0xf0d8";
-    arrow_pos = price - 0.2; // - (range_range/20);
   } else {
     color = "#d00";
     icon_shape = "0xf0d7";
-    arrow_pos = price + 0.2; // + (range_range/20);
   }
 
-  const s = order["status"]
-  if (s.includes("Submitted") || s.includes("PreSubmitted")) {
-    console.log(order)
+  // Сделки
+  for (const execution of order.executions) {
+    // console.log(order, execution)
 
-    const t1 = order["time"]
-    const t2 = order["time"] + 3600
-
-    const LINESTYLE_SOLID = 0
-    const LINESTYLE_DOTTED = 1
-    const LINESTYLE_DASHED = 2
-    const LINESTYLE_LARGE_DASHED = 3
-
-    const limit_price = parseFloat(order["limit_price"])
-    const points = [{time: t1, price: limit_price}, {time: t2, price: limit_price}]
-    ac.createMultipointShape(points, {
-      shape: "trend_line",
-      overrides: {
-        linecolor: color,
-        linewidth: 1,
-        linestyle: LINESTYLE_SOLID,
-        extendLeft: true,
-        extendRight: true,
-      },
-    })
-
-  }
-
-  if (s.includes("Filled")) {
+    const price = parseFloat(execution["price"])
 
     const arrow_bg = ac.createShape(
-      {time: order["time"], price: price},
+      {time: execution["time"], price: price},
       {
         shape: 'icon',
         overrides: {color: "#fff", size: 26, scale: 1},
@@ -58,7 +32,7 @@ const draw_order = function (ac, order) {
       }
     )
     const arrow = ac.createShape(
-      {time: order["time"], price: price},
+      {time: execution["time"], price: price},
       {
         shape: 'icon',
         overrides: {color: color, size: 20, scale: 1},
@@ -69,8 +43,39 @@ const draw_order = function (ac, order) {
     )
 
   }
+
 }
 
+
+const draw_order = function (ac, order) {
+  let color
+
+  if (order["side"] === "buy") {
+    color = "#080";
+  } else {
+    color = "#d00";
+  }
+
+  const stop_price = parseFloat(order["stop_price"])
+  const limit_price = parseFloat(order["limit_price"])
+
+  let or = ac.createOrderLine()
+    .setText(order["type"] + ", " + order["side"])
+    .setLineColor(color)
+    .setQuantityBackgroundColor(color)
+    .setBodyBorderColor(color)
+    .setQuantityBorderColor(color)
+    .setBodyBackgroundColor('#ffffff')
+    .setBodyTextColor(color)
+    .setLineWidth(1)
+    .setQuantity(order["amount"])
+    .setPrice(stop_price)
+
+  console.log(or)
+
+  return or
+
+}
 
 const create_chart = (el) => {
   const Datafeeds = window["Datafeeds"]
@@ -158,24 +163,37 @@ const Order = ({data, curOrder, setOrder}) => {
 }
 
 
-const draw_orders = (orders) => {
+const draw_orders = (orders, activeOrdersOnChart, setActiveOrdersOnChart) => {
   const ac = window["tv"].chart();
   const range = ac.getVisibleRange();
 
-  // Удалить все ордеры с графика
+  // Удалить сделки с графика
   ac.getAllShapes().forEach(({id, name}) => {
     if (name === "icon" || name === "trend_line") {
       ac.removeEntity(id);
     }
   });
 
+  // Удалить ордеры с графика
+  for (const chart_order of activeOrdersOnChart) {
+    chart_order.remove()
+  }
+  const chart_orders = []
+
   // Нарисовать все видимые ордеры
   for (const order of orders) {
-    if (range.from < order["time"] && order["time"] < range.to) {
-      // console.log("DRAW", order.time)
-      draw_order(ac, order);
+    // Ордер со сделками
+    if (range.from < order["time"] && order["time"] < range.to && order.executions.length > 0) {
+      draw_trade(ac, order);
+    }
+    // Активный ордер (еще не весь исполнен)
+    if (order.status.includes("Submitted")) {
+      chart_orders.push(draw_order(ac, order))
     }
   }
+
+  // Записать список ордеров, чтобы было что удалять
+  setActiveOrdersOnChart(chart_orders)
 }
 
 
@@ -184,6 +202,8 @@ const Orders = ({account, symbol}) => {
   const [time, setTime] = useState();
   const [selectedOrder, setSelectedOrder] = useState({});
   const [selectionOnChart, setSelectionOnChart] = useState();
+
+  const [activeOrdersOnChart, setActiveOrdersOnChart] = useState([]);
 
   const [dataLoaded, setDataLoaded] = useState();
 
@@ -253,7 +273,7 @@ const Orders = ({account, symbol}) => {
     }
 
     if (dataLoaded) {
-      draw_orders(orders);
+      draw_orders(orders, activeOrdersOnChart, setActiveOrdersOnChart);
     } else {
       console.warn("No chart");
     }
@@ -287,7 +307,7 @@ const Orders = ({account, symbol}) => {
       chartDiv.style.display = 'block';
       // Дернуть перерисовку ордеров
       if (ac && dataLoaded) {
-        draw_orders(orders);
+        draw_orders(orders, activeOrdersOnChart, setActiveOrdersOnChart);
       }
     } else {
       // Скрыть график
@@ -300,12 +320,23 @@ const Orders = ({account, symbol}) => {
   useEffect(() => {
     console.log("selectedOrder", selectedOrder.id, selectionOnChart);
     if (selectedOrder && selectedOrder.time) {
-      const ac = window["tv"].activeChart();
-      const id = ac.createShape({time: selectedOrder.time}, {shape: 'vertical_line'});
-      if (selectionOnChart) {
-        ac.removeEntity(selectionOnChart);
+      if (selectedOrder.executions.length > 0) {  // есть сделки
+        const execution = selectedOrder.executions[0]
+        const ac = window["tv"].activeChart();
+        const id = ac.createShape(
+          {
+            time: execution.time
+          }, {
+            shape: 'vertical_line',
+            overrides: {linecolor: "#058"},
+            disableSelection: true,
+          });
+        if (selectionOnChart) {
+          ac.removeEntity(selectionOnChart);
+        }
+        console.log(execution)
+        setSelectionOnChart(id);
       }
-      setSelectionOnChart(id);
     } else {
       if (selectionOnChart) {
         const ac = window["tv"].activeChart();

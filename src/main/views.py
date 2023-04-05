@@ -1,7 +1,8 @@
 import glob
 import json
 import os.path
-from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+from datetime import datetime, timezone
 
 import orjson
 import redis
@@ -9,7 +10,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
 
-from main.models import Account, Contract, Order, Position
+from main.models import Account, Contract, Order, Position, Trade
 
 
 def dt_to_ts(dt):
@@ -177,12 +178,29 @@ def orders(request):
                 account_id=account_id,
                 contract=contract
             )
-            all_orders = all_orders.prefetch_related().order_by("-id")[:20]
+            all_orders = all_orders.order_by("-id")[:20]
         except Contract.DoesNotExist:
             all_orders = []
     else:
         all_orders = Order.objects.filter(account_id=account_id)
-        all_orders = all_orders.prefetch_related().order_by("-id")[:20]
+        all_orders = all_orders.order_by("-id")[:20]
+
+    all_orders_pks = [o.pk for o in all_orders]
+    related_trades = Trade.objects.filter(order_id__in=all_orders_pks)
+
+    trades_by_order = defaultdict(list)
+    for trade in related_trades:
+        time = None
+        if not time and trade.time:
+            time = dt_to_ts(trade.time)
+        if not time and trade.created_at:
+            time = dt_to_ts(trade.created_at)
+        trades_by_order[trade.order_id].append({
+            "time": time,
+            "price": str(trade.price),
+            "amount": trade.amount,
+        })
+
     for order in all_orders:
         if order.avg_fill_price:
             price = float(order.avg_fill_price)
@@ -206,6 +224,7 @@ def orders(request):
             "side": str(order.action).lower(),
             "time": dt_to_ts(order.created_at) if order.created_at else None,
             "created": created_at,
+            "executions": trades_by_order[order.pk],
         })
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
@@ -379,6 +398,15 @@ def history(request):
                 res["l"].append(j["l"])
                 res["c"].append(j["c"])
                 res["v"].append(j["v"])
+        # Это интервал, который открыт, но еще без данных.
+        # Нужно для поддержки рисования сделок в интервале.
+        if res["c"]:
+            res["t"].append(res["t"][-1] + 60)
+            res["o"].append(res["c"][-1])
+            res["h"].append(res["c"][-1])
+            res["l"].append(res["c"][-1])
+            res["c"].append(res["c"][-1])
+            res["v"].append(-1)
 
     # TODO: сделать возврат последнего интервала с данными
     if not len(res["t"]):
