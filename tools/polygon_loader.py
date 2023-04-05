@@ -2,6 +2,7 @@ import logging
 import os.path
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from time import sleep
 
 import click
@@ -14,8 +15,9 @@ coloredlogs.install(
     "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
 )
 
+BASE_DIR = Path(__file__).parents[2] / "data"
 
-BASE_URL = f"https://api.polygon.io/v2/aggs/ticker"
+BASE_URL = "https://api.polygon.io/v2/aggs/ticker"
 
 API_KEYS = [
     "_nAIabBBWqg9knHcHJhx47Wi3qI7iRyG",
@@ -38,6 +40,46 @@ API_KEYS = [
     "x7PTlD_3sTidLZZLxkjdkrEE_iqbA4YK",
     "Y56e3FBQKzWMf19hDz0F6knhyzWhjeFm",
     "YTBk_CI6S0pwzfSCJ3LBtYyAyVo1FO8u",
+    "p2hKgCRSiYAVzp6cBaQaURh1d6HTiA2F",
+    "UgtaWCECa8Hf1c8OmW5ryBIYx1mOCpRk",
+    "toeXpXKBjQcXJTp7yZr0EoHxDJg_1uAH",
+    "VLNoRp5LELKBOgVp9U6ww8hAQnAru9tf",
+    "IQ7O0wXtU5sXJfp92ma3V3d0TYX0J7_2",
+    "QQaukLpdGUiCGH1n85LNpWYn1PYoPt0w",
+    "wGu4OoCht4m7kyqBfdSFQfiQ_wM2kp0g",
+    "Gecr0NAfpaSPJmlysi2QCw70T2QDaMqB",
+    "Y3NOhQMiUGFkHSM3qC9DUBTA8rl5ajSs",
+    "Gx6KEGqxl2T9e0TBsNlDFMc8uIqDFokK",
+    "aTry26b3GE_A2KhgyGNd0DK6zYgthj7b",
+    "GOLMl3dXuSdvGsaaXfoem9gVa9iR8oZe",
+    "TSNJy41U0502pdUURMqHhWbZhQIgwkCy",
+    "HRl6bKZxMFVca6laTv7DXrAd9hsyCDoM",
+    "bc5ZU7uOEihiDTSg68b48ovW1F6XutIZ",
+    "SkmtleYyYXcIgWg9GgSgzNewIE3LRnpd",
+    "qc3rFmeJk6gQ5WEi46wnHSJwrIg34JAG",
+    "lKt3nwOwgCbqEoRM_jmXOpj8t652przR",
+    "mVS_cp0Wol9JCwvgZ4X5WVTaW0p8vRSB",
+    "bLQOEA6x0LnU7oG6xOpdnJTHso0ZjC9S",
+    "aempweEqb8EKbp4hPVxlPIwMI6V1ppzZ",
+    "eegnSIdGZWkmNSdBjktbjMrukcmYJsdK",
+    "t3CKzkyGUu8ZDh09WrLeOeTPxbj_fdbW",
+    "6CwhJj6s9YPAg7ObvbPuzIkvZzYMacF5",
+    "VJ2NOfHuR9dh9pp6VPtOgogbkNS2r1Yf",
+    "NK5H91BK2H8jR0at7Vj4rFJVLtXeGvQP",
+    "1hXzM3rOU9ti10pFgW7evorKL1ps0tvQ",
+    "QJtAz62MUMFR06plnit4YChE25Vdgwsy",
+    "ixFFp2mvqT_LC5nBNimc0gc7fLr0Z26m",
+    "yd7nbXakOJi20wBx1LPrI4a2i2gxxr5R",
+    "3wMFL6QvbdlWvy_9F5GtgSciuz40NEmm",
+    "bd4ZRutApL6PWQBLw3bY3opjKpsPpi7j",
+    "7zii7W4T2rXluLpe2g3Gjrv9Q0gBfdrV",
+    "jawRlDlqxLMvl3sTxFZcsOZx2OBdA7rr",
+    "YQDdC9FsHrPxJJUZwqTOAaadfMThepAJ",
+    "Y1tDlXLa4I3HMpbs8UitPKaxqGO_q9_h",
+    "kOA4uvqCPlp6muCFta7LjwsnLf0eJiEm",
+    "anGn0GJ2c0uVy78ZQrpxpLlc_vjqWK1p",
+    "AaBTQmK1bZ4WexEfffIpsX767QQdTrtK",
+    "Lv0kOapDjcJpnl7l6Gzq1Za2VGcGp7Dj",
 ]
 
 LIMIT = 50000
@@ -64,7 +106,6 @@ def load_polygon_one_symbol(symbol, dt_1, dt_2):
     data = []
 
     while True:
-
         url = f"{BASE_URL}/{symbol}/range/1/minute/{ts_1}/{ts_2}"
         params = {
             "apiKey": get_next_key(),
@@ -134,7 +175,7 @@ def get_last_interval_dt(f_path):
 def process_symbol(symbol, dt_start, dt_end, reset, latency_tolerance):
     ss = symbol.split(":")[1]
 
-    f_path = os.path.abspath(f"../data/polygon_nyse/2022/{ss}.csv")
+    f_path = os.path.abspath(f"{BASE_DIR}/polygon_nyse/2022/{ss}.csv")
 
     dt_1 = dt_start
     dt_2 = dt_end or (datetime.utcnow() + timedelta(days=3))
@@ -206,17 +247,15 @@ def process_symbol(symbol, dt_start, dt_end, reset, latency_tolerance):
 
 
 @click.command()
-@click.argument("symbols", nargs=-1, default=None)
+@click.argument("symbols", nargs=-1)
 @click.option("--start", type=dt_format, default="2022-01-02 00:00:00")
 @click.option("--end", type=dt_format, default=None)
 @click.option("--reset", is_flag=True, default=False, help="Delete cached data")
-@click.option("--debug", is_flag=True, default=False)
 def main(**kwargs):
     dt_start = kwargs.get("start")
     dt_end = kwargs.get("end")
     reset = kwargs.get("reset")
-    debug = kwargs.get("debug")
-    symbols = kwargs.get("symbols")
+    symbols = kwargs.get("symbols", "AMEX:SPY")
 
     log.info(f"Start: {dt_start}")
     log.info(f"End: {dt_end}")
@@ -244,5 +283,6 @@ if __name__ == "__main__":
         main()
         log.info("DONE")
     except KeyboardInterrupt:
+        print()
         log.info("BREAK")
     log.info(f"Done in {str(datetime.now() - dt)[:-7]}")
