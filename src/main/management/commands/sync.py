@@ -1,9 +1,11 @@
 import json
 import logging
-import time
-from datetime import datetime, timedelta, timezone
+import threading
+from collections import defaultdict
+from datetime import datetime
 from decimal import Decimal
 from posixpath import abspath
+from time import monotonic, sleep
 
 import redis
 import yaml
@@ -19,6 +21,14 @@ from main.models import Account, Contract, Order, Position, Trade
 log = logging.getLogger("sync")
 
 
+# loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+# for logger in loggers:
+#     logger.setLevel(logging.DEBUG)
+
+# logging.getLogger("ibapi.connection").setLevel(logging.DEBUG)
+# logging.getLogger("ibapi.client").setLevel(logging.INFO)
+
+
 DEF_CONFIG = "../config/bot.yaml"
 
 BOT_ID_PREFIX = "bot_"
@@ -28,15 +38,23 @@ SYNC_CHANNEL = "SYNC"
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 
-def ts_to_dt(ts):
-    return datetime.utcfromtimestamp(ts)
+def is_redis_available(r):
+    try:
+        r.ping()
+    except Exception:
+        return False
+    return True
 
 
-"""
-Важные ошибки, которые нужно обработать:
-ERROR 1100 Connectivity between IB and Trader Workstation has been lost.
-ERROR 1102 Connectivity between IB and Trader Workstation has been restored...
-"""
+class FatalException(Exception):
+    """
+    Ошибка, после которой нужен переконнект.
+    """
+
+    pass
+
+
+############################
 
 
 class IBSyncExtended(IBSync):
@@ -44,6 +62,37 @@ class IBSyncExtended(IBSync):
         super().__init__()
         self.redis_client = redis_client
         self.lock_for_sync = False  # запрет обработки событий до синхронизации базы
+        self.connections = {
+            "tws": "disconnected",
+            "ibkr": "",
+        }
+        self.request = {}  # request data by r_id
+        self.response_dt = datetime.min
+
+        # Время последнего появления различных событий
+        self.prev_time = defaultdict(float)
+
+    def managedAccounts(self, accountsList: str):
+        super().managedAccounts(accountsList)
+        self.connections["tws"] = "connected"
+        self.response_dt = datetime.utcnow()
+
+    def currentTime(self, time):
+        super().currentTime(time)
+        self.connections["tws"] = "connected"
+        self.response_dt = datetime.utcnow()
+
+    def connectionClosed(self):
+        super().connectionClosed()
+        # Все подписки сбрасываются, когда соединение закрывается
+        self.connections["tws"] = "disconnected"
+        # for r_id, sub in self.request.items():
+        #     if not sub.get("cancelled"):
+        #         log.error(f"Subscription cancelled: {r_id} {sub['sid']}")
+        #         self.request[r_id]["cancelled"] = True
+
+    #####
+    # Обработка событий с обновлениями данных
 
     def pnl(
         self, reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float
@@ -51,17 +100,23 @@ class IBSyncExtended(IBSync):
         if self.lock_for_sync:
             return
 
-        account = Account.objects.get(uid=self.account_id)
+        self.prev_time["pnl"] = monotonic()
 
+        log.debug(
+            f"PNL event, r_id: {reqId}, update account, "
+            f"unrealizedPnL: {unrealizedPnL:+0.2f} "
+        )
+
+        account = Account.objects.get(uid=self.account_id)
         values = self.values[account.uid]
 
-        account.daily_pnl = dailyPnL
-        account.unrealized_pnl = unrealizedPnL
-        account.realized_pnl = realizedPnL
+        account.daily_pnl = Decimal(dailyPnL)
+        account.unrealized_pnl = Decimal(unrealizedPnL)
+        account.realized_pnl = Decimal(realizedPnL)
 
-        log.info(f"PNL event, update account, unrealizedPnL: {unrealizedPnL:+0.2f}")
-
-        # FIXME: KeyError: 'NetLiquidation'; pnl может приходить раньше values.
+        if "NetLiquidation" not in values:
+            log.error("NetLiquidation wasn't received yet")
+            return
 
         account.net_value = values["NetLiquidation"]
         account.margin_used = values["MaintMarginReq"]
@@ -84,6 +139,8 @@ class IBSyncExtended(IBSync):
     ):
         if self.lock_for_sync:
             return
+
+        self.prev_time["updatePortfolio"] = monotonic()
 
         account = Account.objects.get(uid=accountName)
 
@@ -147,6 +204,8 @@ class IBSyncExtended(IBSync):
         """
         if self.lock_for_sync:
             return
+
+        self.prev_time["orderStatus"] = monotonic()
 
         av_fill_price = avgFillPrice if avgFillPrice < 10**10 else None
 
@@ -259,6 +318,16 @@ class IBSyncExtended(IBSync):
             a = self.redis_client.publish(SYNC_CHANNEL, msg)
             log.info(f"To Redis: {msg}, {a}")
 
+    def updateAccountTime(self, *args, **kwargs):
+        super().updateAccountTime(*args, **kwargs)
+        self.prev_time["updateAccountTime"] = monotonic()
+        log.debug(f"updateAccountTime: {args}")
+
+    def updateAccountValue(self, *args, **kwargs):
+        super().updateAccountValue(*args, **kwargs)
+        self.prev_time["updateAccountValue"] = monotonic()
+        # log.debug(f"updateAccountValue: {args}")
+
     #################################
 
     def process_bot_action(self, message):
@@ -353,6 +422,8 @@ class IBSyncExtended(IBSync):
         """
         Редактирование ордера в IB
         """
+        log.info(colored(f"Update, data: {data}", "yellow"))
+
         local_id = data.get("local_id")
         stop_price = Decimal(data.get("stop_price"))
 
@@ -388,28 +459,125 @@ class IBSyncExtended(IBSync):
         log.error(f"Order not found: {data}")
 
 
-##################
-# инициализация и синхронизация
-# TODO: разбить initial_sync на кусочки поменьше
+############################
 
 
-def get_executions(ib: IBSyncExtended):
-    account = Account.objects.get(uid=ib.account_id)
+class Sync:
+    def __init__(self, config: dict) -> None:
+        self.redis_config = config.get("redis", {})
+        self.gateway = config.get("gateway", {})
+        self.running = True
 
-    # TODO: выбрать только последние пару дней
-    trades = Trade.objects.filter(account=account)
-    trades_by_exec_id = {t.exec_id: t for t in trades}
+        # Отметки, когда что произошло
+        self.request_time = datetime.min
+        self.prev_executions = monotonic()
+        self.prev_subscribe = monotonic()
 
-    orders = Order.objects.filter(account=account)
-    orders_by_id = {o.order_id: o for o in orders}
+        self.client_id = self.gateway.get("sync_client_id", 0)
 
-    executions = ib.get_executions()
+        log.info(colored("Start Sync ⋅ﾐ(•ᵕ•)ﾉ", "magenta"))
+        log.info(f"Gateway: {self.gateway}")
 
-    trades_to_create = []
-    updated_orders = []
+        self.rc = redis.Redis(**dict(self.redis_config))
+        self.ib = IBSyncExtended(self.rc)
 
-    for _, exec in executions:
-        if exec.execId not in trades_by_exec_id:
+        self.pubsub = self.rc.pubsub()
+        self.pubsub.subscribe("BOT_ACTIONS")
+
+        # FIXME:
+        self.pnl_r_id = 0
+
+    def request_tws_time(self) -> None:
+        self.request_time = datetime.utcnow()
+        self.ib.reqCurrentTime()
+
+    def redis_publish(self, action: dict) -> None:
+        json_str = json.dumps(action, default=str)
+        a = self.rc.publish(SYNC_CHANNEL, json_str)
+        log.info(f"To Redis: {json_str}, {a}")
+
+    def is_delayed(self, event: str, max_delay: int) -> bool:
+        delay = monotonic() - self.ib.prev_time[event]
+        if delay > max_delay:
+            log.error(f"Event {event} delay: {delay:0.2f} > {max_delay}")
+            return True
+        return False
+
+    def maintain_subscriptions(self) -> None:
+        """
+        Подписка на то, что давно не приходило.
+        """
+
+        ########################################
+        # Подписка на orderStatus
+
+        # FIXME: пока ничего не могу сделать. Если нет ордеров, то нет и orderStatus.
+        if self.is_delayed("orderStatus", 3600):
+            self.ib.prev_time["orderStatus"] = monotonic()
+
+            if self.client_id == 0:
+                # С AutoBind новые ордеры из TWS получают id от данного клиента.
+                # Работает только для подключения с ClientId = 0.
+                self.ib.reqAutoOpenOrders(bAutoBind=True)
+            else:
+                log.warning(colored("Client ID != 0, no AutoBind", attrs=["bold"]))
+                self.ib.reqOpenOrders()
+
+            sleep(0.1)
+
+        ########################################
+        # Подписка на всякое (отменить нельзя):
+        # updateAccountValue
+        # updateAccountTime
+        # updatePortfolio
+
+        d_1 = self.is_delayed("updateAccountValue", 200)
+        d_2 = self.is_delayed("updateAccountTime", 200)
+        d_3 = self.is_delayed("updatePortfolio", 200)
+
+        if d_1 or d_2 or d_3:
+            self.ib.prev_time["updateAccountValue"] = monotonic()
+            self.ib.prev_time["updateAccountTime"] = monotonic()
+            self.ib.prev_time["updatePortfolio"] = monotonic()
+            self.ib.reqAccountUpdates(True, self.ib.account_id)
+            sleep(0.1)
+
+        ########################################
+        # Подписка на PnL
+
+        if self.is_delayed("pnl", 200):
+            self.ib.prev_time["pnl"] = monotonic()
+
+            if self.pnl_r_id:
+                self.ib.cancelPnL(self.pnl_r_id)
+                self.pnl_r_id = 0
+                sleep(0.1)
+
+            # На это нельзя подписываться много раз, заебет.
+            self.pnl_r_id = self.ib.r_id
+            self.ib.reqPnL(self.pnl_r_id, self.ib.account_id, "")
+            sleep(0.1)
+
+    def get_executions(self) -> None:
+        ib: IBSyncExtended = self.ib
+        account = Account.objects.get(uid=ib.account_id)
+
+        # FIXME: выбрать только последние пару дней
+        trades = Trade.objects.filter(account=account)[:1000]
+        trades_by_exec_id = {t.exec_id: t for t in trades}
+
+        orders = Order.objects.filter(account=account)
+        orders_by_id = {o.order_id: o for o in orders}
+
+        executions = ib.get_executions()
+
+        trades_to_create = []
+        updated_orders = []
+
+        for _, exec in executions:
+            if exec.execId in trades_by_exec_id:
+                continue
+
             if order := orders_by_id.get(exec.permId):
                 log.info(colored("New trade: " + f"{exec}"[-120:], "cyan"))
                 trades_to_create.append(Trade.from_ib(exec, account, order))
@@ -421,173 +589,347 @@ def get_executions(ib: IBSyncExtended):
                     f"client_id: {exec.clientId}, "
                 )
 
-    if trades_to_create:
-        Trade.objects.bulk_create(trades_to_create)
+        if trades_to_create:
+            Trade.objects.bulk_create(trades_to_create)
+            self.redis_publish({"types": ["trade"]})
 
-        action = {"types": ["trade"]}
-        a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-        log.info(f"To Redis: {action}, {a}")
+        # Бывает так, что событие ордера не было поймано вовремя.
+        # Тогда среднюю цену можно восстановить только по сделкам.
 
-    # Бывает так, что событие ордера не было поймано вовремя.
-    # Тогда среднюю цену можно восстановить только по сделкам.
+        # Пересчитать цены ордеров, для которых загружены сделки.
+        # updated_orders
+        # Получить сделки для этих ордеров, посчитать, сохранить.
+        # trades = Trade.objects.filter(account=account)
 
-    # Пересчитать цены ордеров, для которых загружены сделки.
-    # updated_orders
-    # Получить сделки для этих ордеров, посчитать, сохранить.
-    # trades = Trade.objects.filter(account=account)
-
-
-def initial_sync(ib: IBSyncExtended):
-    """
-    Начальную синхронизацию лучше не объединять с обновлением,
-    т.к. для завершенных ордеров не приходит статус. Это меняет алгоритм.
-
-    Проще сделать всю синхронизацию отдельно, в одной транзакции.
-
-    - открыть транзакцию
-    - запросить всё
-    - сохранить всё
-    - запросить всё еще раз
-    - если ничего не поменялось, применить транзакцию
-    - если поменялось - начать заново
-    """
-
-    # Получить данные из базы
-
-    log.info(colored(f"Start initial_sync, account: {ib.account_id}", attrs=["bold"]))
-
-    account = Account.objects.get(uid=ib.account_id)
-
-    positions = Position.objects.filter(account=account)
-    positions_by_sid = {p.contract.sid: p for p in positions}
-
-    orders = Order.objects.filter(account=account)
-    orders_by_id = {o.order_id: o for o in orders}
-
-    contracts = Contract.objects.all()
-    contracts_by_sid = {c.sid: c for c in contracts}
-
-    # Получить данные из IB
-
-    ib_orders = ib.get_orders()
-    ib_positions = ib.get_positions()
-    ib_executions = ib.get_executions()
-
-    ############
-    # Создаются неизвестные контракты из ордеров и позиций
-
-    contracts_to_create = []
-    all_contracts = [r[0] for r in ib_orders] + [r[1] for r in ib_positions]
-    uniq_contracts = {c.conId: c for c in all_contracts}
-
-    for con_id, contract in uniq_contracts.items():
-        cd = None
-        if not contract.primaryExchange:
-            cd = ib.get_contract_details(contract)[0]
-            contract = cd.contract
-            uniq_contracts[con_id] = contract
-        sid = ib.sid_for_contract(contract)
-        if sid not in contracts_by_sid:
-            if not cd:
+    def get_new_contracts(self, contracts_by_sid, uniq_contracts) -> list:
+        """
+        Новые контракты для добавления в базу данных.
+        """
+        ib: IBSyncExtended = self.ib
+        contracts_to_create = []
+        for con_id, contract in uniq_contracts.items():
+            cd = None
+            if not contract.primaryExchange:
                 cd = ib.get_contract_details(contract)[0]
-            c = Contract.from_ib(contract, cd, sid)
-            contracts_by_sid[sid] = c
-            contracts_to_create.append(c)
-            log.info(f"Create contract: {c.sid}")
-
-    Contract.objects.bulk_create(contracts_to_create)
-
-    ############
-    # Ордеры
-
-    orders_to_create = []
-
-    for contract, order, state in ib_orders:
-        # log.info(f"IB ORDER {order} > {order.orderRef}, {state.status}")
-
-        if not order.permId:
-            continue
-
-        if db_order := orders_by_id.get(order.permId):
-            # TODO: проверить изменения ордеров из базы, которые не финализированы
-            # FIXME: сделать нормально
-            if state.status != db_order.status:
-                msg = f"UPDATE in DB {order} {orders_by_id[order.permId]}"
-                log.info(colored(msg, "magenta"))
-                db_order.status = state.status
-                db_order.save(update_fields=["status"])
-        else:
-            # contract
+                contract = cd.contract
+                uniq_contracts[con_id] = contract
             sid = ib.sid_for_contract(contract)
+            if sid not in contracts_by_sid:
+                if not cd:
+                    cd = ib.get_contract_details(contract)[0]
+                c = Contract.from_ib(contract, cd, sid)
+                contracts_by_sid[sid] = c
+                contracts_to_create.append(c)
+                log.info(f"Create contract: {c.sid}")
+        return contracts_to_create
+
+    def initial_sync(self) -> None:
+        """
+        Начальную синхронизацию лучше не объединять с обновлением,
+        т.к. для завершенных ордеров не приходит статус. Это меняет алгоритм.
+
+        Проще сделать всю синхронизацию отдельно, в одной транзакции.
+
+        - открыть транзакцию
+        - запросить всё
+        - сохранить всё
+        - запросить всё еще раз
+        - если ничего не поменялось, применить транзакцию
+        - если поменялось - начать заново
+        """
+        ib: IBSyncExtended = self.ib
+
+        # Получить данные из базы
+
+        log.info(
+            colored(f"Start initial_sync, account: {ib.account_id}", attrs=["bold"])
+        )
+
+        account = Account.objects.get(uid=ib.account_id)
+
+        positions = Position.objects.filter(account=account)
+        positions_by_sid = {p.contract.sid: p for p in positions}
+
+        orders = Order.objects.filter(account=account)
+        orders_by_id = {o.order_id: o for o in orders}
+
+        contracts = Contract.objects.all()
+        contracts_by_sid = {c.sid: c for c in contracts}
+
+        # Получить данные из IB
+        ib_orders = ib.get_orders()
+        ib_positions = ib.get_positions()
+        ib_executions = ib.get_executions()
+
+        # Все контракты из данных IB
+        all_contracts = [r[0] for r in ib_orders]
+        all_contracts += [r[1] for r in ib_positions]
+        all_contracts += [r[0] for r in ib_executions]
+        uniq_contracts = {c.conId: c for c in all_contracts}
+
+        # Создаются неизвестные контракты
+        new_contracts = self.get_new_contracts(contracts_by_sid, uniq_contracts)
+        Contract.objects.bulk_create(new_contracts)
+
+        ############
+        # Ордеры
+
+        orders_to_create = []
+
+        for contract, order, state in ib_orders:
+            # log.info(f"IB ORDER {order} > {order.orderRef}, {state.status}")
+
+            if not order.permId:
+                continue
+
+            if db_order := orders_by_id.get(order.permId):
+                # TODO: проверить изменения ордеров из базы,
+                # которые не финализированы
+                # FIXME: сделать нормально
+                if state.status != db_order.status:
+                    msg = f"UPDATE in DB {order} {orders_by_id[order.permId]}"
+                    log.info(colored(msg, "magenta"))
+                    db_order.status = state.status
+                    db_order.save(update_fields=["status"])
+            else:
+                # contract
+                sid = ib.sid_for_contract(contract)
+                db_c = contracts_by_sid[sid]
+                orders_to_create.append(Order.from_ib(order, account, db_c, state))
+
+        if orders_to_create:
+            Order.objects.bulk_create(orders_to_create)
+
+            self.redis_publish({"types": ["position"]})
+
+        ############
+        # Позиции
+
+        positions_to_create = []
+
+        # Всем обнуляю значения, но пока не сохраняю
+        for position in positions_by_sid.values():
+            position.amount = 0
+            position.avg_price = None
+            # position.unrealized_pnl = None
+
+        for acnt, con, pos, avgCost in ib_positions:
+            contract = uniq_contracts[con.conId]
+            sid = ib.sid_for_contract(contract)
+
             db_c = contracts_by_sid[sid]
-            orders_to_create.append(Order.from_ib(order, account, db_c, state))
 
-    if orders_to_create:
-        Order.objects.bulk_create(orders_to_create)
+            if acnt != account.uid:
+                log.warn(f"Skip wrong account: {acnt}")
+                continue
 
-        action = {"types": ["order"]}
-        a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-        log.info(f"To Redis: {action}, {a}")
+            avg_price = avgCost / int(db_c.multiplier)  # * 100  # ???
 
-    ############
-    # Позиции
+            if sid in positions_by_sid:
+                # update position
+                position = positions_by_sid[sid]
+                position.avg_price = avg_price
+                position.amount = pos
+            else:
+                # create position
+                position = Position.from_ib(account, db_c, pos, avg_price)
+                positions_to_create.append(position)
 
-    positions_to_create = []
+        positions_to_update = positions_by_sid.values()
 
-    # Всем обнуляю значения, но пока не сохраняю
-    for position in positions_by_sid.values():
-        position.amount = 0
-        position.avg_price = None
-        # position.unrealized_pnl = None
+        if positions_to_create or positions_to_update:
+            Position.objects.bulk_create(positions_to_create)
+            Position.objects.bulk_update(positions_to_update, ["avg_price", "amount"])
 
-    for acnt, con, pos, avgCost in ib_positions:
-        contract = uniq_contracts[con.conId]
-        sid = ib.sid_for_contract(contract)
+            self.redis_publish({"types": ["position"]})
 
-        db_c = contracts_by_sid[sid]
+        # Проверить, что данные в IB не изменились с момента получения
+        log.info("Check initial_sync integrity")
 
-        if acnt != account.uid:
-            log.warn(f"Skip wrong account: {acnt}")
-            continue
+        ib_orders_2 = ib.get_orders()
+        ib_positions_2 = ib.get_positions()
+        ib_executions_2 = ib.get_executions()
 
-        avg_price = avgCost / int(db_c.multiplier)  # * 100  # ???
+        # Сравнить данные ib_* и ib_*_2.
+        # Если одинаковые, то всё ok.
+        if len(ib_orders) != len(ib_orders_2):
+            raise Exception("Orders updated")
 
-        if sid in positions_by_sid:
-            # update position
-            position = positions_by_sid[sid]
-            position.avg_price = avg_price
-            position.amount = pos
-        else:
-            # create position
-            position = Position.from_ib(account, db_c, pos, avg_price)
-            positions_to_create.append(position)
+        if len(ib_positions) != len(ib_positions_2):
+            raise Exception("Positions updated")
 
-    positions_to_update = positions_by_sid.values()
+        if len(ib_executions) != len(ib_executions_2):
+            raise Exception("Executions updated")
 
-    if positions_to_create or positions_to_update:
-        Position.objects.bulk_create(positions_to_create)
-        Position.objects.bulk_update(positions_to_update, ["avg_price", "amount"])
+    def maintain(self) -> None:
+        """
+        Проверка статуса подписок и задержки прихода данных.
+        """
 
-        action = {"types": ["position"]}
-        a = ib.redis_client.publish(SYNC_CHANNEL, json.dumps(action, default=str))
-        log.info(f"To Redis: {action}, {a}")
+        # Проверить синхронизацию времени
+        time_diff = abs((self.request_time - self.ib.tws_time).total_seconds())
+        if time_diff > 100:
+            log.error(f"TWS time out of sync: {time_diff:0.2f} sec")
+        elif time_diff > 10:
+            log.warning(f"TWS time out of sync: {time_diff:0.2f} sec")
 
-    log.info("Check initial_sync integrity")
+        # Новый запрос времени
+        self.request_tws_time()
 
-    ib_orders_2 = ib.get_orders()
-    ib_positions_2 = ib.get_positions()
-    ib_executions_2 = ib.get_executions()
+        if not self.ib.isConnected():
+            raise FatalException("tws_disconnected")
 
-    # Сравнить данные ib_* и ib_*_2.
-    # Если одинаковые, то всё ok.
-    if len(ib_orders) != len(ib_orders_2):
-        raise Exception("Orders updated")
+        # Проверить, когда от TWS последний раз приходил ответ
+        response_gap = (datetime.utcnow() - self.ib.response_dt).total_seconds()
+        if response_gap > 100:
+            raise FatalException("tws_delay")
+        elif response_gap > 20:  # сильно больше, чем период maintain
+            log.warning(f"Large TWS response gap: {response_gap:0.2f} sec")
 
-    if len(ib_positions) != len(ib_positions_2):
-        raise Exception("Positions updated")
+    def periodic_actions(self) -> None:
+        """
+        Операции, которые нужно постоянно повторять
+        """
+        # Проверка связи с Redis
+        if not is_redis_available(self.rc):
+            log.error(f"Redis in unavailable")
+            sleep(5)
+            return
 
-    if len(ib_executions) != len(ib_executions_2):
-        raise Exception("Executions updated")
+        # Обработка команд от бота
+        if self.ib and self.ib.isConnected():
+            try:
+                message = self.pubsub.get_message(timeout=0.1)
+                if message and message.get("type") == "message":
+                    self.ib.process_bot_action(message)
+            except Exception as e:
+                log.error(f"Redis pubsub get_message error: {e}")
+                log.exception(e)
+                pass
+
+        # Проверки соединения и подписок на данные
+        if monotonic() - self.prev_maintain > 5:
+            self.prev_maintain = monotonic()
+            self.maintain()
+
+        # Получить executions
+        if monotonic() - self.prev_executions > 13:
+            self.prev_executions = monotonic()
+            self.get_executions()
+
+        # Переподписка, если что-то отвалилось
+        if monotonic() - self.prev_subscribe > 30:
+            self.prev_subscribe = monotonic()
+            self.maintain_subscriptions()
+
+    def run(self) -> None:
+        """
+        Бесконечный цикл, в котором поддерживаются нужные
+        соединения с TWS/GW и нужные подписки на данные.
+        """
+        while not sleep(0.1) and self.running:
+            # Попытка дисконнекта, если есть чего
+            try:
+                if self.ib:
+                    self.ib.disconnect()
+            except Exception as e:
+                log.error(f"TWS disconnect exception: {e}")
+
+            # Подключение к TWS
+            try:
+                host = self.gateway["host"]
+                port = self.gateway["port"]
+                self.ib.tws_time = datetime.min
+                self.ib.connect(host, port, self.client_id)
+            except Exception as e:
+                log.error(f"TWS connect exception: {e}")
+                log.exception(e)
+                self.ib.disconnect()
+                sleep(5)
+                continue
+
+            # Если соединение есть, но отваливается, значит client_id занят
+            if self.ib.isConnected():
+                dt = monotonic()
+                while not sleep(0.2) and monotonic() - dt < 2:
+                    if not self.ib.isConnected():
+                        log.error(f"Possibly client_id conflict: {self.client_id}")
+                        break
+
+            # Если TWS не запущен или в процессе перезапуска,
+            # isConnected вернет false. Повторить попытку через N секунд
+            if not self.ib.isConnected():
+                log.error("No TWS connection, reconnect in 20 sec")
+                sleep(20)
+                continue
+
+            # Поток обработки входящих сообщений
+            try:
+                IBThread(self.ib).start()
+            except Exception as e:
+                log.exception(e)
+                log.error("IBThread exception, reconnect in 5 sec")
+                sleep(5)
+                continue
+
+            # You have to make sure the connection has been fully established
+            # before attempting to do any requests to the TWS.
+            # Failure to do so will result in the TWS closing the connection.
+            dt = monotonic()
+            while not sleep(0.2) and monotonic() - dt < 5:
+                if self.ib.nextValidOrderId > 0:
+                    log.info(f"TWS is connected, order id: {self.ib.nextValidOrderId}")
+                    break
+
+            # Если не дождались - переконнект
+            if not self.ib.nextValidOrderId > 0:
+                log.error("No TWS connection, no Next Order ID, reconnect now")
+                continue
+
+            # В этом месте должно быть активное подключение
+            self.request_tws_time()
+
+            # После соединения происходит синхронизация базы с IB
+            while True:
+                self.ib.lock_for_sync = True
+                try:
+                    with transaction.atomic():
+                        self.initial_sync()
+                        break
+                except Exception as e:
+                    log.error(f"Initial sync error: {e}")
+                    log.exception(e)
+                    sleep(3)
+                finally:
+                    self.ib.lock_for_sync = False
+
+            sleep(1)
+
+            # Подписка на нужные события TWS
+            self.maintain_subscriptions()
+
+            # Отсечки времени для periodic_actions
+            self.prev_maintain = monotonic()
+
+            while not sleep(0.1) and self.ib.isConnected():
+                try:
+                    # Операции, которые нужно постоянно повторять
+                    self.periodic_actions()
+
+                except (KeyboardInterrupt, SystemExit) as e:
+                    raise e
+
+                except FatalException as e:
+                    log.error(f"Fatal exception: {e}")
+                    break
+
+                except TimeoutError as e:
+                    log.error(f"{e}")
+
+                except Exception as e:
+                    # Что-то пошло не так, но соединение активно.
+                    log.error(f"Worker exception: {e}")
+                    log.exception(e)
 
 
 ############################
@@ -595,7 +937,7 @@ def initial_sync(ib: IBSyncExtended):
 
 class Command(BaseCommand):
     """
-    Синхронизация состояния базы с IB через TWS.
+    Синхронизация состояния базы с IB через TWS или Gateway.
     """
 
     def add_arguments(self, parser):
@@ -603,126 +945,22 @@ class Command(BaseCommand):
 
     def handle(self, **kwargs):
         config = yaml.full_load(open(abspath("../config/bot.yaml")))
-        gateway = config["gateway"]
 
-        # TODO: настроить из конфига
-        redis_client = redis.Redis(**config["redis"])
-        pubsub = redis_client.pubsub()
+        sync = Sync(config)
 
-        ib = IBSyncExtended(redis_client)
-        ib.lock_for_sync = True
+        while True:
+            try:
+                sync.run()
+            except (KeyboardInterrupt, SystemExit):
+                print()
+                sync.ib.disconnect()  # приведет к остановке msg_thread
+                log.info(f"DONE")
+                break
+            except Exception as e:
+                # Что-то пошло не так очень глобально.
+                log.error(f"Sync run exception: {e}")
+                log.exception(e)
 
-        # NOTE: не уверен, что правильно подписываться
-        # снаружи, но "event loop" находится здесь.
-        pubsub.subscribe("BOT_ACTIONS")
-
-        last_conn_check = datetime.min
-        last_exec_check = datetime.min
-
-        try:
-            while True:
-                now = datetime.utcnow()
-                go_conn_check = now - last_conn_check > timedelta(seconds=11)
-                go_exec_check = now - last_exec_check > timedelta(seconds=13)
-
-                # Обработка команд от бота
-                if ib and ib.isConnected():
-                    try:
-                        message = pubsub.get_message(timeout=0.1)
-                        if message and message.get("type") == "message":
-                            ib.process_bot_action(message)
-                    except Exception as e:
-                        log.error(f"Redis pubsub get_message error: {e}")
-                        log.exception(e)
-                        pass
-
-                # регулярные запросы
-                if go_exec_check and ib and ib.isConnected():
-                    last_exec_check = datetime.utcnow()
-                    try:
-                        get_executions(ib)
-                    except Exception as e:
-                        log.error(f"Get executions error: {e}")
-
-                # Переконнект
-                if go_conn_check and not ib.isConnected():
-                    last_conn_check = datetime.utcnow()
-
-                    # NOTE: плохо, что приходится пересоздавать объект
-                    ib = IBSyncExtended(redis_client)
-                    ib.lock_for_sync = True
-
-                    client_id = gateway.get("sync_client_id", 0)
-                    ib.connect(gateway["host"], gateway["port"], client_id)
-
-                    # Endless message loop
-                    IBThread(ib).start()
-
-                    # Не соединилось, попробовать еще раз
-                    if not ib.isConnected():
-                        continue
-
-                    # Check if the API is connected via orderid
-                    while True:
-                        if ib.nextValidOrderId > 0:
-                            cprint(f"Connected", "green")
-                            break
-                        time.sleep(0.5)
-
-                    # Синхронизация базы с IB
-                    while True:
-                        ib.lock_for_sync = True
-                        try:
-                            with transaction.atomic():
-                                initial_sync(ib)
-                                break
-                        except Exception as e:
-                            log.error(f"Initial sync error: {e}")
-                            log.exception(e)
-                            time.sleep(3)
-                        finally:
-                            ib.lock_for_sync = False
-
-                    # Начать real-time обработку сообщений
-                    # ib.real_time = True
-
-                    # Нет ничего про профит, поэтому все равно придется брать AccountUpdates
-                    # ib.reqAccountSummary(ib.r_id, "All", "NetLiquidation,InitMarginReq")
-                    # time.sleep(0.1)
-
-                    # С этой хренью новые ордеры из TWS получают id от данного клиента.
-                    # Работает только для подключения с ClientId = 0.
-                    # Пока непонятно, что с ордерами из мобильного приложения, например.
-                    if client_id == 0:
-                        ib.reqAutoOpenOrders(bAutoBind=True)
-                    else:
-                        log.error("Client ID != 0, using reqOpenOrders")
-                        ib.reqOpenOrders()
-
-                    time.sleep(0.1)
-
-                    # это подписка, но её нельзя отменить
-                    ib.reqAccountUpdates(True, ib.account_id)
-                    time.sleep(0.1)
-
-                    # На это нельзя подписываться много раз, заебет.
-                    # Но при одной подписке оно реально приходит на каждое изменение.
-                    # Выглядит удобно.
-                    ib.reqPnL(ib.r_id, ib.account_id, "")
-                    time.sleep(0.1)
-
-                    # Получить исторические сделки, посчитать av_fill_price
-                    try:
-                        get_executions(ib)
-                    except Exception as e:
-                        log.error(f"Get executions error: {e}")
-
-                time.sleep(0.5)
-
-        except (KeyboardInterrupt, SystemExit):
-            print()
-            log.info("Stop\n")
-
-        finally:
-            if ib:
-                ib.disconnect()
+        # Для отладки выводится список активных потоков
+        for thread in threading.enumerate():
+            log.warning(f"Thread alive: {thread}")
