@@ -16,6 +16,7 @@ from ibapi.order import Order as IBOrder
 from termcolor import colored, cprint
 
 from main.models import Account, Contract, Order, Position, Trade
+from project.helpers.alert import TgAlert
 
 # Логгер для этого файла
 log = logging.getLogger("sync")
@@ -38,14 +39,6 @@ SYNC_CHANNEL = "SYNC"
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 
-def is_redis_available(r):
-    try:
-        r.ping()
-    except Exception:
-        return False
-    return True
-
-
 class FatalException(Exception):
     """
     Ошибка, после которой нужен переконнект.
@@ -54,12 +47,21 @@ class FatalException(Exception):
     pass
 
 
+def is_redis_available(r):
+    try:
+        r.ping()
+    except Exception:
+        return False
+    return True
+
+
 ############################
 
 
 class IBSyncExtended(IBSync):
-    def __init__(self, redis_client):
+    def __init__(self, redis_client, tg_alert):
         super().__init__()
+        self.tg = tg_alert
         self.redis_client = redis_client
         self.lock_for_sync = False  # запрет обработки событий до синхронизации базы
         self.connections = {
@@ -289,6 +291,7 @@ class IBSyncExtended(IBSync):
                 known_ib_position, avg_price = 0, None
 
             # Редактирование или создание позиции
+            pos_amount_changed = False
             try:
                 # TODO: не редактировать, если не было изменений
                 # orderStatus возникает при редактировании цены ордера,
@@ -297,11 +300,13 @@ class IBSyncExtended(IBSync):
                     account=account, contract=db_contract
                 )
                 if db_position.amount != known_ib_position:
+                    pos_amount_changed = True
                     log.info(f"Pos, DB: {db_position.amount}, IB: {known_ib_position}")
                     db_position.amount = known_ib_position
                     db_position.avg_price = avg_price
                     db_position.save()
             except Position.DoesNotExist:
+                pos_amount_changed = True
                 log.info(colored(f"Pos, DB: --, IB: {known_ib_position}", "green"))
                 db_position = Position.from_ib(
                     account, db_contract, known_ib_position, avg_price
@@ -317,6 +322,10 @@ class IBSyncExtended(IBSync):
             msg = json.dumps(action, default=str)
             a = self.redis_client.publish(SYNC_CHANNEL, msg)
             log.info(f"To Redis: {msg}, {a}")
+
+            # После всего важного (блокирующий запрос)
+            if pos_amount_changed:
+                self.tg.message(f"Position {sid} {db_position.amount}")
 
     def updateAccountTime(self, *args, **kwargs):
         super().updateAccountTime(*args, **kwargs)
@@ -415,6 +424,8 @@ class IBSyncExtended(IBSync):
 
         self.placeOrder(oid, ib_contract, ib_order)
 
+        self.tg.message(f"Create order: {sid} {amount:+f}")
+
         db_order.status = "Sent"
         db_order.save(update_fields=["status"])
 
@@ -452,8 +463,10 @@ class IBSyncExtended(IBSync):
         # FIXME: _orders_by_pid обновляется в openOrder и не ловит состояние canceled
         for ib_order, contract, orderState in self._orders_by_pid.values():
             if ib_order.orderRef == local_id and orderState.status not in inactive:
+                sid = self.sid_for_contract(contract)
                 log.info(colored(f"Cancel, ib_order: {ib_order}", "magenta"))
                 self.cancelOrder(ib_order.orderId, "")
+                self.tg.message(f"Cancel order: {sid} {ib_order}")
                 return
 
         log.error(f"Order not found: {data}")
@@ -468,18 +481,23 @@ class Sync:
         self.gateway = config.get("gateway", {})
         self.running = True
 
+        self.tg = TgAlert(config.get("telegram", {}))
+
         # Отметки, когда что произошло
         self.request_time = datetime.min
         self.prev_executions = monotonic()
         self.prev_subscribe = monotonic()
 
-        self.client_id = self.gateway.get("sync_client_id", 0)
+        self.gw_client_id = self.gateway.get("sync_client_id", 0)
+
+        self.tg.message("Start Sync")
 
         log.info(colored("Start Sync ⋅ﾐ(•ᵕ•)ﾉ", "magenta"))
         log.info(f"Gateway: {self.gateway}")
+        log.info(f"Redis: {self.redis_config}")
 
         self.rc = redis.Redis(**dict(self.redis_config))
-        self.ib = IBSyncExtended(self.rc)
+        self.ib = IBSyncExtended(self.rc, self.tg)
 
         self.pubsub = self.rc.pubsub()
         self.pubsub.subscribe("BOT_ACTIONS")
@@ -515,7 +533,7 @@ class Sync:
         if self.is_delayed("orderStatus", 3600):
             self.ib.prev_time["orderStatus"] = monotonic()
 
-            if self.client_id == 0:
+            if self.gw_client_id == 0:
                 # С AutoBind новые ордеры из TWS получают id от данного клиента.
                 # Работает только для подключения с ClientId = 0.
                 self.ib.reqAutoOpenOrders(bAutoBind=True)
@@ -531,9 +549,10 @@ class Sync:
         # updateAccountTime
         # updatePortfolio
 
-        d_1 = self.is_delayed("updateAccountValue", 200)
+        # Считаю, что если updateAccountTime приходит, значит всё OK
+        d_1 = self.is_delayed("updateAccountValue", 300)
         d_2 = self.is_delayed("updateAccountTime", 200)
-        d_3 = self.is_delayed("updatePortfolio", 200)
+        d_3 = self.is_delayed("updatePortfolio", 1800)
 
         if d_1 or d_2 or d_3:
             self.ib.prev_time["updateAccountValue"] = monotonic()
@@ -840,7 +859,7 @@ class Sync:
                 host = self.gateway["host"]
                 port = self.gateway["port"]
                 self.ib.tws_time = datetime.min
-                self.ib.connect(host, port, self.client_id)
+                self.ib.connect(host, port, self.gw_client_id)
             except Exception as e:
                 log.error(f"TWS connect exception: {e}")
                 log.exception(e)
@@ -853,7 +872,7 @@ class Sync:
                 dt = monotonic()
                 while not sleep(0.2) and monotonic() - dt < 2:
                     if not self.ib.isConnected():
-                        log.error(f"Possibly client_id conflict: {self.client_id}")
+                        log.error(f"Possibly client_id conflict: {self.gw_client_id}")
                         break
 
             # Если TWS не запущен или в процессе перезапуска,
@@ -944,7 +963,7 @@ class Command(BaseCommand):
         parser.add_argument("--config", type=str, dest="config", default=DEF_CONFIG)
 
     def handle(self, **kwargs):
-        config = yaml.full_load(open(abspath("../config/bot.yaml")))
+        config = yaml.full_load(open(abspath(kwargs["config"])))
 
         sync = Sync(config)
 
@@ -961,6 +980,11 @@ class Command(BaseCommand):
                 log.error(f"Sync run exception: {e}")
                 log.exception(e)
 
-        # Для отладки выводится список активных потоков
+        # Подождать завершения активных потоков
+        dt = monotonic()
+        while len(threading.enumerate()) > 1 and monotonic() - dt < 2:
+            sleep(0.05)
+
         for thread in threading.enumerate():
-            log.warning(f"Thread alive: {thread}")
+            if thread.name != "MainThread":
+                log.error(f"Thread alive: {thread}")

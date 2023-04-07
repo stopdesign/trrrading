@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from secrets import token_hex
 
+
 @dataclass(slots=True)
 class Order:
     sid: str

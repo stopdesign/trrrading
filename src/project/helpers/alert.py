@@ -1,21 +1,12 @@
 import re
 import json
 import requests
+import logging
 from datetime import datetime, timedelta
 from django.conf import settings
 
 
-# def send_email(subject, text):
-#     return requests.post(
-#         f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
-#         auth=("api", MAILGUN_API_KEY),
-#         data={
-#             "from": MAILGUN_ALERT_FROM,
-#             "to": MAILGUN_ALERT_TO,
-#             "subject": subject,
-#             "text": text or subject,
-#         },
-#     )
+log = logging.getLogger("alert")
 
 
 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -41,6 +32,35 @@ def send_telegram(text: str):
 
     if r.status_code != 200:
         raise requests.exceptions.HTTPError("post_text error")
+
+
+class TgAlert:
+
+    def __init__(self, config) -> None:
+        self.token = config.get("token", "")
+        self.channel_id = config.get("channel_id", 0)
+
+    def _message(self, text: str) -> None:
+
+        if not (self.token and self.channel_id):
+            return
+
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        data = {
+            "text": ansi_escape.sub("", text),
+            "chat_id": self.channel_id,
+            "parse_mode": "html",
+        }
+        r = requests.post(url, data=data, timeout=2)
+
+        if r.status_code != 200:
+            raise requests.exceptions.HTTPError("post_text error")
+
+    def message(self, text: str) -> None:
+        try:
+            self._message(text)
+        except Exception as e:
+            log.error(f"Telegram error: {e}")
 
 
 class Alert:
