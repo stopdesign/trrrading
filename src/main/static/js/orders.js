@@ -207,6 +207,7 @@ const Orders = ({account, symbol}) => {
   const [ac, setActiveChart] = useState();
   const [loading, setLoading] = useState(true);
   const controllerRef = useRef();
+  const symbolRef = useRef();
 
 
   const fetchOrders = (symbol) => {
@@ -266,6 +267,7 @@ const Orders = ({account, symbol}) => {
       _ac.onDataLoaded().subscribe(
         null,
         () => {
+          console.log('Data loaded')
           const range = _ac.getVisibleRange();
           if (range.to) {
             setDataLoaded((new Date()).toISOString())
@@ -278,6 +280,10 @@ const Orders = ({account, symbol}) => {
       _ac.trades = []
 
       setActiveChart(_ac)
+
+      if (symbolRef.current) {
+        _ac.setSymbol(symbolRef.current)
+      }
     });
 
     // Запуск таймера при создании и остановка при уничтожении компонента
@@ -298,10 +304,8 @@ const Orders = ({account, symbol}) => {
   // Изменились ордеры или прогрузился очередной кусок графика
   useEffect(() => {
 
-    if (ac) {
-      if (orders.length > 500 || ac.trades.length > 500) {
-        alert("too many orders or trades too show")
-      }
+    if (ac && (orders.length > 500 || ac.trades.length > 500)) {
+      alert("too many orders or trades too show")
     }
 
     // Масштабировать график по времени при первой загрузке данных
@@ -325,6 +329,8 @@ const Orders = ({account, symbol}) => {
   // Изменился symbol
   useEffect(() => {
     setSelectedOrder({});
+
+    symbolRef.current = symbol;
 
     const chartDiv = document.getElementById("tv_chart_container");
     if (symbol) {
