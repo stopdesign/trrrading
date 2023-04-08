@@ -281,7 +281,7 @@ const Orders = ({account, symbol}) => {
     });
 
     // Запуск таймера при создании и остановка при уничтожении компонента
-    const interval = setInterval(() => setTime((new Date()).toISOString()), 7500);
+    const interval = setInterval(() => setTime((new Date()).toISOString()), 3500);
 
     return () => {
       clearInterval(interval);

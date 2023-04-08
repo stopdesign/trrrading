@@ -366,12 +366,6 @@ def history(request):
     from_ts = int(request.GET.get("from"))
     to_ts = int(request.GET.get("to"))
 
-    # dt = datetime(2022, 12, 6)  #  datetime.utcnow() - timedelta(hours=170)
-    # ts = dt_to_ts(dt)
-    # # to_ts = ts
-    # # print(from_ts, to_ts, ts)
-    # from_ts = ts
-
     data_in_db = r.zrangebyscore(f"{symbol}:TRADES", from_ts, to_ts)
 
     res = {
