@@ -314,7 +314,7 @@ const Orders = ({account, symbol}) => {
       console.warn("first time");
       const to = ac.getVisibleRange().to;
       ac.setVisibleRange(
-        {from: to - 3600 * 3, to: to},
+        {from: to - 3600 * 12, to: to},
         {applyDefaultRightMargin: true}
       );
       setResized(true);

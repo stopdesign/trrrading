@@ -137,7 +137,7 @@ def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
 
-    # FIXME: переделать на запрос к tradis 
+    # FIXME: переделать на запрос к tradis
     redis_client = redis.Redis(
         host=settings.TREDIS_HOST,
         port=settings.TREDIS_PORT,
@@ -229,114 +229,4 @@ def orders(request):
             "executions": trades_by_order[order.pk],
         })
     content = json.dumps(res, indent=None, default=str)
-    return HttpResponse(content, content_type="application/json")
-
-
-def backtest_data(request):
-    symbol = request.GET.get("symbol")
-
-    if symbol.split("#")[0] == "A":
-        res = {"s": "no_data", "nextTime": 0}  # данных нет и не будет
-        content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
-        return HttpResponse(content, content_type="application/json")
-
-    result_id = symbol[:17]
-    strategy_id = symbol.split("#")[0][18:]
-
-    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
-    ohlc_file = f"{base_dir}/{strategy_id}-ohlc.jsonl"
-
-    content = open(ohlc_file).read()
-
-    if content:
-        data = orjson.loads("[" + content.strip().replace("\n", ",") + "]")
-    else:
-        data = []
-
-    res = {
-        "t": [],
-        "o": [],
-        "h": [],
-        "l": [],
-        "c": [],
-        "v": [],
-        "s": "ok",
-    }
-
-    from_ts = int(request.GET.get("from"))
-    to_ts = int(request.GET.get("to"))
-
-    symbol = request.GET.get("symbol")
-
-    if "indicator" in symbol:
-        for line in data:
-            if from_ts < line["ts"] < to_ts:
-                res["t"].append(line["ts"])
-                res["o"].append(line.get("up") or line.get("n1"))
-                res["c"].append(line.get("dn") or line.get("n2"))
-    elif symbol == "profit":
-        for line in data:
-            if from_ts < line["ts"] < to_ts:
-                res["t"].append(line["ts"])
-                res["o"].append(line["profit"])
-                # res["c"].append(line["dn"])
-    else:
-        for line in data:
-            if from_ts < line["ts"] < to_ts:
-                res["t"].append(line["ts"])
-                res["o"].append(line["open"])
-                res["h"].append(line["high"])
-                res["l"].append(line["low"])
-                res["c"].append(line["close"])
-                res["v"].append(int(line["rth"]))
-
-    # if not len(res["t"]):
-    #     res = {"s": "no_data", "nextTime": 1722108800}
-    if not len(res["t"]):
-        res = {"s": "no_data", "nextTime": from_ts - 3600 * 24 * 3}
-
-    content = json.dumps(res, indent=None, default=str)
-    return HttpResponse(content, content_type="application/json")
-
-
-def config(request):
-    data = {
-      "supports_search": True,
-      "supports_group_request": False,
-      "supports_marks": False,
-      "supports_timescale_marks": False,
-      "supports_time": False,
-      "supported_resolutions": ["1", "3", "5", "10", "15", "30"]
-    }
-    content = json.dumps(data, indent=2, default=str)
-    return HttpResponse(content, content_type="application/json")
-
-
-def symbols(request):
-    symbol = request.GET.get("symbol")
-    if symbol.count("_") == 2:
-        session = "24x7"
-        contract_type = "futures"
-    else:
-        # session = "24x7"
-        session = "0930-1600"
-        contract_type = "stock"
-    data = {
-      "name": symbol,
-      "exchange-traded": "",
-      "exchange-listed": "",
-      "timezone": "America/New_York",
-      "minmovement": 1,
-      "minmovement2": 0,
-      "pointvalue": 1,
-      "session": session,
-      "has_intraday": True,
-      "has_no_volume": True,
-      "description": f"{symbol}",
-      "type": contract_type,
-      "supported_resolutions": ["1", "3", "5", "10", "15", "30"],
-      "pricescale": 100,
-      "ticker": symbol,
-    }
-    content = json.dumps(data, indent=2, default=str)
     return HttpResponse(content, content_type="application/json")

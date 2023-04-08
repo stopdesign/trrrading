@@ -5,7 +5,7 @@ from main import views
 app_name = "main"
 
 urlpatterns = [
-    path("dash/", views.dashboard, name="dashboard"),
+    path("", views.dashboard, name="dashboard"),
     path("dash/positions", views.positions, name="positions"),
     path("dash/account", views.account, name="account"),
     path("dash/orders", views.orders, name="orders"),
@@ -15,7 +15,4 @@ urlpatterns = [
     path("bt/events", views.bt_events, name="bt_events"),
     path("bt/results", views.results, name="results"),
     path("bt/strategies", views.strategies, name="strategies"),
-    path("bt/history", views.backtest_data, name="backtest_data"),
-    path("bt/config", views.config, name="config"),
-    path("bt/symbols", views.symbols, name="symbols"),
 ]
