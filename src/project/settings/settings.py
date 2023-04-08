@@ -136,16 +136,3 @@ SETTINGS_EXPORT = [
     "MEDIA_ROOT",
     "STATIC_ROOT",
 ]
-
-
-# Для вывода tradis connections в dash
-TREDIS_HOST = "127.0.0.1"
-TREDIS_PORT = 6379
-TREDIS_PASSWORD = None
-TREDIS_DB = 0
-
-
-# Alerts
-TELEGRAM_TOKEN = None
-TELEGRAM_CHANNEL_ID = "*****"
-TELEGRAM_USERNAME = ""

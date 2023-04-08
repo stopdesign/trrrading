@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 import orjson
-import redis
+import requests
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -137,17 +137,10 @@ def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
 
-    # FIXME: переделать на запрос к tradis
-    redis_client = redis.Redis(
-        host=settings.TREDIS_HOST,
-        port=settings.TREDIS_PORT,
-        db=settings.TREDIS_DB,
-        password=settings.TREDIS_PASSWORD,
-        decode_responses=True,
-    )
-
     try:
-        connections = json.loads(str(redis_client.get("connections")))
+        # FIXME: убрать хардкодинг адреса здесь и в orders.js
+        res = requests.get("http://10.0.10.1:8080/connections", timeout=1)
+        connections = res.json()
         connections = list(connections.items())
     except:
         connections = []
