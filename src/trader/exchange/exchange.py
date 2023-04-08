@@ -15,13 +15,18 @@ class Exchange(BaseExchange):
     Живая торговля.
     """
 
-    def __init__(self, on_event: Callable, account_uid: str):
+    def __init__(self, on_event: Callable, account_uid: str, redis_client):
         super().__init__(on_event)
         self.account["uid"] = account_uid
 
         # Это связь всей платформы с джангой
         from main.sync_client import SyncClient
-        self.sync_client = SyncClient(self.positions, self.orders, self.account)
+        self.sync_client = SyncClient(
+            self.positions,
+            self.orders,
+            self.account,
+            redis_client,
+        )
 
     def place_order(self, order: Order):
         log.info(colored(f"PLACE ORDER: {order}", "green"))

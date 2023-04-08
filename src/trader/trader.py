@@ -51,14 +51,17 @@ class Trader:
         self.backtest = backtest
         self.replay = replay
 
-        run_config = config["backtest"] if backtest else config["live"]
+        run_config = config["backtest"] if backtest else config["broker"]
 
         # Объект, работающий с ордерами
         if self.backtest or self.replay:
             self.exchange = Emulator(self.on_event)
         else:
             account_uid = run_config.get("account")
-            self.exchange = Exchange(self.on_event, account_uid)
+            redis_config = self.config["redis"]
+            redis_client = redis.Redis(**(REDIS_CONF | redis_config))
+            log.info(f"Redis PubSub: {redis_client}")
+            self.exchange = Exchange(self.on_event, account_uid, redis_client)
 
         # Инициализация стратегий и список индикаторов
         self.strategies = []

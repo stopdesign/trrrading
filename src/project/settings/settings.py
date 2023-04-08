@@ -137,6 +137,7 @@ SETTINGS_EXPORT = [
 ]
 
 
+# Для вывода tradis connections в dash
 TREDIS_HOST = "127.0.0.1"
 TREDIS_PORT = 6379
 TREDIS_PASSWORD = None

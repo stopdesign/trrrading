@@ -18,15 +18,14 @@ class SyncClient:
     Пока работает через базу данных на чтение и через pubsub на запись.
     """
 
-    def __init__(self, positions, orders, account):
+    def __init__(self, positions, orders, account, redis_client):
         self.account = account
         self.positions = positions
         self.orders = orders
+        self.redis_client = redis_client
 
         self.db_account = DBAccount.objects.get(uid=self.account["uid"])
         self.update_broker_data({"types": ["init"]})
-
-        self.redis_client = redis.Redis()
 
     def place_order(self, order: Order):
         action = {
