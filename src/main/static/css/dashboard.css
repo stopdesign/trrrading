@@ -227,6 +227,10 @@ body {
     overflow-y: scroll;
 }
 
+.orders.loading {
+    opacity: 0.5;
+}
+
 .orders table {
     width: 100%;
     border-collapse: collapse;

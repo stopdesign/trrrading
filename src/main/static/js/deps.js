@@ -4,7 +4,7 @@ import htm from "./vendor/htm.module.js"
 
 const html = htm.bind(React.createElement);
 
-const {useEffect, useState} = React;
+const {useEffect, useState, useRef} = React;
 
 export {
   React,
@@ -12,4 +12,5 @@ export {
   html,
   useEffect,
   useState,
+  useRef,
 }

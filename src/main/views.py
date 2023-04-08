@@ -196,6 +196,7 @@ def orders(request):
         if not time and trade.created_at:
             time = dt_to_ts(trade.created_at)
         trades_by_order[trade.order_id].append({
+            "id": trade.pk,
             "time": time,
             "price": str(trade.price),
             "amount": trade.amount,
