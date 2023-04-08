@@ -305,7 +305,7 @@ const Orders = ({account, symbol}) => {
     }
 
     // Масштабировать график по времени при первой загрузке данных
-    if (dataLoaded && !resized) {
+    if (ac && dataLoaded && !resized) {
       console.warn("first time");
       const to = ac.getVisibleRange().to;
       ac.setVisibleRange(
@@ -352,6 +352,7 @@ const Orders = ({account, symbol}) => {
 
   // Выбрали новый order
   useEffect(() => {
+    if (!ac) return
     if (selectedOrder && selectedOrder.time) {
       if (selectedOrder.executions.length > 0) {  // есть сделки
         const execution = selectedOrder.executions[0]
