@@ -137,6 +137,7 @@ def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
 
+    # FIXME: переделать на запрос к tradis 
     redis_client = redis.Redis(
         host=settings.TREDIS_HOST,
         port=settings.TREDIS_PORT,
@@ -338,75 +339,4 @@ def symbols(request):
       "ticker": symbol,
     }
     content = json.dumps(data, indent=2, default=str)
-    return HttpResponse(content, content_type="application/json")
-
-
-def time(request):
-    cur_time_ts = dt_to_ts(datetime.now())
-    return HttpResponse(str(cur_time_ts), content_type="application/json")
-
-
-def history(request):
-
-    symbol = request.GET.get("symbol")
-
-    if symbol == "A":
-        res = {"s": "no_data", "nextTime": 0}  # данных нет и не будет
-        content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
-        return HttpResponse(content, content_type="application/json")
-
-    r = redis.Redis(
-        host=settings.TREDIS_HOST,
-        port=settings.TREDIS_PORT,
-        db=settings.TREDIS_DB,
-        password=settings.TREDIS_PASSWORD,
-        decode_responses=True,
-    )
-
-    from_ts = int(request.GET.get("from"))
-    to_ts = int(request.GET.get("to"))
-
-    data_in_db = r.zrangebyscore(f"{symbol}:TRADES", from_ts, to_ts)
-
-    res = {
-        "t": [],
-        "o": [],
-        "h": [],
-        "l": [],
-        "c": [],
-        "v": [],
-        "s": "ok",
-    }
-
-    if data_in_db:
-        for line in data_in_db:
-            j = orjson.loads(line)
-            if "o" in j and j["o"] > 0:
-                dt = datetime.strptime(j["dt"], "%Y-%m-%d %H:%M:%S")
-                # rth = 0
-                # if 14 <= dt.hour < 21 or (13 <= dt.hour < 14 and dt.minute > 30):
-                #     rth = 1
-                ts = dt_to_ts(dt)
-                res["t"].append(ts)
-                res["o"].append(j["o"])
-                res["h"].append(j["h"])
-                res["l"].append(j["l"])
-                res["c"].append(j["c"])
-                res["v"].append(j["v"])
-        # Это интервал, который открыт, но еще без данных.
-        # Нужно для поддержки рисования сделок в интервале.
-        if res["c"]:
-            res["t"].append(res["t"][-1] + 60)
-            res["o"].append(res["c"][-1])
-            res["h"].append(res["c"][-1])
-            res["l"].append(res["c"][-1])
-            res["c"].append(res["c"][-1])
-            res["v"].append(-1)
-
-    # TODO: сделать возврат последнего интервала с данными
-    if not len(res["t"]):
-        res = {"s": "no_data", "nextTime": from_ts - 3600 * 24 * 3}
-
-    content = json.dumps(res, indent=None, separators=(',', ':'), default=str)
-
     return HttpResponse(content, content_type="application/json")

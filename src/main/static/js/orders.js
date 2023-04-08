@@ -92,7 +92,8 @@ const create_chart = (el) => {
     symbol: "A",
     interval: "1",
     container: el,
-    datafeed: new Datafeeds.UDFCompatibleDatafeed("/tv"),
+    // FIXME: убрать хардкодинг адреса
+    datafeed: new Datafeeds.UDFCompatibleDatafeed("http://10.0.10.1:8080/tv"),
     library_path: "/static/admin/js/charting_library/",
     locale: "en",
     enabled_features: [
