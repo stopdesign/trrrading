@@ -68,7 +68,8 @@ class BaseStrategy:
     def data_sources(self):
         for attr in vars(self).values():
             if isinstance(attr, Data):
-                yield attr
+                if not isinstance(attr, Consolidator):
+                    yield attr
 
     @property
     def consolidators(self):

@@ -5,7 +5,7 @@ from termcolor import colored
 
 from trader.data_types import Bar, Order, Trade
 from trader.exchange import Consolidator, Data
-from trader.indicator import DonchianChannels
+from trader.indicator import DonchianChannels, MovingAverage
 
 from .base import BaseStrategy
 
@@ -21,8 +21,11 @@ class ChBr(BaseStrategy):
             self.data_1m,
             skip_extra_hours=True,
             skip_zero_volume=True,
-            length=self.length,
+            length=self.length or 0,
         )
+
+        # self.ind_tf = Consolidator(self.data_1m, "15m")
+        # self.ma = MovingAverage(self.data_1m, length=200)
 
     def get_amount(self, price):
         return int(100_000 / price)

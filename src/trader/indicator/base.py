@@ -12,6 +12,9 @@ def dt_to_ts(dt):
 
 
 class BaseIndicator:
+    # Настройки отображения индикатора
+    chart = {}
+
     def __init__(
         self,
         source: Data,
@@ -20,6 +23,7 @@ class BaseIndicator:
         skip_zero_volume: bool = True,
         **kwargs,
     ):
+        self.name = self.__class__.__name__
         self.source: Data = source
         self.skip_extra_hours = skip_extra_hours
         self.skip_zero_volume = skip_zero_volume
@@ -34,9 +38,8 @@ class BaseIndicator:
         self.init(**kwargs)
 
     def __repr__(self) -> str:
-        name = self.__class__.__name__
         kwargs = ", ".join(f"{k}={v}" for k, v in self.kwargs.items())
-        return f"{name}(source={self.source}, {kwargs})".replace(", )", ")")
+        return f"{self.name}(source={self.source}, {kwargs})".replace(", )", ")")
 
     def init(self, **kwargs):
         pass

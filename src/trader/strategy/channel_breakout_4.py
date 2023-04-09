@@ -24,12 +24,12 @@ class ChBrStop(BaseStrategy):
             self.data_1m,
             skip_extra_hours=True,
             skip_zero_volume=True,
-            length=self.length,
+            length=self.length or 0,
         )
 
         # Подписка на другой таймфрейм
         # self.ind_tf = Consolidator(self.data_1m, "2m")
-        # self.ma = MovingAverage(self.data_1m, interval=200)
+        # self.ma = MovingAverage(self.data_1m, length=200)
 
     def get_amount(self, price):
         return int(100_000 / price)

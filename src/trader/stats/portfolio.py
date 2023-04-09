@@ -1,7 +1,9 @@
 import logging
-import numpy as np
+import math
 from decimal import Decimal
-from termcolor import cprint, colored
+
+import numpy as np
+from termcolor import colored, cprint
 
 log = logging.getLogger("pf_stats")
 
@@ -44,12 +46,14 @@ class PortfolioStats:
 
         margin_used = 0
 
-        self.stats.append({
-            "date": self.exchange.dt_last,
-            "net_value": net,
-            "drawdown": self.cur_drawdown,
-            "margin_used": margin_used,
-        })
+        self.stats.append(
+            {
+                "date": self.exchange.dt_last,
+                "net_value": net,
+                "drawdown": self.cur_drawdown,
+                "margin_used": margin_used,
+            }
+        )
 
     def portfolio_info(self):
         """
@@ -67,12 +71,7 @@ class PortfolioStats:
         log.info(colored(f"Net Value:   {self.prev_net_value:6.0f}", "blue"))
         log.info(colored(f"Margin Used: {bot_margin:6.0f}\n", "blue"))
 
-    def print_summary(self):
-        cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
-
-        for strategy in self.trader.strategies:
-            print(strategy)
-
+    def summary(self):
         net = self.exchange.get_net_value()
 
         for trade in self.exchange.trades:
@@ -115,17 +114,43 @@ class PortfolioStats:
         else:
             end = "—"
 
+        mdd = self.max_drawdown
+
+        roi = round(roi, 4) if roi and not math.isnan(roi) else float("nan")
+        pf = round(pf, 4) if pf and not math.isnan(pf) else float("nan")
+        r2 = round(r2, 4) if r2 and not math.isnan(r2) else float("nan")
+        mdd = round(mdd, 4) if mdd and not math.isnan(mdd) else float("nan")
+
+        return {
+            "start": self.trader.dt_start.date(),
+            "end": end,
+            "roi": roi,
+            "max_drawdown": mdd,
+            "pf": pf,
+            "r2": r2,
+            "trades": trades,
+        }
+
+    def print_summary(self):
+        cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
+
+        for strategy in self.trader.strategies:
+            print(strategy)
+
+        summary = self.summary()
+
         txt = (
             "\n"
-            f"Start:     {self.trader.dt_start.date()}\n"
-            f"End:       {end!s:>10}\n"
+            "Start:     {start!s:>10}\n"
+            "End:       {end!s:>10}\n"
             "---------------------\n"
-            f"ROI:      {roi:+10.1f}%\n"
-            f"Max Drawdown:  {self.max_drawdown:5.1f}%\n"
-            f"Profit Factor: {pf:6.2f}\n"
-            f"R²:            {r2:6.2f}\n"
-            f"Trades:    {trades:10.0f}\n"
-            # f"Fee:         {rel_fee:+7.1f}%\n"
-            # f"Slippage:    {rel_slpg:7.1f}%\n"
-        )
-        cprint(txt)
+            "ROI:      {roi:+10.1f}%\n"
+            "Max Drawdown:  {max_drawdown:5.1f}%\n"
+            "Profit Factor: {pf:6.2f}\n"
+            "R²:            {r2:6.2f}\n"
+            "Trades:    {trades:10.0f}\n"
+            # "Fee:         {rel_fee:+7.1f}%\n"
+            # "Slippage:    {rel_slpg:7.1f}%\n"
+        ).format(**summary)
+
+        print(txt)

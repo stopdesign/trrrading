@@ -2,7 +2,7 @@ import json
 import logging
 from copy import copy
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import redis
 from termcolor import colored
@@ -39,7 +39,7 @@ class Trader:
     """
 
     data_provider: DataProvider
-    strategies: list
+    strategies: list[BaseStrategy]
 
     def __init__(self, config, backtest, replay):
         dt_now = datetime.utcnow().replace(microsecond=0)
@@ -246,7 +246,6 @@ class Trader:
                 self.data_provider.backtest()
                 # TODO: после завершения бэктеста закрыть все позиции
                 # self.close_all()
-                self.save_backtest_data()
             else:
                 self.data_provider.listen()
         except KeyboardInterrupt:
@@ -257,6 +256,7 @@ class Trader:
         log.info(colored(" Stop ", "red", attrs=["reverse", "bold"]))
 
         if self.backtest:
+            self.save_backtest_data()
             self.portfolio_stats.print_summary()  # RESULTS
 
     def save_backtest_data(self):
@@ -269,7 +269,6 @@ class Trader:
         """
         import os
         import shutil
-        from datetime import timezone
 
         base_res_dir = os.path.join(os.path.dirname(__file__), "../../res")
         base_res_dir = os.path.abspath(base_res_dir)
@@ -281,16 +280,57 @@ class Trader:
             shutil.rmtree(path)
 
         # Создание директории для результатов
-        dt = datetime.utcnow()  # server time
-        day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        dt = datetime.utcnow().replace(microsecond=0)
+        day = dt.replace(hour=0, minute=0, second=0)
         ts = (dt - day).total_seconds()
         dir_name = f"{day:%Y-%m-%d}_{ts:06.0f}/"
         base_dir = os.path.join(base_res_dir, dir_name)
         os.makedirs(base_dir)
 
-        # Сохранение метаданных про запуск:
-        # параметры стратегии, параметры запуска...
+        # Параметры стратегии, параметры запуска...
+        meta = {
+            "dt": str(dt),
+            "results": self.portfolio_stats.summary(),
+            "strategies": [],
+        }
 
+        for strategy in self.strategies:
+            res = {
+                "name": strategy.name,
+                "market_system": strategy.market_system,
+                "params": strategy.params._asdict(),
+                "data_sources": [],
+                "indicators": [],
+            }
+
+            for ds in strategy.data_sources:
+                res["data_sources"].append({
+                    "type": "Data",
+                    "sid": ds.sid,
+                    "rth": ds.rth,
+                })
+
+            for ds in strategy.consolidators:
+                res["data_sources"].append({
+                    "type": "Consolidator",
+                    "sid": ds.sid,
+                    "rule": ds.rule,
+                })
+
+            for ind in strategy.indicators:
+                res["indicators"].append({
+                    "name": ind.name,
+                    "params": ind.kwargs,
+                    "chart": ind.chart,
+                })
+
+            meta["strategies"].append(res)
+
+        path = os.path.join(base_dir, "meta.json")
+        with open(path, "w") as f:
+            f.write(json.dumps(meta, indent=4, default=str))
+
+        # FIXME: ну какого хуя?
         def dt_to_ts(dt):
             return int(dt.replace(tzinfo=timezone.utc).timestamp())
 

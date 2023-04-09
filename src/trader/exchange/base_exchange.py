@@ -20,6 +20,7 @@ class BaseExchange:
     def __init__(self, on_event: Callable):
         self.positions = {}
         self.orders = []
+        self.trades = []
         self.account = {}
         self.quotes = {}  # последнее значение bid-ask
         self.bars = defaultdict(list)  # market data bar including indicators values
