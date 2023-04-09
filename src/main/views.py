@@ -17,43 +17,36 @@ def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
+RES_DIR = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
+
+
 def dashboard(request):
     try:
-        account_id = Account.objects.latest('updated_at').id
+        account_id = Account.objects.latest("updated_at").id
     except Order.DoesNotExist:
         account_id = 0
-    return render(request, 'react_dashboard.html', {"account_id": account_id})
+    return render(request, "react_dashboard.html", {"account_id": account_id})
 
 
 def backtest(request):
-    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
-    results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:5]
+    results = list(sorted(next(os.walk(RES_DIR))[1], reverse=True))[:5]
     context = {
         "backtest_results": results,
     }
-    return render(request, 'backtest_chart.html', context)
+    return render(request, "backtest_chart.html", context)
 
 
-def bt_raw(request):
-
+def bt_ohlc(request):
     symbol = request.GET.get("symbol")
     result_id = symbol[:17]
     strategy_id = symbol.split("#")[0][18:]
-
-    print(strategy_id)
-
-    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
-    ohlc_file = f"{base_dir}/{strategy_id}-ohlc.jsonl"
-
+    ohlc_file = f"{RES_DIR}/{result_id}/{strategy_id}-ohlc.jsonl"
     content = "[" + open(ohlc_file).read().replace("\n", ",\n").strip(",\n") + "]"
-
     return HttpResponse(content, content_type="application/json")
 
 
-def results(request):
-    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
-    results = list(sorted(next(os.walk(base_dir))[1], reverse=True))[:20]
-    # res = sorted(res, key=lambda r: (r["contract"], r["strategy"]))
+def bt_results(request):
+    results = list(sorted(next(os.walk(RES_DIR))[1], reverse=True))[:20]
     res = {
         "results": sorted(results, reverse=True),
     }
@@ -61,48 +54,40 @@ def results(request):
     return HttpResponse(context, content_type="application/json")
 
 
-def strategies(request):
+def bt_strategies(request):
     res = []
     result = request.GET.get("result", "")
-    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result))
-    files = glob.glob(f"{base_dir}/*-ohlc.jsonl")
+    files = glob.glob(f"{RES_DIR}/{result}/*-ohlc.jsonl")
     for file in files:
         file = os.path.basename(file)
         instrument, strategy, data_type = file.split("-")
-        res.append({
-            "id": f"{instrument}-{strategy}",
-            "strategy": strategy,
-            "instrument": instrument,
-        })
+        res.append(
+            {
+                "id": f"{instrument}-{strategy}",
+                "strategy": strategy,
+                "instrument": instrument,
+            }
+        )
     res = sorted(res, key=lambda r: (r["instrument"], r["strategy"]))
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
 
 
-def positions(request):
-    account_id = request.GET.get("account", 0)
-    res = []
-    positions = Position.objects.filter(account_id=account_id).prefetch_related()
-    positions = positions.order_by("-avg_price")
-    for position in positions:
-        res.append({
-            "symbol": position.contract.sid,
-            "amount": position.amount,
-            "avg_price": position.avg_price,
-            "unrealized_pnl": position.unrealized_pnl,
-            "updated": position.updated_at,
-        })
-    content = json.dumps(res, indent=None, default=str)
+def bt_meta(request):
+    result_id = request.GET.get("result")
+    meta_file = f"{RES_DIR}/{result_id}/meta.json"
+    try:
+        content = open(meta_file).read()
+    except:
+        content = "{}"
     return HttpResponse(content, content_type="application/json")
 
 
 def bt_events(request):
-    # ?result=2022-04-13_078181&strategy=COPX.ARCA_ChannelBreakout3
     result_id = request.GET.get("result")
     strategy_id = request.GET.get("strategy")
 
-    base_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res", result_id))
-    ohlc_file = f"{base_dir}/{strategy_id}-events.jsonl"
+    ohlc_file = f"{RES_DIR}/{result_id}/{strategy_id}-events.jsonl"
 
     content = open(ohlc_file).read()
 
@@ -114,21 +99,42 @@ def bt_events(request):
     res = []
 
     for i, order in enumerate(data):
-        res.append({
-            "id": i,
-            "order_id": i,
-            "local_id": i,
-            "symbol": strategy_id,
-            "amount": order["amount"],
-            "filled": order["amount"],
-            "status": "filled",
-            "price": order["price"],
-            "profit": order["profit"],
-            "side": order["side"],
-            "signal": order["side"],
-            "time": order["time"],
-            "created": order["dt"],
-        })
+        res.append(
+            {
+                "id": i,
+                "order_id": i,
+                "local_id": i,
+                "symbol": strategy_id,
+                "amount": order["amount"],
+                "filled": order["amount"],
+                "status": "filled",
+                "price": order["price"],
+                "profit": order["profit"],
+                "side": order["side"],
+                "signal": order["side"],
+                "time": order["time"],
+                "created": order["dt"],
+            }
+        )
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
+
+
+def positions(request):
+    account_id = request.GET.get("account", 0)
+    res = []
+    positions = Position.objects.filter(account_id=account_id).prefetch_related()
+    positions = positions.order_by("-avg_price")
+    for position in positions:
+        res.append(
+            {
+                "symbol": position.contract.sid,
+                "amount": position.amount,
+                "avg_price": position.avg_price,
+                "unrealized_pnl": position.unrealized_pnl,
+                "updated": position.updated_at,
+            }
+        )
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
 
@@ -168,10 +174,7 @@ def orders(request):
     if symbol:
         try:
             contract = Contract.objects.get(sid=symbol)
-            all_orders = Order.objects.filter(
-                account_id=account_id,
-                contract=contract
-            )
+            all_orders = Order.objects.filter(account_id=account_id, contract=contract)
             all_orders = all_orders.order_by("-id")[:20]
         except Contract.DoesNotExist:
             all_orders = []
@@ -189,12 +192,14 @@ def orders(request):
             time = dt_to_ts(trade.time)
         if not time and trade.created_at:
             time = dt_to_ts(trade.created_at)
-        trades_by_order[trade.order_id].append({
-            "id": trade.pk,
-            "time": time,
-            "price": str(trade.price),
-            "amount": trade.amount,
-        })
+        trades_by_order[trade.order_id].append(
+            {
+                "id": trade.pk,
+                "time": time,
+                "price": str(trade.price),
+                "amount": trade.amount,
+            }
+        )
 
     for order in all_orders:
         if order.avg_fill_price:
@@ -203,23 +208,29 @@ def orders(request):
             price = float(order.signal_price)
         else:
             price = "-"
-        created_at = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S") if order.created_at else None
-        res.append({
-            "id": order.pk,
-            "order_id": order.order_id,
-            "local_id": order.local_id,
-            "sid": order.contract.sid,
-            "type": order.type,
-            "amount": order.amount,
-            "filled": order.filled,
-            "status": order.status,
-            "price": price,
-            "limit_price": order.limit_price,
-            "stop_price": order.stop_price,
-            "side": str(order.action).lower(),
-            "time": dt_to_ts(order.created_at) if order.created_at else None,
-            "created": created_at,
-            "executions": trades_by_order[order.pk],
-        })
+        created = None
+        time_ts = None
+        if order.created_at:
+            created = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S")
+            time_ts = dt_to_ts(order.created_at)
+        res.append(
+            {
+                "id": order.pk,
+                "order_id": order.order_id,
+                "local_id": order.local_id,
+                "sid": order.contract.sid,
+                "type": order.type,
+                "amount": order.amount,
+                "filled": order.filled,
+                "status": order.status,
+                "price": price,
+                "limit_price": order.limit_price,
+                "stop_price": order.stop_price,
+                "side": str(order.action).lower(),
+                "time": time_ts,
+                "created": created,
+                "executions": trades_by_order[order.pk],
+            }
+        )
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")

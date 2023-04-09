@@ -60,7 +60,7 @@ export class PriceChart {
 
   chartPadding = 0.15
 
-  constructor(chartArea, data, trades) {
+  constructor(chartArea, data, trades, indicators) {
 
     this.cursorPos = null
     this.cursorPosY = null
@@ -72,6 +72,8 @@ export class PriceChart {
     this.chartArea = d3.select(chartArea)
     this.data = data
     this.trades = trades
+
+    this.indicators = indicators
 
     this.dateByIdx = []
 
@@ -123,35 +125,24 @@ export class PriceChart {
       .attr("stroke-width", 1)
       .attr("d", "")
 
-    this.ind_1 = this.chart
-      .append("g")
-      .append("path")
-      .classed("count", true)
-      .attr("clip-path", `url(#${this.clipId})`)
-      .attr("fill", "none")
-      .attr("stroke", "green")
-      .attr("stroke-width", 1)
-      .attr("d", "")
-
-    this.ind_2 = this.chart
-      .append("g")
-      .append("path")
-      .classed("count", true)
-      .attr("clip-path", `url(#${this.clipId})`)
-      .attr("fill", "none")
-      .attr("stroke", "red")
-      .attr("stroke-width", 1)
-      .attr("d", "")
-
-    this.ind_3 = this.chart
-      .append("g")
-      .append("path")
-      .classed("count", true)
-      .attr("clip-path", `url(#${this.clipId})`)
-      .attr("fill", "none")
-      .attr("stroke", "#908")
-      .attr("stroke-width", 3)
-      .attr("d", "")
+    for (const indicator of this.indicators) {
+      for (const key in indicator.chart) {
+        const params = indicator.chart[key]
+        // console.log(params)
+        const color = params.color || "black"
+        if (params.type == "line") {
+          indicator.chart[key]["shape"] = this.chart
+            .append("g")
+            .append("path")
+            .classed("count", true)
+            .attr("clip-path", `url(#${this.clipId})`)
+            .attr("fill", "none")
+            .attr("stroke", color)
+            .attr("stroke-width", 1)
+            .attr("d", "")
+        }
+      }
+    }
 
     this.tradesLayer = this.chart
       .append("g")
@@ -463,34 +454,22 @@ export class PriceChart {
   }
 
   draw_indicator_lines(data) {
-
-    if (data === false) {
-
-      this.ind_1.attr("d", "")
-      this.ind_2.attr("d", "")
-      this.ind_3.attr("d", "")
-
-    } else {
-
-      const line_1 = d3.line()
-        .x(d => this.xScaleZoomed(d.idx))
-        .y(d => this.yScale(d.ind[0].ub))
-
-      this.ind_1.attr("d", line_1(data))
-
-      const line_2 = d3.line()
-        .x(d => this.xScaleZoomed(d.idx))
-        .y(d => this.yScale(d.ind[0].lb))
-
-      this.ind_2.attr("d", line_2(data))
-
-      // const line_3 = d3.line()
-      //   // .defined(d => { let h = d.date.getHours(); return 6 <= h && h < 12 })
-      //   .x(d => this.xScaleZoomed(d.idx))
-      //   .y(d => this.yScale(d.ind[1].ma))
-
-      // this.ind_3.attr("d", line_3(data))
-
+    // индикаторы из meta-конфига + данные из ohlc-файла = нарисовать
+    for (const i in this.indicators) {
+      const indicator = this.indicators[i]
+      for (const key in indicator.chart) {
+        const params = indicator.chart[key]
+        if (params.type == "line") {
+          if (data === false) {
+            indicator.chart[key]["shape"].attr("d", "")
+          } else {
+            const line = d3.line()
+              .x(d => this.xScaleZoomed(d.idx))
+              .y(d => this.yScale(d.ind[i][key]))
+            indicator.chart[key]["shape"].attr("d", line(data))
+          }
+        }
+      }
     }
   }
 

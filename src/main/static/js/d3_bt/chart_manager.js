@@ -20,14 +20,25 @@ export class ChartManager {
 
   async run(bt_uid, symbol) {
 
-    // let [data, trades, stats] = await Promise.all([d3.csv('data.csv'), d3.csv('trades.csv'), d3.csv('stats.csv')])
-
     const base = "http://127.0.0.1:8000"
 
-    let ohlc = await d3.json(`${base}/bt/raw?symbol=${bt_uid}-${symbol}`);
+    let ohlc = await d3.json(`${base}/bt/ohlc?symbol=${bt_uid}-${symbol}`);
     let events = await d3.json(`${base}/bt/events?result=${bt_uid}&strategy=${symbol}`);
+    let meta = await d3.json(`${base}/bt/meta?result=${bt_uid}`);
 
-    console.log([...events])
+    console.log(meta)
+
+    let indicators = []
+    if (meta && meta.strategies) {
+      for (const i in meta.strategies) {
+        const strategy = meta.strategies[i]
+        if (strategy.market_system === symbol) {
+          for (const indicator of strategy.indicators) {
+            indicators.push(indicator)
+          }
+        }
+      }
+    }
 
     // Хочу посчитать все параметры на фронте,
     // т.к. это позволит использовать график для любых бэктестов,
@@ -202,7 +213,7 @@ export class ChartManager {
     //   }
     // })
 
-    this.priceChart = new PriceChart(this.chartArea, ohlc, trades_1)
+    this.priceChart = new PriceChart(this.chartArea, ohlc, trades_1, indicators)
 
     this.performanceChart = new PerformanceChart(this.chartArea, ohlc)
 
