@@ -15,25 +15,17 @@ class GHS1(BaseStrategy):
     """
 
     def on_start(self):
-        self.length = 180
+        self.length = 50
 
         # Подписка на данные
-        self.data_1m = Data(self.sid, rth=1, on_bar=self.on_bar, on_tick=self.on_tick)
+        self.data_1m = Data(self.sid, rth=True, on_tick=self.on_tick)
 
         # Подписка на производный таймфрейм
-        self.data_10m = Consolidator(self.data_1m, "10m")
+        self.data_10m = Consolidator(self.data_1m, "30m")
 
         # Добавление индикатораов
-        self.ma = MovingAverage(self.data_1m, interval=10)
-        self.hma = HullMA(self.data_10m, interval=self.length)
-
-    def on_bar(self, bar: Bar):
-        # print("GHS1 on_bar")
-        pass
-
-    def on_bar_5m(self, bar: Bar):
-        # print("GHS1 on_bar_5m")
-        pass
+        self.ma = MovingAverage(self.data_1m, length=200)
+        self.hma = HullMA(self.data_10m, length=self.length)
 
     def market_order(self, amount):
         order = Order(self.sid, type="market", amount=amount)

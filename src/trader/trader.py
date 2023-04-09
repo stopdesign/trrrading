@@ -7,12 +7,11 @@ from datetime import datetime, timedelta
 import redis
 from termcolor import colored
 
-from .strategy.base import BaseStrategy
-
 from .exchange import Emulator, Exchange
 from .market import DataProvider, PolygonAdapter, TradisAdapter, TwsOfflineAdapter
 from .stats import PortfolioStats
 from .strategy import all_strategies
+from .strategy.base import BaseStrategy
 
 log = logging.getLogger("trader")
 
@@ -44,8 +43,10 @@ class Trader:
 
     def __init__(self, config, backtest, replay):
         dt_now = datetime.utcnow().replace(microsecond=0)
-        txt = f"Init Trader(backtest={backtest}) at {dt_now}"
-        log.info(colored(txt, "white"))
+
+        txt = f" Trader(backtest={backtest}) at {dt_now}"
+        txt = colored(" Init ", "cyan", attrs=["reverse", "bold"]) + txt
+        log.info(txt)
 
         self.config = config
         self.backtest = backtest
@@ -93,6 +94,10 @@ class Trader:
             on_event=self.on_event,
         )
 
+        print()
+        txt = colored(" Warming-up ", "white", "on_green", attrs=["dark"])
+        log.info(txt)
+
         # Прогреть индикторы прогоном исторических данных
         self.data_provider.warm_up()
 
@@ -126,6 +131,9 @@ class Trader:
             # 1. Добавить bar в хранилище баров
             self.exchange.on_bar(dt, payload)
 
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
+
             # Наполнить источники данных и консолидаторы
             for source in self.data_sources + self.consolidators:
                 if source.sid == payload.sid:
@@ -145,7 +153,6 @@ class Trader:
             # self.exchange.process_orders()
 
         if event == "tick":
-
             # FIXME: переделать на работу через data_sources
             # 3. Передать trade в стратегии
             for strategy in self.strategies:

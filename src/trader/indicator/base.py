@@ -1,5 +1,10 @@
-from trader.data_types import Bar
+import logging
 from datetime import timezone
+
+from trader.data_types import Bar
+from trader.exchange.data import Data
+
+log = logging.getLogger("indicator")
 
 
 def dt_to_ts(dt):
@@ -7,17 +12,33 @@ def dt_to_ts(dt):
 
 
 class BaseIndicator:
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        source: Data,
+        *,
+        skip_extra_hours: bool = True,
+        skip_zero_volume: bool = True,
+        **kwargs,
+    ):
+        self.source: Data = source
+        self.skip_extra_hours = skip_extra_hours
+        self.skip_zero_volume = skip_zero_volume
+        self.kwargs = kwargs
+
+        self.source_version = None
+        self.version = None
         self.value = {}
         self.values = []
         self.values_by_ts = {}
-        # self.source = None
-        self.source_version = None
-        self.version = None
-        print(f"BaseIndicator init. Args: {args}, KWargs: {kwargs}")
-        self.init(*args, **kwargs)
 
-    def init(self, source, **kwargs):
+        self.init(**kwargs)
+
+    def __repr__(self) -> str:
+        name = self.__class__.__name__
+        kwargs = ", ".join(f"{k}={v}" for k, v in self.kwargs.items())
+        return f"{name}(source={self.source}, {kwargs})".replace(", )", ")")
+
+    def init(self, **kwargs):
         pass
 
     def on_bar(self, bar: Bar):

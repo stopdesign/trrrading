@@ -39,11 +39,11 @@ class Command(BaseCommand):
 
         if kwargs["dt_start"]:
             config["backtest"]["dt_start"] = kwargs["dt_start"].date()
-            config["live"]["dt_start"] = kwargs["dt_start"].date()
+            config["broker"]["dt_start"] = kwargs["dt_start"].date()
 
         if kwargs["dt_end"]:
             config["backtest"]["dt_end"] = kwargs["dt_end"].date()
-            config["live"]["dt_end"] = kwargs["dt_end"].date()
+            config["broker"]["dt_end"] = kwargs["dt_end"].date()
 
         backtest = bool(kwargs.get("backtest"))
         replay = bool(kwargs.get("replay"))

@@ -1,8 +1,11 @@
+import logging
 from collections import namedtuple
 
 from trader.data_types import Order
 from trader.exchange import BaseExchange, Consolidator, Data
 from trader.indicator.base import BaseIndicator
+
+log = logging.getLogger("strategy")
 
 
 class BaseStrategy:
@@ -27,8 +30,22 @@ class BaseStrategy:
 
         self.on_start()
 
+        self.log_strategy_info()
+
     def __repr__(self):
         return str(self.params)
+
+    def log_strategy_info(self):
+        log.info(self)
+
+        for data_source in self.data_sources:
+            log.info(data_source)
+
+        for consolidator in self.consolidators:
+            log.info(consolidator)
+
+        for indicator in self.indicators:
+            log.info(indicator)
 
     def place_order(self, order: Order):
         order.strategy = self

@@ -58,9 +58,9 @@ class PortfolioStats:
         instruments = sorted(list({s.sid for s in self.trader.strategies}))
         for sid in instruments:
             if p := self.exchange.positions.get(sid):
-                log.info(colored(f"Position: {sid}, {p.amount:+0.0f}", "cyan"))
+                log.info(colored(f"Position: {sid}, {p.amount:+0f}", "cyan"))
             else:
-                log.info(colored(f"Position: {sid}, unknown", "yellow"))
+                log.info(colored(f"Position: {sid}, unknown", "cyan"))
 
     def account_info(self):
         bot_margin = 0
@@ -70,7 +70,8 @@ class PortfolioStats:
     def print_summary(self):
         cprint("\n" + colored(" RESULTS ", attrs=["reverse"]) + "\n")
 
-        # print(self.portfolio.get_info())
+        for strategy in self.trader.strategies:
+            print(strategy)
 
         net = self.exchange.get_net_value()
 

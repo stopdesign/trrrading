@@ -24,6 +24,9 @@ class EmulatorPositions(dict):
         self[key] = Position(key, self.capital, Decimal(0))
         return self[key]
 
+    def get(self, key, default=None):
+        return self[key]
+
 
 class Emulator(BaseExchange):
     """
@@ -35,6 +38,7 @@ class Emulator(BaseExchange):
 
         self.trades = []
 
+        # TODO: настройки бы пробросить...
         self.matcher = LocalMatcher(self)
 
         # начальное состояние аккаунта при эмуляции

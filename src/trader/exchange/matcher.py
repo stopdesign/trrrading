@@ -67,24 +67,23 @@ class LocalMatcher:
 
         if order.type == "stop":
             # TODO: сделать нормальный алгоритм
-            price = self.exchange.get_price(order.sid, "mid")
-            if order.amount > 0 and price > order.stop_price:
-                execute = True
-                # price = Decimal(order.stop_price)
-                # price = (Decimal(order.stop_price) + Decimal(price)) / 2
-            if order.amount < 0 and price < order.stop_price:
-                execute = True
-                # price = Decimal(order.stop_price)
-                # price = (Decimal(order.stop_price) + Decimal(price)) / 2
+            bar = self.exchange.bars[order.sid][-1]
+
+            for price in {bar.open, bar.high, bar.low, bar.close}:
+                price = Decimal(price)
+                if order.amount > 0 and price >= order.stop_price:
+                    execute = True
+                    break
+                if order.amount < 0 and price <= order.stop_price:
+                    execute = True
+                    break
 
         if execute and price:
             order.status = "filled"
             order.fill_price = price
 
-            # log.info(f"FILL {order}")
-
             # обновить позицию
-            position = self.exchange.positions.get(order.sid)
+            position = self.exchange.positions[order.sid]
 
             new_amount = position.amount + order.amount
             trade_profit = position.update(new_amount, price)
@@ -98,11 +97,13 @@ class LocalMatcher:
             if trade_profit < 0:
                 profit_str = colored(profit_str, "red")
 
+            dt = self.exchange.dt_last.replace(second=0)
             log.info(
-                f"Fill {order.local_id}, "
-                f"{side.upper():>4} {order.sid:>10}, "
-                f"price: {order.fill_price:0.2f}, "
-                f"trade: {profit_str}, "
+                f"Fill {order.local_id}, {dt}  "
+                f"{side.upper():>4} {order.sid:>10},  "
+                f"amnt: {abs(order.amount):6.0f},  "
+                f"price: {order.fill_price:0.2f},  "
+                f"trade: {profit_str},  "
                 f"net: {self.exchange.account['net_value']:10.2f} "
             )
 
@@ -117,7 +118,7 @@ class LocalMatcher:
                 "side": side,
                 "amount": abs(order.amount),
                 "profit": trade_profit,
-                "profit_rel": 0, # f"{profit_rel:0.4f}",
+                "profit_rel": 0,  # f"{profit_rel:0.4f}",
                 "price": price,
             }
             self.exchange.trades.append(data)

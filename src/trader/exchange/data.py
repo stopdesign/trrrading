@@ -7,13 +7,23 @@ class Data:
     Интерфейс для доступа к данным из стратегии.
     """
 
-    def __init__(self, sid: str, rth: int = 0, on_bar=None, on_tick=None) -> None:
+    def __init__(
+        self,
+        sid: str,
+        *,
+        rth: bool = False,
+        on_bar=None,
+        on_tick=None,
+    ) -> None:
         self.sid = sid
         self.rth = rth
         self.on_bar = on_bar
         self.on_tick = on_tick
         self.bars: list[Bar] = []
-        self.version : int = 0
+        self.version: int = 0
+
+    def __repr__(self) -> str:
+        return f"Data({self.sid}, rth={self.rth})"
 
     def add_bar(self, bar: Bar) -> None:
         self.version = int(bar.date.timestamp())

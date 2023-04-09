@@ -1,28 +1,23 @@
 """
-Triple Exponential Hull Moving Average
+Hull Moving Average
 
 THMA(close, length):
 	wma(
 		wma(close, length / 3) * 3 - wma(close, length / 2) - wma(close, length),
 		length
 	)
-"""
 
-
-"""
 HMA(close, length):
-
 	wma(
 		2 * wma(close, length / 2) - wma(close, length),
 		round(sqrt(length))
 	)
-
 """
 
-
-from talipp.indicators import EMA, HMA, SMA, WMA
+from talipp.indicators import HMA
 
 from trader.data_types import Bar
+from trader.exchange import Data
 
 from .base import BaseIndicator
 
@@ -32,21 +27,35 @@ class HullMA(BaseIndicator):
         "hma": {"type": "line", "color": "blue"},
     }
 
-    def init(self, source, interval):
-        self.source = source
-        print("interval", interval)
-        self.data = HMA(interval)
+    def __init__(
+        self,
+        source: Data,
+        *,
+        skip_extra_hours: bool = True,
+        skip_zero_volume: bool = True,
+        length: int = 10
+    ):
+        super().__init__(
+            source,
+            skip_extra_hours=skip_extra_hours,
+            skip_zero_volume=skip_zero_volume,
+            length=length,
+        )
+
+    def init(self, **kwargs):
+        length = kwargs.get("length", 10)
+        self.data = HMA(length)
 
     def on_bar(self, bar: Bar):
         skip = False
 
-        # if not bar.rth:
-        #     skip = True
+        if self.skip_extra_hours and not bar.rth:
+            skip = True
 
-        # if bar.volume == 0:
-        #     skip = True
+        if self.skip_zero_volume and bar.volume == 0:
+            skip = True
 
-        # При каких-то условиях добавить данные в индикатор
+        # Добавить данные в индикатор
         if not skip:
             self.data.add_input_value(bar.close)
 

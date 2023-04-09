@@ -15,9 +15,17 @@ log = logging.getLogger("strategy")
 class ChBr(BaseStrategy):
     def on_start(self):
         # Подписка на данные
-        self.data_1m = Data(self.sid, rth=1, on_bar=self.on_bar)
+        self.data_1m = Data(self.sid, rth=True, on_bar=self.on_bar)
 
-        self.dc = DonchianChannels(self.data_1m, self.length)
+        self.dc = DonchianChannels(
+            self.data_1m,
+            skip_extra_hours=True,
+            skip_zero_volume=True,
+            length=self.length,
+        )
+
+    def get_amount(self, price):
+        return int(100_000 / price)
 
     def market_order(self, amount):
         order = Order(self.sid, type="market", amount=amount)
@@ -68,12 +76,10 @@ class ChBr(BaseStrategy):
         target_amount = current_amount
 
         if current_amount <= 0 and trade.price > channel["ub"]:
-            target_amount = +int(10_000 / trade.price)
-            # target_amount = +2
+            target_amount = +self.get_amount(trade.price)
 
         if current_amount >= 0 and trade.price < channel["lb"]:
-            target_amount = -int(10_000 / trade.price)
-            # target_amount = -2
+            target_amount = -self.get_amount(trade.price)
 
         if target_amount != current_amount:
             self.market_order(target_amount - current_amount)

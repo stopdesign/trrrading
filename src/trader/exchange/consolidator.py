@@ -1,5 +1,7 @@
 from trader.data_types import Bar
+
 from .data import Data
+
 
 class Consolidator(Data):
     """
@@ -24,6 +26,7 @@ class Consolidator(Data):
     """
     def __init__(self, data: Data, rule: str, on_bar=None) -> None:
         self.data = data
+        self.rule = rule
         self.sid = data.sid
         self.on_bar = on_bar
         self.bars: list[Bar] = []
@@ -31,6 +34,9 @@ class Consolidator(Data):
         self.version : int = 0
         self.step = 60 * int(rule.replace("m", ""))
         self.closed_bar = None
+
+    def __repr__(self) -> str:
+        return f"Consolidator({self.data}, rule={self.rule})"
 
     def _close(self):
         if not self.inner_bars:
