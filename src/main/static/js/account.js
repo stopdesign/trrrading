@@ -38,12 +38,16 @@ const Account = ({ account, account_uid }) => {
     }
   }, [account])
 
-  
+
   const connections = values["connections"] || []
+
+  const delay = Math.round(parseFloat(values["update_delay"]) / 60)
 
   return html`
       <div className=account_panel>
-          <p>Account:  ${account_uid}</p>
+          <p>Account: ${account_uid}
+            <span className="delay ${delay >= 1 && 'long_delay'}">delay ${delay} min</span>
+          </p>
           <div className=connections>
             ${connections.map(con => html`<div key=${con[0]}>
                 <b>${con[0]}</b> - <span className="status status-${con[1]}">${con[1]}</span>

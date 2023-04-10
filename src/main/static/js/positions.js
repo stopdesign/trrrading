@@ -7,7 +7,7 @@ const Position = ({data, curSymbol, setSymbol}) => {
               onClick=${() => setSymbol(data.symbol === curSymbol ? "" : data.symbol)}
               className=${data.symbol === curSymbol ? "active" : ""}
       >
-          <td>${data.symbol}</td>
+          <td>${data.name}</td>
           <td>${data.amount}</td>
           <td>${data.avg_price}</td>
           <td>${data.unrealized_pnl}</td>

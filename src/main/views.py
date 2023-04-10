@@ -21,8 +21,11 @@ RES_DIR = os.path.abspath(os.path.join(settings.BASE_DIR, "../../res"))
 
 
 def dashboard(request):
-    accounts = Account.objects.order_by("uid").values("id", "uid")
-    return render(request, "react_dashboard.html", {"accounts": list(accounts)})
+    accounts = list(Account.objects.order_by("uid").values("id", "uid"))
+    for account in accounts:
+        uid = account["uid"]
+        account["uid"] = uid[:4] + "***" + uid[-2:]
+    return render(request, "react_dashboard.html", {"accounts": accounts})
 
 
 def backtest(request):
@@ -117,25 +120,6 @@ def bt_events(request):
     return HttpResponse(content, content_type="application/json")
 
 
-def positions(request):
-    account_id = request.GET.get("account", 0)
-    res = []
-    positions = Position.objects.filter(account_id=account_id).prefetch_related()
-    positions = positions.order_by("-avg_price")
-    for position in positions:
-        res.append(
-            {
-                "symbol": position.contract.sid,
-                "amount": position.amount,
-                "avg_price": position.avg_price,
-                "unrealized_pnl": position.unrealized_pnl,
-                "updated": position.updated_at,
-            }
-        )
-    content = json.dumps(res, indent=None, default=str)
-    return HttpResponse(content, content_type="application/json")
-
-
 def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
@@ -148,6 +132,9 @@ def account(request):
     except:
         connections = []
 
+    utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    update_delay = (utc_now - account.updated_at).total_seconds()
+
     res = {
         "uid": account.uid,
         "daily_pnl": account.daily_pnl,
@@ -159,7 +146,39 @@ def account(request):
         "ex_liq_sec": account.ex_liq_sec,
         "ex_liq_com": account.ex_liq_com,
         "connections": connections,
+        "update_delay": update_delay,
     }
+    content = json.dumps(res, indent=None, default=str)
+    return HttpResponse(content, content_type="application/json")
+
+
+def positions(request):
+    account_id = request.GET.get("account", 0)
+    res = []
+    positions = Position.objects.filter(account_id=account_id).prefetch_related()
+    positions = positions.order_by("contract__sec_type", "contract__sid")
+    for position in positions:
+        # Подсчет человеческой цены позиции
+        if position.avg_price:
+            contract = position.contract
+            price = position.avg_price / contract.multiplier
+            price = round(price / contract.min_tick) * contract.min_tick
+            price = price * contract.price_magnifier
+            price = f"{price:0.2f}"
+        else:
+            price = "--"
+        sid = position.contract.sid
+        name = (sid.split("_", 1)[1]).replace("_", " ")
+        res.append(
+            {
+                "symbol": sid,
+                "name": name,
+                "amount": position.amount,
+                "avg_price": price,
+                "unrealized_pnl": position.unrealized_pnl,
+                "updated": position.updated_at,
+            }
+        )
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
 
