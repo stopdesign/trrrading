@@ -30,12 +30,13 @@ const Positions = ({account, symbol, setSymbol}) => {
   }
 
   useEffect(() => {
+    setSymbol()
     fetchPositions();
     const interval = setInterval(() => fetchPositions(), 3000);
     return () => {
       clearInterval(interval);
     };
-  }, []);
+  }, [account]);
 
   return html`
       <div className="positions_panel">

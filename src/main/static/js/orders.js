@@ -5,7 +5,7 @@ const draw_trade = function (ac, order) {
   let color
   let icon_shape
 
-  // console.log(order.executions)
+  const range = ac.getVisibleRange()
 
   if (order["side"] === "buy") {
     color = "#080";
@@ -20,6 +20,10 @@ const draw_trade = function (ac, order) {
     // console.log(order, execution)
 
     if (!ac.trades.includes(ex["id"])) {
+
+      if (ex.time < range.from || ex.time > range.to) {
+        continue
+      }
 
       ac.trades.push(ex["id"])
 
@@ -355,7 +359,7 @@ const Orders = ({account, symbol}) => {
     return () => {
       if (controllerRef.current) controllerRef.current.abort()
     }
-  }, [symbol]);
+  }, [account, symbol]);
 
   // Выбрали новый order
   useEffect(() => {

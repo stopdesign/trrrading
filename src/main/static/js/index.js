@@ -3,6 +3,6 @@ import Dashboard from "./dashboard.js";
 
 
 ReactDOM.render(
-  html`<${Dashboard} account=${window.account_id} />`,
+  html`<${Dashboard} accounts=${window["accounts"]} />`,
   document.getElementById("root")
 );

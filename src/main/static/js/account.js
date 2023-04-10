@@ -15,15 +15,8 @@ async function fetchWithTimeout(resource, options = {}) {
 }
 
 
-const Account = ({ account }) => {
+const Account = ({ account, account_uid }) => {
   const [values, setValues] = React.useState({})
-
-  React.useEffect(() => {
-    const interval = setInterval(() => fetchData(), 1000)
-    return () => {
-      clearInterval(interval)
-    }
-  }, [])
 
   const fetchData = () => {
     fetchWithTimeout('/dash/account?account=' + account)
@@ -36,14 +29,21 @@ const Account = ({ account }) => {
   }
 
   React.useEffect(() => {
-    fetchData()
-  }, [])
+    const interval = setInterval(() => fetchData(), 1000)
 
+    fetchData()
+
+    return () => {
+      clearInterval(interval)
+    }
+  }, [account])
+
+  
   const connections = values["connections"] || []
 
   return html`
       <div className=account_panel>
-          <p>Account:  ${values.uid}</p>
+          <p>Account:  ${account_uid}</p>
           <div className=connections>
             ${connections.map(con => html`<div key=${con[0]}>
                 <b>${con[0]}</b> - <span className="status status-${con[1]}">${con[1]}</span>

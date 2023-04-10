@@ -76,6 +76,11 @@ body {
     border-bottom: 5px solid #eee;
     padding: 0 20px 20px 20px;
 }
+.health_panel .accounts span {
+    margin-right: 15px;
+    border-bottom: 1px dashed;
+    cursor: pointer;
+}
 
 /* Account */
 .account_panel {

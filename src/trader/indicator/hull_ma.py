@@ -24,7 +24,8 @@ from .base import BaseIndicator
 
 class HullMA(BaseIndicator):
     chart = {
-        "hma": {"type": "line", "color": "blue"},
+        "hma": {"type": "line", "color": "green"},
+        "prev_hma": {"type": "line", "color": "red"},
     }
 
     def __init__(
