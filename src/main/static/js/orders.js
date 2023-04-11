@@ -69,17 +69,23 @@ const draw_order = function (ac, order) {
   const stop_price = parseFloat(order["stop_price"])
   const limit_price = parseFloat(order["limit_price"])
 
+  const price = stop_price || limit_price
+
   let or = ac.createOrderLine()
-    .setText(order["type"] + ", " + order["side"])
+    .setPrice(price)
+    .setTooltip(JSON.stringify(order, null, 4))
+    .setBodyFont("bold 11px Hack,-apple-system,Trebuchet MS,Roboto,Ubuntu,sans-serif")
+    .setQuantityFont("bold 11px Hack,-apple-system,Trebuchet MS,Roboto,Ubuntu,sans-serif")
+    .setText((order.type + " " + order.side + " ").toUpperCase())
+    .setQuantity(order.amount)
+    .setDirection(order.side)
+    .setLineStyle(2)
     .setLineColor(color)
     .setQuantityBackgroundColor(color)
     .setBodyBorderColor(color)
     .setQuantityBorderColor(color)
-    .setBodyBackgroundColor('#ffffff')
     .setBodyTextColor(color)
-    .setLineWidth(1)
-    .setQuantity(order["amount"])
-    .setPrice(stop_price)
+    .setBodyBackgroundColor('#ffffff')
 
   return or
 
@@ -120,7 +126,7 @@ const create_chart = (el) => {
       "header_symbol_search",
       "compare_symbol",
       "symbol_info",
-      "property_pages",
+      // "property_pages",
       "display_market_status",
       "remove_library_container_border",
       "uppercase_instrument_names",
@@ -132,7 +138,7 @@ const create_chart = (el) => {
       "right_bar_stays_on_scroll",
     ],
     width: "100%",
-    height: "480px",
+    height: "500px",
     toolbar_bg: '#f4f7f9',
   });
 
