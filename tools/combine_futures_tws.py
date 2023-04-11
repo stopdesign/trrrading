@@ -9,7 +9,7 @@ import pandas as pd
 Добавить данные этого контракта в общий список.
 """
 
-BASE = "/Users/gregory/projects/life/trrrading/data/ib"
+BASE = "/Users/gregory/projects/trading/data/ib"
 
 
 def dt_to_ts(dt):
@@ -29,10 +29,10 @@ def get_contracts(sid):
 def main():
     import pandas as pd
 
-    sid = "CBOT_ZR"
+    sid = "CME_MES"
 
     # Define the folder where the data files are stored
-    data_folder = BASE + "/CBOT"
+    data_folder = BASE + "/CME"
 
     # Get a list of all the data files in the folder
     # data_files = os.listdir(data_folder)

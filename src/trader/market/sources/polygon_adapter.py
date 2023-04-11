@@ -25,10 +25,10 @@ def dt_to_ts(dt):
 
 
 class PolygonAdapter(BaseSource):
-    def __init__(self, offline=True, api_key=None, path=None):
+    def __init__(self, offline=True, api_key=None, path="./"):
         self.offline = offline
         self.api_key = api_key
-        self.path = path
+        self.path = os.path.abspath(path)
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(offline={self.offline})"
@@ -58,7 +58,7 @@ class PolygonAdapter(BaseSource):
             try:
                 rj = r.json()
             except Exception as e:
-                cprint(e, "red")
+                cprint(str(e), "red")
                 cprint(f"API request error: {r.status_code}, {r.text}", "red")
                 raise Exception("PolygonApiError")
 
@@ -82,10 +82,10 @@ class PolygonAdapter(BaseSource):
 
         return data
 
-    def load_from_path(self, symbol, dt_1, dt_2, path):
+    def load_from_file(self, path, dt_1, dt_2):
         data = []
         ts_1, ts_2 = dt_to_ts(dt_1), dt_to_ts(dt_2)
-        with open(f"{path}{symbol}.csv") as f:
+        with open(path) as f:
             csv = f.readlines()
             fields = csv.pop(0).strip().split(",")
             reader = DictReader(csv, fields, quoting=QUOTE_NONNUMERIC)
@@ -95,32 +95,28 @@ class PolygonAdapter(BaseSource):
                     data.append(row)
         return data
 
-    def load_from_file(self, symbol, dt_1, dt_2):
-        """
-        Архив разделен на две части: до и после 2022
-        """
-        data = []
-        date_x = datetime(2022, 1, 1)
-        path = os.path.abspath(self.path)
-        if dt_1 < date_x or dt_2 < date_x:
-            data += self.load_from_path(symbol, dt_1, dt_2, f"{path}/pre_2022/")
-        if dt_1 >= date_x or dt_2 >= date_x:
-            data += self.load_from_path(symbol, dt_1, dt_2, f"{path}/2022/")
-        return data
-
-    def load(self, symbols, dt_1, dt_2):
+    def load(self, sids, dt_1, dt_2):
         all_data = []
 
-        for symbol in list(symbols):
-            ss = symbol.split("_")[1]
+        for sid in list(sids):
+            _, ss = sid.split("_", 1)
 
             if self.offline:
-                data = self.load_from_file(ss, dt_1, dt_2)
+                # Фьючерсы из ib
+                if sid.count("_") > 1:
+                    path = os.path.join(self.path, "ib")
+                    path = f"{path}/{sid}-trades.csv"
+                    data = self.load_from_file(path, dt_1, dt_2)
+                # Акции из полигона
+                else:
+                    path = os.path.join(self.path, "polygon")
+                    path = f"{path}/{ss}.csv"
+                    data = self.load_from_file(path, dt_1, dt_2)
             else:
                 data = self.load_from_api(ss, dt_1, dt_2)
 
             if not data:
-                log.error(f"No data for {symbol}")
+                log.error(f"No data for {sid}")
                 continue
 
             data = sorted(data, key=lambda d: d['t'])
@@ -137,29 +133,27 @@ class PolygonAdapter(BaseSource):
                 while prev_t and (60 < line["t"] - prev_t < 3600):
                     # добавить интервалы, пока не догоним line["t"]
                     prev_t += 60
-                    dt = ts_to_dt(prev_t)
-
-                    # Удаление всех данных за пределами RTH
-                    if self.schedule.is_rth(symbol, dt):
-                        payload = payload.copy()
-                        payload["dt"] = dt
-                        payload["v"] = 0
-                        all_data.append((prev_t, symbol, payload))
-
-                dt = ts_to_dt(line["t"])
-
-                # Удаление всех данных за пределами RTH
-                if self.schedule.is_rth(symbol, dt):
                     payload = {
-                        "dt": dt,
-                        "o": line["o"],
-                        "h": line["h"],
-                        "l": line["l"],
+                        "dt": ts_to_dt(prev_t),
+                        "o": line["c"],
+                        "h": line["c"],
+                        "l": line["c"],
                         "c": line["c"],
-                        "v": line["v"],
-                        "sid": symbol,
+                        "v": 0,
+                        "sid": sid,
                     }
-                    all_data.append((line["t"], symbol, payload))
+                    all_data.append((prev_t, sid, payload))
+
+                payload = {
+                    "dt": ts_to_dt(line["t"]),
+                    "o": line["o"],
+                    "h": line["h"],
+                    "l": line["l"],
+                    "c": line["c"],
+                    "v": line["v"],
+                    "sid": sid,
+                }
+                all_data.append((line["t"], sid, payload))
 
                 prev_t = line["t"]
 

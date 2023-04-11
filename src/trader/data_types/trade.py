@@ -14,5 +14,5 @@ class Trade:
     def __repr__(self):
         return (
             "Trade({0.sid}, {0.date}, "
-            "price={0.price}, volume={0.volume}, rth={0.rth})"
+            "price={0.price:0.2f}, volume={0.volume}, rth={0.rth})"
         ).format(self)

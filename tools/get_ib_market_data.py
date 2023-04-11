@@ -4,10 +4,8 @@
 
 import logging
 import os
-import random
-import sys
 from datetime import datetime, timedelta, timezone
-from time import sleep
+from time import sleep, monotonic
 
 import click
 import coloredlogs
@@ -24,14 +22,12 @@ coloredlogs.install(
 )
 
 
-BASE_DIR = "../data/ib"
+BASE_DIR = "../../data/ib"
 
 ib_params = {
-    # "host": "108.61.229.69",
-    "host": "127.0.0.1",
-    "clientId": 888,
-    "timeout": 5,
-    "port": 4002,
+    "host": "10.0.10.1",
+    "client_id": 900,
+    "port": 4001,
 }
 
 
@@ -199,6 +195,8 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
 
     # Загрузить каждый рабочий день, дописать в файл
     for day, day_schedule in schedule.items():
+        dt = monotonic()
+
         t0 = day_schedule["t0"]
         t1 = day_schedule["t1"]
         t0_ts = dt_to_ts(t0)
@@ -211,7 +209,7 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
         end_dt = t1.strftime("%Y%m%d-%H:%M:%S")
 
         # Запрос к IB
-        day_data = ib.get_historical_data(
+        day_data = ib._get_historical_data(
             contract=contract,
             end_dt=end_dt,
             duration="86400 S",
@@ -243,7 +241,11 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
             # ibapi.utils.intMaxString(self.barCount)
             txt += row_tmpl.format(**line.__dict__)
 
-        log.info(f"Loaded: {day}, from: '{t0}', to: '{t1}', sum_vol: {sum_vol}")
+        duration = int(monotonic() - dt)
+        log.info(
+            f"Loaded: {day}, from: '{t0}', to: '{t1}', "
+            f"sum_vol: {sum_vol:>8}, time: {duration:>2} s"
+        )
 
         # Дописать данные в файл
         with open(f_path, "a") as f:
@@ -292,7 +294,7 @@ def main(**kwargs):
     print(ib_params)
 
     try:
-        app.connect(ib_params["host"], ib_params["port"], 900)
+        app.connect(ib_params["host"], ib_params["port"], ib_params["client_id"])
 
         # Endless message loop
         thread = IBThread(app)

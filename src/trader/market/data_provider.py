@@ -76,12 +76,11 @@ class DataProvider:
                     return
                 self.last_processed_dt[sid] = dt
 
-            # Пробрасывать эту настройк из стратегии, из подписки
+            # Приходится здесь размечать RTH, т.к. здесь есть расписание
             payload["rth"] = self.schedule.is_rth(sid, dt)
 
-            if payload["rth"]:
-                # Формат данных, проверка large gap и вызов Trader.on_event
-                self.event_manager.notify(payload)
+            # Формат данных, проверка large gap и вызов Trader.on_event
+            self.event_manager.notify(payload)
         else:
             log.warning(f"Unknown format: {payload}")
 

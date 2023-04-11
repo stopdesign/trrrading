@@ -26,9 +26,17 @@ class Data:
         return f"Data({self.sid}, rth={self.rth})"
 
     def add_bar(self, bar: Bar) -> None:
-        self.version = int(bar.date.timestamp())
-        self.bars.append(bar)
+        # Отрезаются ETH, если их не просили
+        if (not self.rth) or bar.rth:
+            self.version = int(bar.date.timestamp())
+            self.bars.append(bar)
 
     def trigger_events(self) -> None:
+        # bars
         if self.on_bar and self.bars:
-            self.on_bar(self.bars[-1])
+            bar = self.bars[-1]
+            self.on_bar(bar)
+
+        # FIXME: здесь я ожидаю уже побитые бары или реальные сделки
+        # # ticks ???
+        # if self.on_tick and self.bars:

@@ -15,7 +15,7 @@ coloredlogs.install(
     "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
 )
 
-BASE_DIR = Path(__file__).parents[2] / "data"
+BASE_DIR = Path(__file__).parents[2] / "data" / "polygon"
 
 BASE_URL = "https://api.polygon.io/v2/aggs/ticker"
 
@@ -175,7 +175,7 @@ def get_last_interval_dt(f_path):
 def process_symbol(symbol, dt_start, dt_end, reset, latency_tolerance):
     ss = symbol.split(":")[1]
 
-    f_path = os.path.abspath(f"{BASE_DIR}/polygon_nyse/2022/{ss}.csv")
+    f_path = os.path.abspath(f"{BASE_DIR}/{ss}.csv")
 
     dt_1 = dt_start
     dt_2 = dt_end or (datetime.utcnow() + timedelta(days=3))

@@ -93,24 +93,12 @@ class TradisAdapter(BaseSource):
             if self.quotes:
                 lns += self.redis.zrangebyscore(f"{s}:QUOTES", t1, t2, withscores=True)
 
-            # prev_str = None
-            # prev = {"c": None}
             for data_str, score in sorted(lns):
                 data = orjson.loads(data_str)
                 # Легкий фикс формата
                 data["sid"] = s
                 data["dt"] = parse_dt(data["dt"])
-
-                # # Если данные поменялись, но vol == 0 — поставить 1
-                # if '"o"' in data_str:
-                #     no = data["o"] == data["h"] == data["l"] == data["c"] == prev["c"]
-                #     if prev_str != data_str[28:] and '"vol":0' in data_str and not no:
-                #         data["vol"] = -1
-                #     prev_str = data_str[28:]
-                #     prev = data
-
-                if self.schedule.is_rth(s, data["dt"]):
-                    all_data.append((score, s, data))
+                all_data.append((score, s, data))
 
         log.info(f"{sids}, {dt_1}, {dt_2}, {len(all_data)}")
 

@@ -2,8 +2,6 @@ import logging
 from decimal import Decimal
 from typing import Callable
 
-from termcolor import colored
-
 from trader.data_types import Order, Position
 
 from .base_exchange import BaseExchange
@@ -49,19 +47,24 @@ class Emulator(BaseExchange):
 
     def place_order(self, order: Order):
         """
-        Метод для создания ордера из стратегии.
-        В эмуляторе этим занимается LocalMatcher
+        Создание ордера из стратегии.
         """
         # log.info(colored(f"PLACE {order}"))
         self.orders.append(order)
         self.matcher.process_order(order)
 
     def update_order(self, order: Order, **kwargs):
+        """
+        Редактирование ордера из стратегии.
+        """
         updated = False
         for key, value in kwargs.items():
             if getattr(order, key, None) != value:
                 updated = True
             setattr(order, key, value)
+
+    def cancel_order(self, order: Order):
+        raise NotImplementedError
 
     def process_orders(self):
         """

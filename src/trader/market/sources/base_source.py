@@ -8,8 +8,8 @@ class BaseSource:
     def __str__(self) -> str:
         return self.__class__.__name__
 
-    def load(self, symbols: list, dt_1: datetime, dt_2: datetime):
+    def load(self, instruments: list, dt_1: datetime, dt_2: datetime):
         raise NotImplementedError()
 
-    def listen(self):
+    def listen(self, instruments: list, on_market_event, on_broker_event):
         raise NotImplementedError()

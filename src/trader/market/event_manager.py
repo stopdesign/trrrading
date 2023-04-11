@@ -27,6 +27,7 @@ class EventManager:
         self.quotes = False  # в данных есть quotes
 
         self.prev_bar_dt = datetime.min
+        self.prev_bar_rth = None
         self.in_the_gap = True
 
     # FIXME: сомневаюсь, что это должно быть здесь
@@ -68,14 +69,12 @@ class EventManager:
         Проверка соблюдения последовательности
         интервалов и промежутков между интервалами.
         """
-        # FIXME: убрать хардкодинг допустимых интервалов
-        valid_gap = [1050, 1150, 3870, 3930, 4030, 5370, 5470]
-
-        # FIXME: тут нужна поддержка разных инструментов
+        # FIXME: сделать контроль gaps для нескольких инструментов одновременно
         bar_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60) - 1
         if bar_gap > 0:
-            if not self.in_the_gap and bar_gap not in valid_gap:
-                log.error(f"Large gap: {bar.date}, {bar_gap} min")
+            if not self.in_the_gap and bar_gap:
+                if bar.rth and self.prev_bar_rth:
+                    log.error(f"Large gap: {bar.date}, {bar_gap} min")
             self.in_the_gap = True
         else:
             self.in_the_gap = False
@@ -85,6 +84,7 @@ class EventManager:
             log.error(f"Negative gap: {bar.date}, {bar_gap} min")
 
         self.prev_bar_dt = bar.date
+        self.prev_bar_rth = bar.rth
 
     def notify(self, payload: dict):
         """
@@ -120,6 +120,11 @@ class EventManager:
             bar = Bar.from_redis(payload)
 
             self.validate_bar_time(bar)
+
+            ########################################
+            ## Tick emulation
+            ## Backtest and Broker
+            ########################################
 
             # # Эмуляция отдельных сделок по границам OHLC-бара
             # for trade in self.bar_to_trades(bar):

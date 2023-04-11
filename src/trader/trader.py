@@ -8,7 +8,7 @@ import redis
 from termcolor import colored
 
 from .exchange import Emulator, Exchange
-from .market import DataProvider, PolygonAdapter, TradisAdapter, TwsOfflineAdapter
+from .market import DataProvider, PolygonAdapter, TradisAdapter
 from .stats import PortfolioStats
 from .strategy import all_strategies
 from .strategy.base import BaseStrategy
@@ -80,7 +80,7 @@ class Trader:
         # Список всех инструментов, используемых в стратегиях
         self.instruments = list(sorted(set([ds.sid for ds in self.data_sources])))
 
-        self.config_start_end(run_config, warm_up=timedelta(days=10))
+        self.config_start_end(run_config, warm_up=timedelta(days=15))
         self.config_sources(run_config, config["sources"])
 
         # Добывает данные, запускает события
@@ -210,8 +210,6 @@ class Trader:
             self.history_source = TradisAdapter(redis_client)
         elif "polygon" in history:
             self.history_source = PolygonAdapter(**history_conf)
-        elif history == "tws_offline":
-            self.history_source = TwsOfflineAdapter(**history_conf)
         else:
             raise ValueError(f"Unknown history source: {history}")
 
@@ -328,7 +326,8 @@ class Trader:
 
         path = os.path.join(base_dir, "meta.json")
         with open(path, "w") as f:
-            f.write(json.dumps(meta, indent=4, default=str))
+            meta_json = json.dumps(meta, indent=4, default=str)
+            f.write(meta_json.replace(": NaN", ": null"))
 
         # FIXME: ну какого хуя?
         def dt_to_ts(dt):
@@ -341,6 +340,8 @@ class Trader:
             path = os.path.join(base_dir, f"{ms}-ohlc.jsonl")
             txt = ""
             for bar in self.exchange.bars[sid]:
+                # if not bar.rth:
+                #     continue
                 if bar.date < self.dt_start:
                     continue
                 ts = dt_to_ts(bar.date)
@@ -356,7 +357,6 @@ class Trader:
                 f.write(txt)
 
         # Сохранение сделок и депозита
-
         for strategy in self.strategies:
             ms = strategy.market_system
             path = os.path.join(base_dir, f"{ms}-events.jsonl")

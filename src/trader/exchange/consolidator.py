@@ -24,7 +24,7 @@ class Consolidator(Data):
         volume: int = None
         rth: bool = None
     """
-    def __init__(self, data: Data, rule: str, on_bar=None) -> None:
+    def __init__(self, data: Data, rule: str, on_bar=None, filter=None) -> None:
         self.data = data
         self.rule = rule
         self.sid = data.sid
@@ -34,6 +34,7 @@ class Consolidator(Data):
         self.version : int = 0
         self.step = 60 * int(rule.replace("m", ""))
         self.closed_bar = None
+        self.filter = filter
 
     def __repr__(self) -> str:
         return f"Consolidator({self.data}, rule={self.rule})"
@@ -60,6 +61,8 @@ class Consolidator(Data):
         self.inner_bars = []
 
     def add_bar(self, bar: Bar) -> None:
+        if self.filter and not self.filter(bar):
+            return
         ts = int(bar.date.timestamp())
         if int(ts // self.step) > self.version:
             self.version = int(ts // self.step)
@@ -67,7 +70,3 @@ class Consolidator(Data):
             self.inner_bars = [bar]
         else:
             self.inner_bars.append(bar)
-
-    def trigger_events(self) -> None:
-        if self.on_bar and self.bars:
-            self.on_bar(self.bars[-1])
