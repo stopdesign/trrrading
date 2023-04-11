@@ -86,6 +86,7 @@ const draw_order = function (ac, order) {
     .setQuantityBorderColor(color)
     .setBodyTextColor(color)
     .setBodyBackgroundColor('#ffffff')
+    .setLineLength(2)
 
   return or
 
