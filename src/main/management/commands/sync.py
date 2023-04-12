@@ -639,8 +639,11 @@ class Sync:
                 log.error(
                     f"Execution without order: {exec.execId}, "
                     f"order.perm_id: {exec.permId}, "
-                    f"client_id: {exec.clientId}, "
+                    f"client_id: order={exec.clientId} sync={self.gw_client_id}"
                 )
+                if self.gw_client_id != 0:
+                    pass
+                    # TODO: resync orders (+ contracts)
 
         if trades_to_create:
             Trade.objects.bulk_create(trades_to_create)
@@ -685,6 +688,44 @@ class Sync:
                 log.info(f"Create contract: {c.sid}")
         return contracts_to_create
 
+    def sync_orders(self, account, contracts_by_sid, ib_orders):
+        """
+        Создать в базе новые ордеры из IB, обновить старые.
+        """
+
+        orders = Order.objects.filter(account=account)
+        orders_by_id = {o.order_id: o for o in orders}
+
+        orders_to_create = []
+
+        for contract, order, state in ib_orders:
+            # log.info(
+            #     f"IB ORDER {order} > {order.orderRef}, "
+            #     f"tq:{order.totalQuantity}, {state.status}"
+            # )
+
+            if not order.permId:
+                continue
+
+            if db_order := orders_by_id.get(order.permId):
+                # FIXME: сделать нормально
+                # проверить изменения ордеров из базы,
+                # которые не финализированы
+                if state.status != db_order.status:
+                    msg = f"UPDATE in DB {order} {db_order}"
+                    log.info(colored(msg, "magenta"))
+                    db_order.status = state.status
+                    db_order.save(update_fields=["status"])
+            else:
+                # Создание ордера в базе
+                sid = self.ib.sid_for_contract(contract)
+                db_c = contracts_by_sid[sid]
+                db_order = Order.from_ib(order, account, db_c, state)
+                orders_to_create.append(db_order)
+
+        if orders_to_create:
+            Order.objects.bulk_create(orders_to_create)
+
     def initial_sync(self) -> None:
         """
         Начальную синхронизацию лучше не объединять с обновлением,
@@ -699,29 +740,22 @@ class Sync:
         - если ничего не поменялось, применить транзакцию
         - если поменялось - начать заново
         """
-        ib: IBSyncExtended = self.ib
+        txt = f"Start initial_sync, account: {self.ib.account_id}"
+        log.info(colored(txt, attrs=["bold"]))
 
         # Получить данные из базы
-
-        log.info(
-            colored(f"Start initial_sync, account: {ib.account_id}", attrs=["bold"])
-        )
-
-        account = Account.objects.get(uid=ib.account_id)
+        account = Account.objects.get(uid=self.ib.account_id)
 
         positions = Position.objects.filter(account=account)
         positions_by_sid = {p.contract.sid: p for p in positions}
-
-        orders = Order.objects.filter(account=account)
-        orders_by_id = {o.order_id: o for o in orders}
 
         contracts = Contract.objects.all()
         contracts_by_sid = {c.sid: c for c in contracts}
 
         # Получить данные из IB
-        ib_orders = ib.get_orders()
-        ib_positions = ib.get_positions()
-        ib_executions = ib.get_executions()
+        ib_orders = self.ib.get_orders()
+        ib_positions = self.ib.get_positions()
+        ib_executions = self.ib.get_executions()
 
         # Все контракты из данных IB
         all_contracts = [r[0] for r in ib_orders]
@@ -735,36 +769,7 @@ class Sync:
 
         ############
         # Ордеры
-
-        orders_to_create = []
-
-        for contract, order, state in ib_orders:
-            # log.info(
-            #     f"IB ORDER {order} > {order.orderRef}, "
-            #     f"tq:{order.totalQuantity}, {state.status}"
-            # )
-
-            if not order.permId:
-                continue
-
-            if db_order := orders_by_id.get(order.permId):
-                # TODO: проверить изменения ордеров из базы,
-                # которые не финализированы
-                # FIXME: сделать нормально
-                if state.status != db_order.status:
-                    msg = f"UPDATE in DB {order} {db_order}"
-                    log.info(colored(msg, "magenta"))
-                    db_order.status = state.status
-                    db_order.save(update_fields=["status"])
-            else:
-                # Создание ордера в базе
-                sid = ib.sid_for_contract(contract)
-                db_c = contracts_by_sid[sid]
-                db_order = Order.from_ib(order, account, db_c, state)
-                orders_to_create.append(db_order)
-
-        if orders_to_create:
-            Order.objects.bulk_create(orders_to_create)
+        self.sync_orders(account, contracts_by_sid, ib_orders)
 
         ############
         # Позиции
@@ -779,7 +784,7 @@ class Sync:
 
         for acnt, con, pos, avgCost in ib_positions:
             contract = uniq_contracts[con.conId]
-            sid = ib.sid_for_contract(contract)
+            sid = self.ib.sid_for_contract(contract)
 
             db_c = contracts_by_sid[sid]
 
@@ -808,9 +813,9 @@ class Sync:
         # Проверить, что данные в IB не изменились с момента получения
         log.info("Check initial_sync integrity")
 
-        ib_orders_2 = ib.get_orders()
-        ib_positions_2 = ib.get_positions()
-        ib_executions_2 = ib.get_executions()
+        ib_orders_2 = self.ib.get_orders()
+        ib_positions_2 = self.ib.get_positions()
+        ib_executions_2 = self.ib.get_executions()
 
         # Сравнить данные ib_* и ib_*_2.
         # Если одинаковые, то всё ok.

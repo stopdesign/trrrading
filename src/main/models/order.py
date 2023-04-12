@@ -1,9 +1,20 @@
+import json
 from secrets import token_hex
 from django.db import models
 from main.models import Contract
 
 
-UNSET_DOUBLE = 10**10
+# UNSET_INTEGER = 2 ** 31 - 1  # 2147483647
+# UNSET_DOUBLE = sys.float_info.max  # ~1.79e+308
+# UNSET_LONG = 2 ** 63 - 1  # 9223372036854775807
+# UNSET_DECIMAL = Decimal(2 ** 127 - 1)  # ~1.70e+38
+
+
+def fix_float(value: float, default=None) -> float | None:
+    if value >= 10 ** 30:
+        return default
+    else:
+        return value
 
 
 def dt_to_ts(dt):
@@ -24,6 +35,10 @@ class Order(models.Model):
         mkt = "MKT", "Market"
         lmt = "LMT", "Limit"
         stp = "STP", "Stop"
+        stp_lmt = "STP LMT", "Stop Limit"
+        trl = "TRAIL", "Trail"
+        trl_lmt = "TRAIL LIMIT", "Trail Limit"
+        mid = "MIDPRICE", "MidPrice"
 
     account = models.ForeignKey("Account", null=True, on_delete=models.PROTECT)
     run = models.ForeignKey("Run", null=True, on_delete=models.CASCADE, related_name="orders")
@@ -31,18 +46,28 @@ class Order(models.Model):
     contract = models.ForeignKey("Contract", null=False, on_delete=models.PROTECT)
     action = models.CharField(max_length=50, choices=Side.choices, null=True)
 
-    order_id = models.PositiveIntegerField(unique=True, null=True)  # id IBKR
+    order_id = models.PositiveIntegerField(unique=True, null=True)  # perm id IBKR
     local_id = models.CharField(max_length=250, null=True)  # локальный id гейтвея
 
     amount = models.PositiveIntegerField(default=0)
     filled = models.PositiveIntegerField(default=0)
     type = models.CharField(max_length=50, choices=Type.choices, null=True)
+
+    oca_group = models.PositiveIntegerField(null=True)
+
+    algo_strategy = models.CharField(max_length=50, null=True)
+    algo_params = models.CharField(max_length=200, null=True)
+
     signal_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     limit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     stop_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    trailing_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    trailing_percent = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+
     avg_fill_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
-    is_bot = models.BooleanField(default=False)
     status = models.CharField(max_length=50, null=True)
+    raw = models.TextField(null=True)
+    tif = models.CharField(max_length=10, null=True)
     outside_rth = models.BooleanField(default=False)
 
     # Настройки ордера, которые нужно пробрасывать из бота
@@ -66,19 +91,32 @@ class Order(models.Model):
     def __str__(self):
         return f"{self.contract} {self.action} {self.amount}"
 
-    @property
-    def ticker(self):
-        return f"{self.contract.ticker}"
-
     @classmethod
     def from_ib(cls, order, account, contract, state):
-        # FIXME: ТИП ОРДЕРА, ВОТ ОН
         order_type = order.orderType
-        total = order.totalQuantity if order.totalQuantity < UNSET_DOUBLE else 0
-        filled = order.filledQuantity if order.filledQuantity < UNSET_DOUBLE else 0
-        # У исполненного ордера totalQuantity == 0, беру значение из filledQuantity
+
+        limit_price = fix_float(order.lmtPrice) or None
+        stop_price = fix_float(order.trailStopPrice) or None
+
+        if "TRAIL" in order_type:
+            trailing_amount = fix_float(order.auxPrice) or None
+            trailing_percent = fix_float(order.trailingPercent) or None
+        else:
+            trailing_amount = None
+            trailing_percent = None
+
+        total = fix_float(order.totalQuantity, 0)
+        filled = fix_float(order.filledQuantity, 0)
+
+        # У исполненного ордера нет totalQuantity, беру значение из filledQuantity
         if state.status == "Filled" and not total:
             total = filled
+
+        try:
+            oca_group = int(order.ocaGroup)
+        except:
+            oca_group = None
+
         return cls(
             order_id=order.permId,
             account=account,
@@ -88,12 +126,26 @@ class Order(models.Model):
             status=state.status,
             amount=total,
             filled=filled,
-            type=cls.Type.lmt,  # FIXME: распарсить тип ордера
-            limit_price=order.lmtPrice,
-            stop_price=order.auxPrice,
-            is_bot=False,
+            type=order_type,
+            limit_price=limit_price,
+            stop_price=stop_price,
+            trailing_amount=trailing_amount,
+            trailing_percent=trailing_percent,
             outside_rth=order.outsideRth,
+            raw=cls.format_raw(order),
+            tif=order.tif,
+            oca_group=oca_group,
+            algo_strategy=order.algoStrategy,
+            algo_params=order.algoParams,
         )
+
+    @classmethod
+    def format_raw(cls, order) -> str:
+        raw = json.dumps(order.__dict__, indent=2, default=str)
+        raw = raw.replace(" 1.7976931348623157e+308", " null")
+        raw = raw.replace(" 9223372036854775807", " null")
+        raw = raw.replace(" 2147483647", " null")
+        return raw
 
     @classmethod
     def limit_order(cls, account, contract, side, amount, price, outside_rth=False):
@@ -146,26 +198,6 @@ class Order(models.Model):
         order = cls.market_order(account, contract, side, amount)
         order.order_settings = '{"strategy": "Adaptive", "priority": "Normal"}'
         return order
-
-    def simulate_fill(self, fill_price):
-        self.avg_fill_price = fill_price
-        self.filled = self.amount
-        self.status = "Filled"
-        self.save()
-
-    def as_json(self):
-        if self.avg_fill_price:
-            price = float(self.avg_fill_price)
-        else:
-            price = float("nan")
-        return {
-            "id": self.pk,
-            "amount": self.amount,
-            "side": str(self.action).lower(),
-            "time": dt_to_ts(self.created_at),
-            "dt": str(self.created_at),
-            "price": price,
-        }
 
     class Meta:
         app_label = "main"

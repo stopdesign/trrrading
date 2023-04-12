@@ -2,13 +2,12 @@ import json
 from decimal import Decimal
 
 from django.contrib import admin
-from django.db.models import Count
 from django.forms import widgets
 
 from project.admin import admin_site
 from project.helpers.admin_decorators import boolean, short_description
 
-from .models import Account, Contract, Order, OrderEvent, Position, Run, Trade
+from .models import Account, Contract, Order, OrderEvent, Position, Trade
 
 
 class PrettyJSONWidget(widgets.Textarea):
@@ -17,7 +16,7 @@ class PrettyJSONWidget(widgets.Textarea):
             value = json.dumps(json.loads(value), indent=4, ensure_ascii=False)
             # these lines will try to adjust size of TextArea to fit to content
             row_lengths = [len(r) for r in value.split("\n")]
-            self.attrs["rows"] = min(max(len(row_lengths) + 2, 3), 10)
+            self.attrs["rows"] = min(max(len(row_lengths) + 2, 3), 25)
             self.attrs["cols"] = min(max(max(row_lengths) + 2, 75), 100)
             self.attrs["style"] = "font-family: monospace"
             self.attrs["spellcheck"] = "false"
@@ -40,59 +39,6 @@ class AccountAdmin(admin.ModelAdmin):
     )
     actions_on_top = False
     actions = None
-
-
-class OrderInline(admin.TabularInline):
-    model = Order
-    fields = (
-        "order_id",
-        "local_id",
-        "contract",
-        "status",
-        "amount",
-        "filled",
-        "type",
-        "action",
-        "signal_price",
-        "avg_fill_price",
-        "created_at",
-    )
-    readonly_fields = fields
-    extra = 0
-
-
-@admin.register(Run, site=admin_site)
-class RunAdmin(admin.ModelAdmin):
-    list_display = (
-        "uid",
-        "account",
-        "get_num_orders",
-        "created_at",
-        "finished_at",
-    )
-
-    list_filter = ("account",)
-
-    actions_on_top = False
-    actions_on_bottom = True
-
-    inlines = [OrderInline]
-
-    def get_queryset(self, request):
-        qs = super(RunAdmin, self).get_queryset(request)
-        return qs.annotate(num_orders=Count("orders"))
-
-    def get_readonly_fields(self, request, obj=None):
-        readonly_fields = [f.name for f in self.opts.local_fields] + [
-            f.name for f in self.opts.local_many_to_many
-        ]
-        return readonly_fields
-
-    def get_num_orders(self, obj):
-        return obj.num_orders
-
-    def has_add_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(Contract, site=admin_site)
@@ -147,25 +93,23 @@ class OrderAdmin(admin.ModelAdmin):
         "amount",
         "filled",
         "get_rth",
+        "tif",
+        "oca_group",
         "type",
         "action",
         "stop_price",
         "limit_price",
         "avg_fill_price",
-        # "get_slippage",
-        # "get_commission",
-        # "get_duration",
         "created_at",
         "updated_at",
     )
     fields = (
-        "contract",
-        "action",
         "amount",
         "filled",
         "status",
         "system_comment",
         "order_settings",
+        "raw",
     )
     list_filter = (
         "account",
@@ -176,7 +120,7 @@ class OrderAdmin(admin.ModelAdmin):
     actions_on_top = False
     actions_on_bottom = True
     # actions = None
-    inlines = [TradeInline, OrderEventInline]
+    inlines = [TradeInline]
 
     @boolean
     @short_description("")
@@ -225,11 +169,16 @@ class OrderAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return False
 
-    def has_change_permission(self, request, obj=None):
-        return False
+    # def has_change_permission(self, request, obj=None):
+    #     return False
 
     # def has_delete_permission(self, request, obj=None):
     #     return False
+
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        if db_field.name == "raw":
+            kwargs["widget"] = PrettyJSONWidget
+        return super().formfield_for_dbfield(db_field,**kwargs)
 
 
 @admin.register(Position, site=admin_site)
