@@ -911,6 +911,8 @@ class Sync:
                 port = self.gateway["port"]
                 self.ib.tws_time = datetime.min
                 self.ib.connect(host, port, self.gw_client_id)
+                # Обработка событий блокируется до завершения initial_sync
+                self.ib.lock_for_sync = True
             except Exception as e:
                 log.error(f"TWS connect exception: {e}")
                 log.exception(e)
