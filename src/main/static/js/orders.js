@@ -136,7 +136,7 @@ const create_chart = (el) => {
       "scales_context_menu",
       "legend_context_menu",
       "timeframes_toolbar",
-      "right_bar_stays_on_scroll",
+      // "right_bar_stays_on_scroll",
     ],
     width: "100%",
     height: "500px",

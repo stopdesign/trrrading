@@ -17,6 +17,7 @@ class Order:
     fill_price: Decimal = Decimal("nan")
     created_at: datetime | None = None
     strategy: None = None
+    rth: bool = True
 
     @staticmethod
     def new_local_id():

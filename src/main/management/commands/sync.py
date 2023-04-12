@@ -20,7 +20,7 @@ from project.helpers.alert import TgAlert
 
 # Логгер для этого файла
 log = logging.getLogger("sync")
-
+log.setLevel(logging.INFO)
 
 # loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
 # for logger in loggers:
@@ -148,7 +148,7 @@ class IBSyncExtended(IBSync):
 
         sid = self.sid_for_contract(contract)
 
-        log.warn(f"updatePortfolio: {sid} {position}")
+        log.info(colored(f"updatePortfolio: {sid} {position}", "cyan"))
 
         db_position = Position.objects.get(account=account, contract__sid=sid)
 
@@ -178,6 +178,14 @@ class IBSyncExtended(IBSync):
         msg = json.dumps(action, default=str)
         a = self.redis_client.publish(SYNC_CHANNEL, msg)
         log.info(f"To Redis: {msg}, {a}")
+
+    def openOrder(self, orderId, contract, order, orderState):
+        """
+        Всё нужное уже делается в IBSync, здесь только log и тайминг.
+        """
+        super().openOrder(orderId, contract, order, orderState)
+        self.prev_time["openOrder"] = monotonic()
+        log.debug(colored(f"openOrder: {order}, {orderState.status}", "yellow"))
 
     def orderStatus(
         self,
@@ -357,6 +365,27 @@ class IBSyncExtended(IBSync):
 
         log.error(f"Unknown bot action: {message}")
 
+    def place_test_order(self) -> None:
+        """
+        Создается whatIf ордер, чтобы проверить openOrder callback.
+        """
+        oid = self.nextValidOrderId
+        self.nextValidOrderId += 1
+
+        contract = self.contract_for_sid("ARCA_SPY")
+
+        order = IBOrder()
+        order.orderId = oid
+        order.action = "BUY"
+        order.totalQuantity = Decimal(1)
+        order.orderType = "LMT"
+        order.lmtPrice = 100
+        order.whatIf = True
+
+        contract, order_res, orderState = self.place_order(contract, order)
+
+        log.debug(f"WTF order: {order_res} | Status: {orderState.status}")
+
     def create_order(self, data):
         """
         Создание ордера в IB
@@ -403,18 +432,18 @@ class IBSyncExtended(IBSync):
 
         # FIXME: поддерживать разные типы ордеров
 
-        # ib_order.orderType = "MKT"
-        # order = Order.market_order(db_account, db_contract, side, abs(amount))
+        ib_order.orderType = "MKT"
+        db_order = Order.market_order(db_account, db_contract, side, abs(amount))
 
-        ib_order.orderType = "STP LMT"
-        ib_order.outsideRth = True
-        ib_order.auxPrice = stop_price
-        if ib_order.action == "BUY":
-            ib_order.lmtPrice = stop_price + 0.25
-        else:
-            ib_order.lmtPrice = stop_price - 0.25
-
-        db_order = Order.stop_order(db_account, db_contract, side, abs(amount))
+        # ib_order.orderType = "STP LMT"
+        # ib_order.outsideRth = True
+        # ib_order.auxPrice = stop_price
+        # if ib_order.action == "BUY":
+        #     ib_order.lmtPrice = stop_price + 0.25
+        # else:
+        #     ib_order.lmtPrice = stop_price - 0.25
+        #
+        # db_order = Order.stop_order(db_account, db_contract, side, abs(amount))
 
         log.info(colored(f"Create, ib_order: {ib_order}", "green"))
 
@@ -487,6 +516,7 @@ class Sync:
         self.request_time = datetime.min
         self.prev_executions = monotonic()
         self.prev_subscribe = monotonic()
+        self.prev_test_order = monotonic()
 
         self.gw_client_id = self.gateway.get("sync_client_id", 0)
 
@@ -515,23 +545,26 @@ class Sync:
         log.info(f"To Redis: {json_str}, {a}")
 
     def is_delayed(self, event: str, max_delay: int) -> bool:
+        """
+        Проверка задержки данного типа события и алерт.
+        """
         delay = monotonic() - self.ib.prev_time[event]
         if delay > max_delay:
             log.error(f"Event {event} delay: {delay:0.2f} > {max_delay}")
             return True
         return False
 
-    def maintain_subscriptions(self) -> None:
+    def maintain_subscriptions(self, force=False) -> None:
         """
         Подписка на то, что давно не приходило.
         """
 
         ########################################
-        # Подписка на orderStatus
+        # Подписка на orderStatus и openOrder
+        # Проверяю openOrder, т.к. orderStatus не подергать руками
 
-        # FIXME: пока ничего не могу сделать. Если нет ордеров, то нет и orderStatus.
-        if self.is_delayed("orderStatus", 3600):
-            self.ib.prev_time["orderStatus"] = monotonic()
+        if force or self.is_delayed("openOrder", 120):
+            self.ib.prev_time["openOrder"] = monotonic()
 
             if self.gw_client_id == 0:
                 # С AutoBind новые ордеры из TWS получают id от данного клиента.
@@ -550,9 +583,9 @@ class Sync:
         # updatePortfolio
 
         # Считаю, что если updateAccountTime приходит, значит всё OK
-        d_1 = self.is_delayed("updateAccountValue", 300)
-        d_2 = self.is_delayed("updateAccountTime", 200)
-        d_3 = self.is_delayed("updatePortfolio", 1800)
+        d_1 = force or self.is_delayed("updateAccountValue", 300)
+        d_2 = force or self.is_delayed("updateAccountTime", 200)
+        d_3 = force or self.is_delayed("updatePortfolio", 1800)
 
         if d_1 or d_2 or d_3:
             self.ib.prev_time["updateAccountValue"] = monotonic()
@@ -564,7 +597,7 @@ class Sync:
         ########################################
         # Подписка на PnL
 
-        if self.is_delayed("pnl", 200):
+        if force or self.is_delayed("pnl", 200):
             self.ib.prev_time["pnl"] = monotonic()
 
             if self.pnl_r_id:
@@ -582,10 +615,11 @@ class Sync:
         account = Account.objects.get(uid=ib.account_id)
 
         # FIXME: выбрать только последние пару дней
-        trades = Trade.objects.filter(account=account)[:1000]
+        trades = Trade.objects.filter(account=account).order_by("id")[:1000]
         trades_by_exec_id = {t.exec_id: t for t in trades}
 
-        orders = Order.objects.filter(account=account)
+        # FIXME: выбрать только последние пару дней
+        orders = Order.objects.filter(account=account).order_by("id")[:500]
         orders_by_id = {o.order_id: o for o in orders}
 
         executions = ib.get_executions()
@@ -614,11 +648,20 @@ class Sync:
 
         # Бывает так, что событие ордера не было поймано вовремя.
         # Тогда среднюю цену можно восстановить только по сделкам.
-
-        # Пересчитать цены ордеров, для которых загружены сделки.
-        # updated_orders
-        # Получить сделки для этих ордеров, посчитать, сохранить.
-        # trades = Trade.objects.filter(account=account)
+        for order in orders:
+            # Если ордер исполнен (хотя бы частично), но нет средней цены,
+            # значит ордер создан при инициализации, где нет этих данных.
+            if order.filled and not order.avg_fill_price:
+                total_value = Decimal(0)
+                total_amount = Decimal(0)
+                for trade in Trade.objects.filter(order=order):
+                    total_value += trade.amount * trade.price
+                    total_amount += trade.amount
+                if total_amount > 0:
+                    av_price = total_value / total_amount
+                    order.avg_fill_price = av_price
+                    order.save(update_fields=["avg_fill_price"])
+                    log.info(f"Update avg_fill_price, order: {order}")
 
     def get_new_contracts(self, contracts_by_sid, uniq_contracts) -> list:
         """
@@ -696,7 +739,10 @@ class Sync:
         orders_to_create = []
 
         for contract, order, state in ib_orders:
-            # log.info(f"IB ORDER {order} > {order.orderRef}, {state.status}")
+            # log.info(
+            #     f"IB ORDER {order} > {order.orderRef}, "
+            #     f"tq:{order.totalQuantity}, {state.status}"
+            # )
 
             if not order.permId:
                 continue
@@ -706,20 +752,19 @@ class Sync:
                 # которые не финализированы
                 # FIXME: сделать нормально
                 if state.status != db_order.status:
-                    msg = f"UPDATE in DB {order} {orders_by_id[order.permId]}"
+                    msg = f"UPDATE in DB {order} {db_order}"
                     log.info(colored(msg, "magenta"))
                     db_order.status = state.status
                     db_order.save(update_fields=["status"])
             else:
-                # contract
+                # Создание ордера в базе
                 sid = ib.sid_for_contract(contract)
                 db_c = contracts_by_sid[sid]
-                orders_to_create.append(Order.from_ib(order, account, db_c, state))
+                db_order = Order.from_ib(order, account, db_c, state)
+                orders_to_create.append(db_order)
 
         if orders_to_create:
             Order.objects.bulk_create(orders_to_create)
-
-            self.redis_publish({"types": ["position"]})
 
         ############
         # Позиции
@@ -760,8 +805,6 @@ class Sync:
             Position.objects.bulk_create(positions_to_create)
             Position.objects.bulk_update(positions_to_update, ["avg_price", "amount"])
 
-            self.redis_publish({"types": ["position"]})
-
         # Проверить, что данные в IB не изменились с момента получения
         log.info("Check initial_sync integrity")
 
@@ -780,7 +823,7 @@ class Sync:
         if len(ib_executions) != len(ib_executions_2):
             raise Exception("Executions updated")
 
-    def maintain(self) -> None:
+    def check_tws_health(self) -> None:
         """
         Проверка статуса подписок и задержки прихода данных.
         """
@@ -791,9 +834,6 @@ class Sync:
             log.error(f"TWS time out of sync: {time_diff:0.2f} sec")
         elif time_diff > 10:
             log.warning(f"TWS time out of sync: {time_diff:0.2f} sec")
-
-        # Новый запрос времени
-        self.request_tws_time()
 
         if not self.ib.isConnected():
             raise FatalException("tws_disconnected")
@@ -826,10 +866,21 @@ class Sync:
                 log.exception(e)
                 pass
 
-        # Проверки соединения и подписок на данные
+        if not self.ib.isConnected():
+            raise FatalException("tws_disconnected")
+
+        # Регулярно двигать ордер, чтобы работала
+        # проверка задержки событий orderStatus
+        if monotonic() - self.prev_test_order > 60:
+            self.prev_test_order = monotonic()
+            self.ib.place_test_order()
+
+        # Проверки соединения и задержки ответов TWS
         if monotonic() - self.prev_maintain > 5:
             self.prev_maintain = monotonic()
-            self.maintain()
+            self.check_tws_health()
+            # Новый запрос времени
+            self.request_tws_time()
 
         # Получить executions
         if monotonic() - self.prev_executions > 13:
@@ -914,6 +965,8 @@ class Sync:
                 try:
                     with transaction.atomic():
                         self.initial_sync()
+                        # Уведомление после успешной синхронизации
+                        self.redis_publish({"types": ["initial_sync"]})
                         break
                 except Exception as e:
                     log.error(f"Initial sync error: {e}")
@@ -925,7 +978,7 @@ class Sync:
             sleep(1)
 
             # Подписка на нужные события TWS
-            self.maintain_subscriptions()
+            self.maintain_subscriptions(force=True)
 
             # Отсечки времени для periodic_actions
             self.prev_maintain = monotonic()

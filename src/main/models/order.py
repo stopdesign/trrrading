@@ -72,8 +72,13 @@ class Order(models.Model):
 
     @classmethod
     def from_ib(cls, order, account, contract, state):
+        # FIXME: ТИП ОРДЕРА, ВОТ ОН
         order_type = order.orderType
+        total = order.totalQuantity if order.totalQuantity < UNSET_DOUBLE else 0
         filled = order.filledQuantity if order.filledQuantity < UNSET_DOUBLE else 0
+        # У исполненного ордера totalQuantity == 0, беру значение из filledQuantity
+        if state.status == "Filled" and not total:
+            total = filled
         return cls(
             order_id=order.permId,
             account=account,
@@ -81,7 +86,7 @@ class Order(models.Model):
             action=order.action,
             local_id=order.orderRef,
             status=state.status,
-            amount=order.totalQuantity,
+            amount=total,
             filled=filled,
             type=cls.Type.lmt,  # FIXME: распарсить тип ордера
             limit_price=order.lmtPrice,
