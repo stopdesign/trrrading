@@ -165,7 +165,10 @@ def positions(request):
             price = position.avg_price / contract.multiplier
             price = round(price / contract.min_tick) * contract.min_tick
             price = price * contract.price_magnifier
-            price = f"{price:0.2f}"
+            if contract.sec_type in [Contract.Type.cash, Contract.Type.crypto]:
+                price = f"{price:0.4f}"
+            else:
+                price = f"{price:0.2f}"
         else:
             price = "--"
         sid = position.contract.sid
