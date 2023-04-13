@@ -8,14 +8,23 @@ const Position = ({ data, curSymbol, setSymbol }) => {
   if (data.amount > 0) {
     amount += "+" + data.amount
     row_class = "long"
+  } else if (data.amount < 0) {
+    amount += "−" + (-data.amount)
+    row_class = "short"
   } else {
-    amount += data.amount
-    if (data.amount < 0) {
-      row_class = "short"
-    }
+    amount += 0
   }
   if (data.symbol === curSymbol) {
     row_class += " active"
+  }
+
+  let pnl = ""
+  if (data.unrealized_pnl > 0) {
+    pnl += "+" + data.unrealized_pnl
+  } else if (data.unrealized_pnl < 0) {
+    pnl += "−" + (-data.unrealized_pnl)
+  } else {
+    pnl += "0"
   }
 
   return html`
@@ -26,7 +35,7 @@ const Position = ({ data, curSymbol, setSymbol }) => {
           <td>${data.name}</td>
           <td className="amount">${amount}</td>
           <td>${data.avg_price}</td>
-          <td>${data.unrealized_pnl}</td>
+          <td>${pnl}</td>
       </tr>
   `
 }
