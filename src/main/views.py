@@ -9,6 +9,7 @@ import requests
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.db.models import Q
 
 from main.models import Account, Contract, Order, Position, Trade
 
@@ -184,21 +185,70 @@ def positions(request):
 
 
 def orders(request):
+    """
+    Сортировка ордеров, чтобы попали свежие ордеры,
+    свежие сделки и не разбились группы ордеров.
+    - выбрать последние N ордеров
+    - выбрать ордеры последних N сделок
+    - сложить, взять последние N
+    - выбрать все ID групп
+    - выбрать ордеры, связанные с этими группами
+    """
     account_id = request.GET.get("account", 0)
     symbol = request.GET.get("symbol")
     res = []
+
+    limit = 100
+
+    contract = None
     if symbol:
         try:
             contract = Contract.objects.get(sid=symbol)
-            all_orders = Order.objects.filter(account_id=account_id, contract=contract)
-            all_orders = all_orders.order_by("-id")[:100]
         except Contract.DoesNotExist:
-            all_orders = []
-    else:
-        all_orders = Order.objects.filter(account_id=account_id)
-        all_orders = all_orders.order_by("-id")[:100]
+            pass
 
-    all_orders_pks = [o.pk for o in all_orders]
+    all_orders = Order.objects.filter(account_id=account_id)
+    if symbol:
+        all_orders = all_orders.filter(contract=contract)
+
+    last_created = all_orders.order_by("-id")[:limit]
+
+    last_traded = all_orders.filter(trades__order_id__gt=0)
+    last_traded = last_traded.order_by("-trades__created_at")[:limit]
+
+    sortable = {}
+    ib_by_perm = {}
+
+    oca_groups = set()
+    for o in last_created:
+        oca_groups.add(o.oca_group)
+        ib_by_perm[o.order_id] = o.pk
+
+    for o in last_traded:
+        oca_groups.add(o.oca_group)
+        ib_by_perm[o.order_id] = o.pk
+
+    oca_groups = list(filter(None, oca_groups))
+
+    # для групповых ордеров вытащить родительский и все соседние ордеры
+    group_related = all_orders.filter(
+        Q(order_id__in=oca_groups) | Q(oca_group__in=oca_groups)
+    )
+
+    for o in group_related:
+        ib_by_perm[o.order_id] = o.pk
+
+    # Собрать все ордеры с ключами для сортировки
+    for o in list(last_created) + list(last_traded) + list(group_related):
+        a = ib_by_perm.get(o.oca_group, 0) if o.oca_group else o.pk
+        b = o.pk if o.oca_group else 10**10
+        sortable[(a, b)] = o
+
+    sorted_orders = []
+    for _, o in sorted(sortable.items(), reverse=True)[:limit]:
+        sorted_orders.append(o)
+
+    all_orders_pks = [o.pk for o in sorted_orders]
     related_trades = Trade.objects.filter(order_id__in=all_orders_pks)
 
     trades_by_order = defaultdict(list)
@@ -217,13 +267,13 @@ def orders(request):
             }
         )
 
-    for order in all_orders:
+    for order in sorted_orders:
         if order.avg_fill_price:
             price = float(order.avg_fill_price)
         elif order.signal_price:
             price = float(order.signal_price)
         else:
-            price = "-"
+            price = ""
         created = None
         time_ts = None
         if order.created_at:
@@ -235,13 +285,18 @@ def orders(request):
                 "order_id": order.order_id,
                 "local_id": order.local_id,
                 "sid": order.contract.sid,
-                "type": order.type,
+                "type": str(order.type).upper(),
+                "algo_strategy": order.algo_strategy,
+                "oca_group": order.oca_group,
                 "amount": order.amount,
                 "filled": order.filled,
                 "status": order.status,
                 "price": price,
                 "limit_price": order.limit_price,
                 "stop_price": order.stop_price,
+                "trailing_amount": order.trailing_amount,
+                "trailing_percent": order.trailing_percent,
+                "outside_rth": order.outside_rth,
                 "side": str(order.action).lower(),
                 "time": time_ts,
                 "created": created,

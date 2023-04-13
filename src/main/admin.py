@@ -96,6 +96,7 @@ class OrderAdmin(admin.ModelAdmin):
         "tif",
         "oca_group",
         "type",
+        "algo_strategy",
         "action",
         "stop_price",
         "limit_price",

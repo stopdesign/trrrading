@@ -37,6 +37,10 @@ const draw_trade = function (ac, order) {
           icon: icon_shape,
           zOrder: "top",
           disableSelection: true,
+          disableSave: true,
+          disableUndo: true,
+          lock: true,
+          showInObjectsTree: false,
         }
       )
       const arrow = ac.createShape(
@@ -47,6 +51,10 @@ const draw_trade = function (ac, order) {
           icon: icon_shape,
           zOrder: "top",
           disableSelection: true,
+          disableSave: true,
+          disableUndo: true,
+          lock: true,
+          showInObjectsTree: false,
         }
       )
 
@@ -141,6 +149,9 @@ const create_chart = (el) => {
     width: "100%",
     height: "500px",
     toolbar_bg: '#f4f7f9',
+
+    // set local timezone
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   })
 
   // const iframe = document.getElementById("tv_chart_container").getElementsByTagName("iframe")[0]
@@ -160,21 +171,30 @@ const Order = ({ data, curOrder, setOrder }) => {
 
   let row_class = ""
   if (data.id === curOrder.id) {
-    row_class += "active "
+    row_class += " active "
   }
   if (typeof data.status == "string") {
     row_class += data.status.toLowerCase()
   }
   let side = typeof data.side == "string" ? data.side.toLowerCase() : ""
 
+  let sid = data.sid
+  if (data.oca_group) {
+    sid = ""
+    row_class += " in_oca_group "
+  }
+
   return html`
       <tr onClick=${() => setOrder(data.id === curOrder.id ? {} : data)}
           className="${row_class}"
       >
-          <td>${data["order_id"]}</td>
-          <td>${data["local_id"]}</td>
-          <td>${data.sid}</td>
-          <td>${data.type}</td>
+          <td className="instrument">${sid}</td>
+          <td className="order_id">${data.order_id}</td>
+          <td className="local_id">${data.local_id}</td>
+          <td className="order_type">
+            ${data.algo_strategy && html`<span>${data.algo_strategy}</span>`}
+            ${data.type}
+          </td>
           <td className="side side-${side}">${side}</td>
           <td className="amount">${data.amount}</td>
           <td className="filled">${data.filled}</td>
@@ -357,7 +377,7 @@ const Orders = ({ account, symbol }) => {
     if (symbol) {
       // Поменять символ на графике
       if (ac) {
-        ac.getAllShapes().forEach(({ id, name }) => ac.removeEntity(id))
+        ac.removeAllShapes()
         ac.setSymbol(symbol)
         ac.trades = []
       }
@@ -413,22 +433,22 @@ const Orders = ({ account, symbol }) => {
   return html`
       <div className="orders_and_chart">
           <div id="tv_chart_container"></div>
-          <div className="orders ${loading ? 'loading' : ''}">
-              <table>
+
+              <table className="orders ${loading ? 'loading' : ''}">
                   <thead>
                   <tr>
-                      <td>order_id</td>
-                      <td>local_id</td>
-                      <td>instrument</td>
-                      <td>type</td>
-                      <td>side</td>
-                      <td>amount</td>
-                      <td>filled</td>
-                      <td>stop price</td>
-                      <td>limit price</td>
-                      <td>price</td>
-                      <td>status</td>
-                      <td>created</td>
+                      <td><i>instrument</i></td>
+                      <td><i>order_id</i></td>
+                      <td><i>local_id</i></td>
+                      <td><i>type</i></td>
+                      <td><i>side</i></td>
+                      <td><i>amount</i></td>
+                      <td><i>filled</i></td>
+                      <td><i>stop price</i></td>
+                      <td><i>limit price</i></td>
+                      <td><i>fill price</i></td>
+                      <td><i>status</i></td>
+                      <td><i>created</i></td>
                   </tr>
                   </thead>
                   <tbody>
@@ -442,7 +462,7 @@ const Orders = ({ account, symbol }) => {
                   `)}
                   </tbody>
               </table>
-          </div>
+
       </div>
   `
 }

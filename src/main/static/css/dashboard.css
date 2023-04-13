@@ -83,6 +83,7 @@ body {
     border-bottom: 5px solid #eee;
     padding: 0 20px 20px 20px;
 }
+
 .health_panel .accounts span {
     margin-right: 15px;
     border-bottom: 1px dashed;
@@ -125,6 +126,7 @@ body {
     color: #aaa;
     margin-left: 15px;
 }
+
 .account_panel .long_delay {
     color: #d00;
 }
@@ -144,15 +146,19 @@ body {
     color: #999;
     font-weight: normal;
 }
+
 .positions td.amount {
     font-weight: 500;
 }
+
 .positions .short td.amount {
     color: #d00;
 }
+
 .positions .long td.amount {
     color: #080;
 }
+
 .positions .zero td {
     color: #aaa;
 }
@@ -256,28 +262,72 @@ body {
 
 .orders {
     border-top: 5px solid #eee;
+    /* overflow-y: scroll; */
+    position: relative;
+}
+
+.orders td.instrument {
+    width: 180px;
+}
+.orders td.order_id {
+    width: 120px;
+}
+.orders td.local_id {
+    width: 120px;
+}
+
+table.orders {
+    display: block;
     overflow-y: scroll;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.orders thead {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+}
+
+.orders tbody {
+    width: 100%;
 }
 
 .orders.loading {
     opacity: 0.5;
 }
 
-.orders table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
 .orders thead td {
-    color: #999;
+    padding: 0;
 }
-
+.orders thead td i {
+    color: #999;
+    padding: 8px;
+    border-bottom: 2px solid #ddd;
+    display: block;
+    font-style: normal;
+}
 .orders td {
     padding: 8px;
     text-align: right;
-    border-bottom: 1px solid #ddd;
     white-space: nowrap;
     width: 1%;
+}
+.orders tbody td {
+    border-top: 1px solid #ddd;
+}
+.orders tbody .in_oca_group td {
+    border-top: 1px dashed #ddd;
+    font-size: 85%;
+    padding-top: 3px;
+    padding-bottom: 4px;
+}
+.orders tbody tr:first-child td {
+    border-top: none;
+}
+.orders tbody tr:last-child td {
+    border-bottom: 1px solid #ddd;
 }
 
 /*
@@ -293,37 +343,53 @@ https://www.interactivebrokers.com/en/software/mobileandroid/trade/status-colors
 #6d0606  maroon
 */
 .orders .cancelled td {
-    color: #aaa;
+    color: #666;
+    opacity: 0.5;
 }
+
 .orders td.status,
 .orders td.amount {
     font-weight: 500;
 }
+
 .orders td.side-buy {
     color: #080;
 }
+
 .orders td.side-sell {
     color: #d00;
 }
+
 .orders .filled td.status {
     color: #333;
 }
+
 .orders .new td.status {
-    color: #3771f4;
+    color: #4c9bf5;
 }
+
 .orders .submitted td.status {
     color: #2fa03a;
 }
+
 .orders .presubmitted td.status {
-    color: #2c328e;
+    color: #2a5fda;
 }
 
-.orders td:first-child {
+.orders .order_type span {
+    margin-right: 8px;
+    color: rgb(52, 141, 231);
+    font-size: 0.85em;
+}
+
+.orders thead td:first-child i,
+.orders tbody td:first-child {
     text-align: left;
     padding-left: 20px;
 }
 
-.orders td:last-child {
+.orders thead td:last-child i,
+.orders tbody td:last-child {
     padding-right: 20px;
 }
 
