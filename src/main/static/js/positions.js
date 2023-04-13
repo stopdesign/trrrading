@@ -1,42 +1,58 @@
-import {html, React, useState, useEffect} from "./deps.js";
+import { html, useState, useEffect } from "./deps.js"
 
 
-const Position = ({data, curSymbol, setSymbol}) => {
+const Position = ({ data, curSymbol, setSymbol }) => {
+
+  let amount = ""
+  let row_class = "zero"
+  if (data.amount > 0) {
+    amount += "+" + data.amount
+    row_class = "long"
+  } else {
+    amount += data.amount
+    if (data.amount < 0) {
+      row_class = "short"
+    }
+  }
+  if (data.symbol === curSymbol) {
+    row_class += " active"
+  }
+
   return html`
       <tr
               onClick=${() => setSymbol(data.symbol === curSymbol ? "" : data.symbol)}
-              className=${data.symbol === curSymbol ? "active" : ""}
+              className=${row_class}
       >
           <td>${data.name}</td>
-          <td>${data.amount}</td>
+          <td className="amount">${amount}</td>
           <td>${data.avg_price}</td>
           <td>${data.unrealized_pnl}</td>
       </tr>
-  `;
+  `
 }
 
 
-const Positions = ({account, symbol, setSymbol}) => {
-  const [positions, setPositions] = useState([]);
+const Positions = ({ account, symbol, setSymbol }) => {
+  const [positions, setPositions] = useState([])
 
   const fetchPositions = () => {
     fetch('/dash/positions?account=' + account)
       .then(function (response) {
-        return response.json();
+        return response.json()
       })
       .then(function (res_json) {
-        setPositions(res_json);
-      });
+        setPositions(res_json)
+      })
   }
 
   useEffect(() => {
     setSymbol()
-    fetchPositions();
-    const interval = setInterval(() => fetchPositions(), 3000);
+    fetchPositions()
+    const interval = setInterval(() => fetchPositions(), 3000)
     return () => {
-      clearInterval(interval);
-    };
-  }, [account]);
+      clearInterval(interval)
+    }
+  }, [account])
 
   return html`
       <div className="positions_panel">
@@ -57,8 +73,8 @@ const Positions = ({account, symbol, setSymbol}) => {
               </tbody>
           </table>
       </div>
-  `;
+  `
 }
 
 
-export default Positions;
+export default Positions

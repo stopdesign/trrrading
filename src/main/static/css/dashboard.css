@@ -144,6 +144,18 @@ body {
     color: #999;
     font-weight: normal;
 }
+.positions td.amount {
+    font-weight: 500;
+}
+.positions .short td.amount {
+    color: #d00;
+}
+.positions .long td.amount {
+    color: #080;
+}
+.positions .zero td {
+    color: #aaa;
+}
 
 .positions td {
     padding: 8px;
@@ -264,6 +276,46 @@ body {
     padding: 8px;
     text-align: right;
     border-bottom: 1px solid #ddd;
+    white-space: nowrap;
+    width: 1%;
+}
+
+/*
+https://www.interactivebrokers.com/en/software/mobileandroid/trade/status-colors.htm
+#3771f4  light blue
+#710eb6  purple
+#2c328e  dark blue
+#21d932  green
+#04461b  dark green
+#d42de3  pink
+#af470e  orange
+#da0b0b  red
+#6d0606  maroon
+*/
+.orders .cancelled td {
+    color: #aaa;
+}
+.orders td.status,
+.orders td.amount {
+    font-weight: 500;
+}
+.orders td.side-buy {
+    color: #080;
+}
+.orders td.side-sell {
+    color: #d00;
+}
+.orders .filled td.status {
+    color: #333;
+}
+.orders .new td.status {
+    color: #3771f4;
+}
+.orders .submitted td.status {
+    color: #2fa03a;
+}
+.orders .presubmitted td.status {
+    color: #2c328e;
 }
 
 .orders td:first-child {

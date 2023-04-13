@@ -191,12 +191,12 @@ def orders(request):
         try:
             contract = Contract.objects.get(sid=symbol)
             all_orders = Order.objects.filter(account_id=account_id, contract=contract)
-            all_orders = all_orders.order_by("-id")[:20]
+            all_orders = all_orders.order_by("-id")[:100]
         except Contract.DoesNotExist:
             all_orders = []
     else:
         all_orders = Order.objects.filter(account_id=account_id)
-        all_orders = all_orders.order_by("-id")[:20]
+        all_orders = all_orders.order_by("-id")[:100]
 
     all_orders_pks = [o.pk for o in all_orders]
     related_trades = Trade.objects.filter(order_id__in=all_orders_pks)

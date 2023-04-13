@@ -11,7 +11,7 @@ from main.models import Contract
 
 
 def fix_float(value: float, default=None) -> float | None:
-    if value >= 10 ** 30:
+    if value >= 10**30:
         return default
     else:
         return value
@@ -26,7 +26,6 @@ def new_local_id():
 
 
 class Order(models.Model):
-
     class Side(models.TextChoices):
         buy = "BUY", "Buy"
         sell = "SELL", "Sell"
@@ -98,7 +97,7 @@ class Order(models.Model):
         limit_price = fix_float(order.lmtPrice) or None
         stop_price = fix_float(order.trailStopPrice) or None
 
-        if "TRAIL" in order_type:
+        if order_type in [Order.Type.trl_lmt, Order.Type.trl]:
             trailing_amount = fix_float(order.auxPrice) or None
             trailing_percent = fix_float(order.trailingPercent) or None
         else:
@@ -141,7 +140,11 @@ class Order(models.Model):
 
     @classmethod
     def format_raw(cls, order) -> str:
+        """
+        Поля объекта IB Order в виде json.
+        """
         raw = json.dumps(order.__dict__, indent=2, default=str)
+        raw = raw.replace(' "170141183460469231731687303715884105727"', " null")
         raw = raw.replace(" 1.7976931348623157e+308", " null")
         raw = raw.replace(" 9223372036854775807", " null")
         raw = raw.replace(" 2147483647", " null")
