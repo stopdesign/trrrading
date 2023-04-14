@@ -99,32 +99,31 @@ class PolygonAdapter(BaseSource):
         all_data = []
 
         for sid in list(sids):
-            _, ss = sid.split("_", 1)
+            exchange, ticker = sid.split("_", 1)
 
             if self.offline:
                 # Фьючерсы из ib
                 if sid.count("_") > 1:
                     path = os.path.join(self.path, "ib")
-                    path = f"{path}/{sid}-trades.csv"
+                    path = f"{path}/{exchange}/{sid}-trades.csv"
                     data = self.load_from_file(path, dt_1, dt_2)
                 # Акции из полигона
                 else:
                     path = os.path.join(self.path, "polygon")
-                    path = f"{path}/{ss}.csv"
+                    path = f"{path}/{ticker}.csv"
                     data = self.load_from_file(path, dt_1, dt_2)
             else:
-                data = self.load_from_api(ss, dt_1, dt_2)
+                data = self.load_from_api(ticker, dt_1, dt_2)
 
             if not data:
                 log.error(f"No data for {sid}")
                 continue
 
-            data = sorted(data, key=lambda d: d['t'])
+            data = sorted(data, key=lambda d: d["t"])
 
             prev_t = None
             payload = {}
             for line in data:
-
                 # skip duplicate
                 if line["t"] == prev_t:
                     continue
