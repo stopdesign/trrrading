@@ -159,16 +159,11 @@ def positions(request):
     positions = Position.objects.filter(account_id=account_id).prefetch_related()
     positions = positions.order_by("contract__sec_type", "contract__sid")
     for position in positions:
-        # Подсчет человеческой цены позиции
         if position.avg_price:
-            contract = position.contract
-            price = position.avg_price / contract.multiplier
-            price = round(price / contract.min_tick) * contract.min_tick
-            price = price * contract.price_magnifier
-            if contract.sec_type in [Contract.Type.cash, Contract.Type.crypto]:
-                price = f"{price:0.4f}"
+            if position.contract.sec_type in [Contract.Type.cash, Contract.Type.crypto]:
+                price = f"{position.avg_price:0.4f}"
             else:
-                price = f"{price:0.2f}"
+                price = f"{position.avg_price:0.2f}"
         else:
             price = "--"
         sid = position.contract.sid
