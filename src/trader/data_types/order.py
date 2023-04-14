@@ -5,7 +5,7 @@ from decimal import Decimal
 from secrets import token_hex
 
 
-@dataclass(slots=True)
+@dataclass  # (slots=True) - не будет работать с as_dict
 class Order:
     sid: str
     type: str
@@ -23,8 +23,13 @@ class Order:
     def new_local_id():
         return "bot_" + token_hex(4)
 
+    def as_dict(self):
+        res = dict(self.__dict__)
+        res.pop("strategy", None)
+        return res
+
     def __post_init__(self):
-        if not self.local_id:
+        if self.local_id is None:
             self.local_id = Order.new_local_id()
 
     def __repr__(self):

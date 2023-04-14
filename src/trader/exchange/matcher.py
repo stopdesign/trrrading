@@ -60,6 +60,12 @@ class LocalMatcher:
 
         if order.type == "market":
             execute = True
+
+            # Не исполнять RTH-ордер, если сейчас не RTH
+            bar = self.exchange.bars[order.sid][-1]
+            if order.rth and not bar.rth:
+                return
+
             price = self.exchange.get_price(order.sid, side)  # "mid"
 
         if order.type == "limit":
@@ -68,6 +74,10 @@ class LocalMatcher:
         if order.type == "stop":
             # TODO: сделать нормальный алгоритм
             bar = self.exchange.bars[order.sid][-1]
+
+            # Не исполнять RTH-ордер, если сейчас не RTH
+            if order.rth and not bar.rth:
+                return
 
             for price in {bar.open, bar.high, bar.low, bar.close}:
                 price = Decimal(price)

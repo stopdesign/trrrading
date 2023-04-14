@@ -1,15 +1,16 @@
-import json
+import simplejson as json
 import logging
 from decimal import Decimal
 
-import redis
-
-from main.models import Account as DBAccount
-from main.models import Order as DBOrder
-from main.models import Position as DBPosition
+from main.models import Account as DbAccount
+from main.models import Order as DbOrder
+from main.models import Position as DbPosition
 from trader.data_types import Order, Position
 
 log = logging.getLogger("sync_client")
+
+
+BOT_CHANNEL = "BOT_ACTIONS"
 
 
 class SyncClient:
@@ -23,47 +24,38 @@ class SyncClient:
         self.positions = positions
         self.orders = orders
         self.redis_client = redis_client
+        self.channel = BOT_CHANNEL
 
-        self.db_account = DBAccount.objects.get(uid=self.account["uid"])
+        self.db_account = DbAccount.objects.get(uid=self.account["uid"])
         self.update_broker_data({"types": ["init"]})
 
     def place_order(self, order: Order):
-        action = {
-            "action": "create",
-            "local_id": order.local_id,
-            "sid": order.sid,
-            "amount": order.amount,
-            "type": order.type,
-            "limit_price": order.limit_price,
-            "stop_price": order.stop_price,
-        }
-        self.redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
+        action = {"action": "create_order", "order": order.as_dict()}
+        self.redis_client.publish(self.channel, json.dumps(action, default=str, ignore_nan=True))
 
         # как-то нужно добавить ордер в ордеры, но так, чтобы он автоматически
         # удалился при появлении его в TWS
-        self.orders.append(order)  # Нужно ли добавлять ордер сюда ???
+        self.orders.append(order)  # NOTE: Нужно ли добавлять ордер сюда ???
 
     def update_order(self, order: Order, **kwargs):
-        action = {
-            "action": "update",
-            "local_id": order.local_id,
-            "amount": order.amount,
-            "stop_price": kwargs.get("stop_price"),
-        }
-        self.redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
+        order_dict = order.as_dict()
+        for k, v in kwargs.items():
+            order_dict[k] = v
+        action = {"action": "update_order", "order": order_dict}
+        self.redis_client.publish(self.channel, json.dumps(action, default=str, ignore_nan=True))
+
+        # NOTE: Нужно ли обновлять значение stop_price в self.orders ???
 
     def cancel_order(self, order: Order):
-        action = {
-            "action": "cancel",
-            "local_id": order.local_id,
-        }
-        self.redis_client.publish("BOT_ACTIONS", json.dumps(action, default=str))
+        action = {"action": "cancel_order", "order": order.as_dict()}
+        self.redis_client.publish(self.channel, json.dumps(action, default=str, ignore_nan=True))
 
     def update_broker_data(self, payload):
         # TODO: Смотреть payload и обновлять только нужный тип объектов
+        # init обновляет всё
 
         # обновить данные в self.positions, self.account...
-        db_positions = DBPosition.objects.filter(account=self.db_account)
+        db_positions = DbPosition.objects.filter(account=self.db_account)
         db_positions = db_positions.order_by("-id")[:100]
 
         for key in list(self.positions.keys()):
@@ -78,17 +70,19 @@ class SyncClient:
             )
 
         self.orders.clear()
-        # вытащить только актуальные ордеры, а не всю историю
-        db_orders = DBOrder.objects.filter(account=self.db_account)
-        db_orders = db_orders.order_by("-id")[:10]
+
+        # FIXME: вытащить только актуальные ордеры, а не всю историю
+        db_orders = DbOrder.objects.filter(account=self.db_account)
+        db_orders = db_orders.order_by("-id")[:50]
 
         for order in db_orders:
             amount = order.amount
-            if order.action == DBOrder.Side.sell:
+            if order.action == DbOrder.Side.sell:
                 amount = -order.amount
+            # log.error(f"db order: {order}, local_id: {order.local_id}")
             o = Order(
                 sid=order.contract.sid,
-                local_id=order.local_id,
+                local_id=order.local_id or "",  # FIXME: хуйня какая-то
                 type=order.type,
                 amount=amount,
                 status=order.status,

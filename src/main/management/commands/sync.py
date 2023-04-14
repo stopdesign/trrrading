@@ -18,6 +18,8 @@ from termcolor import colored, cprint
 from main.models import Account, Contract, Order, Position, Trade
 from project.helpers.alert import TgAlert
 
+from .ib_orders import CustomIBOrder, StateNew  # FIXME: унести в ib_sync
+
 # Логгер для этого файла
 log = logging.getLogger("sync")
 log.setLevel(logging.INFO)
@@ -151,6 +153,7 @@ class IBSyncExtended(IBSync):
         log.info(colored(f"updatePortfolio: {sid} {position}", "cyan"))
 
         db_position = Position.objects.get(account=account, contract__sid=sid)
+        db_contract = db_position.contract
 
         if db_position.amount != position:
             log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
@@ -160,7 +163,11 @@ class IBSyncExtended(IBSync):
         # Или хрен с ним, пусть пишет в базу position?
         # db_position.amount = position
 
-        db_position.avg_price = averageCost
+        avg_price = Decimal(averageCost) / db_contract.multiplier
+        avg_price = round(avg_price / db_contract.min_tick) * db_contract.min_tick
+        avg_price = avg_price * db_contract.price_magnifier
+
+        db_position.avg_price = avg_price
         db_position.unrealized_pnl = unrealizedPNL
         db_position.save(update_fields=["avg_price", "unrealized_pnl"])
 
@@ -232,8 +239,9 @@ class IBSyncExtended(IBSync):
                     f"OrderStatus: oId: {orderId}, clientId: {clientId}, "
                     f"pId: {permId}, {state.status} >> {status}, "
                     f"amnt: {filled}/{remaining}, "
-                    f"price: {order.lmtPrice}, "
-                    f"fill_pr: {av_fill_price}, "
+                    f"lmt: {order.lmtPrice}, "
+                    f"aux: {order.auxPrice}, "
+                    f"fill: {av_fill_price}, "
                     f"whyHeld: {whyHeld}"
                 ),
                 "blue",
@@ -282,9 +290,13 @@ class IBSyncExtended(IBSync):
                 if not db_order:
                     db_order = Order.objects.get(order_id=order.permId)
 
-                db_order.amount = order.totalQuantity
-                db_order.limit_price = order.lmtPrice
-                db_order.stop_price = order.auxPrice
+                # FIXME: обновить обновляемые поля
+                ib_order = Order.from_ib(order, account, db_contract, state)
+                db_order.stop_price = ib_order.stop_price
+                db_order.limit_price = ib_order.limit_price
+                db_order.amount = ib_order.amount
+                db_order.trailing_amount = ib_order.trailing_amount
+                db_order.trailing_percent = ib_order.trailing_percent
 
             except Order.DoesNotExist:
                 # Если ордера всё еще нет в базе - создать
@@ -294,9 +306,15 @@ class IBSyncExtended(IBSync):
 
             # Используется последнее известное значение позиции контракта
             try:
-                known_ib_position, avg_price = self._positions_by_conid[contract.conId]
+                known_ib_position, avg_cost = self._positions_by_conid[contract.conId]
+                avg_price = Decimal(avg_cost) / db_contract.multiplier
+                avg_price = (
+                    round(avg_price / db_contract.min_tick) * db_contract.min_tick
+                )
+                avg_price = avg_price * db_contract.price_magnifier
             except KeyError:
-                known_ib_position, avg_price = 0, None
+                known_ib_position, avg_cost = 0, None
+                avg_price = None
 
             # Редактирование или создание позиции
             pos_amount_changed = False
@@ -310,8 +328,8 @@ class IBSyncExtended(IBSync):
                 if db_position.amount != known_ib_position:
                     pos_amount_changed = True
                     log.info(f"Pos, DB: {db_position.amount}, IB: {known_ib_position}")
-                    db_position.amount = known_ib_position
                     db_position.avg_price = avg_price
+                    db_position.amount = known_ib_position
                     db_position.save()
             except Position.DoesNotExist:
                 pos_amount_changed = True
@@ -351,16 +369,16 @@ class IBSyncExtended(IBSync):
         data = json.loads(message.get("data").decode())
         log.info(colored(f"From Redis: {data}", "white"))
 
-        if data.get("action") == "create":
-            self.create_order(data)
+        if data.get("action") == "create_order":
+            self.create_order(data["order"])
             return
 
-        if data.get("action") == "update":
-            self.update_order(data)
+        if data.get("action") == "update_order":
+            self.update_order(data["order"])
             return
 
-        if data.get("action") == "cancel":
-            self.cancel_order(data)
+        if data.get("action") == "cancel_order":
+            self.cancel_order(data["order"])
             return
 
         log.error(f"Unknown bot action: {message}")
@@ -373,6 +391,8 @@ class IBSyncExtended(IBSync):
         self.nextValidOrderId += 1
 
         contract = self.contract_for_sid("ARCA_SPY")
+
+        # TODO: вынести в ib_orders
 
         order = IBOrder()
         order.orderId = oid
@@ -393,7 +413,7 @@ class IBSyncExtended(IBSync):
         # ib_contract - нужен для отправки ордера в IB
         # db_contract - нужен для сохранения ордера в базе
 
-        sid = data["sid"]
+        sid = data.get("sid")
 
         ib_contract = self.contract_for_sid(sid)
 
@@ -409,74 +429,60 @@ class IBSyncExtended(IBSync):
             db_contract = Contract.from_ib(ib_contract, cd, sid)
             db_contract.save()
 
-        oid = self.nextValidOrderId
+        ib_order = CustomIBOrder(ib_contract, data)
+
+        ib_order.orderId = self.nextValidOrderId
         self.nextValidOrderId += 1
 
-        stop_price = float(data.get("stop_price"))
+        # Дерзкая конвертация ордера в модель
 
-        amount = Decimal(data.get("amount"))
-        action = "BUY" if amount > 0 else "SELL"
-        side = Order.Side.buy if amount > 0 else Order.Side.sell
+        db_order = Order.from_ib(ib_order, db_account, db_contract, StateNew())
 
-        local_id = data.get("local_id")
-
-        # Отправить ордер в TWS
-        ib_order = IBOrder()
-        ib_order.orderId = oid
-        ib_order.orderRef = local_id
-        ib_order.action = action
-        ib_order.totalQuantity = abs(amount)
-
-        # order.goodTillDate = "20200923 15:13:20 EST"
-        # order.tif = "GTD"
-
-        # FIXME: поддерживать разные типы ордеров
-
-        ib_order.orderType = "MKT"
-        db_order = Order.market_order(db_account, db_contract, side, abs(amount))
-
-        # ib_order.orderType = "STP LMT"
-        # ib_order.outsideRth = True
-        # ib_order.auxPrice = stop_price
-        # if ib_order.action == "BUY":
-        #     ib_order.lmtPrice = stop_price + 0.25
-        # else:
-        #     ib_order.lmtPrice = stop_price - 0.25
-        #
-        # db_order = Order.stop_order(db_account, db_contract, side, abs(amount))
+        # Создать ордер в базе данных
+        db_order.save()
 
         log.info(colored(f"Create, ib_order: {ib_order}", "green"))
 
-        # создать ордер в базе данных
-        db_order.local_id = local_id
-        db_order.save()
-
-        self.placeOrder(oid, ib_contract, ib_order)
-
-        self.tg.message(f"Create order: {sid} {amount:+f}")
-
-        db_order.status = "Sent"
-        db_order.save(update_fields=["status"])
+        # Синхронная отправка ордера
+        try:
+            ib_order, _, state = self.place_order(ib_contract, ib_order)
+            db_order.status = str(state.status)
+            db_order.save()
+            self.tg.message(f"Order created: {sid} {db_order.amount:+f}")
+        except Exception as e:
+            db_order.status = "Error"
+            db_order.system_comment = f"{e}"
+            db_order.save()
+            self.tg.message(f"Order error: {sid} {db_order.amount:+f} {e}")
 
     def update_order(self, data):
         """
         Редактирование ордера в IB
         """
-        log.info(colored(f"Update, data: {data}", "yellow"))
+        # log.debug(colored(f"Update order: {data}", "yellow"))
 
         local_id = data.get("local_id")
-        stop_price = Decimal(data.get("stop_price"))
+
+        inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
 
         for ib_order, contract, orderState in self._orders_by_pid.values():
+            if orderState.status in inactive:
+                continue
             if ib_order.orderRef == local_id:
-                log.info(colored(f"Update, ib_order: {ib_order}", "yellow"))
-                ib_order.auxPrice = stop_price
-                if ib_order.action == "BUY":
-                    ib_order.lmtPrice = stop_price + Decimal(0.25)
-                else:
-                    ib_order.lmtPrice = stop_price - Decimal(0.25)
-                self.placeOrder(ib_order.orderId, contract, ib_order)
+                sid = self.sid_for_contract(contract)
+                if ib_order.orderId:
+                    # собирается новый ib_order
+                    updated_ib_order = CustomIBOrder(contract, data)
+                    updated_ib_order.orderId = ib_order.orderId
 
+                    self.placeOrder(
+                        updated_ib_order.orderId, contract, updated_ib_order
+                    )
+                    log.info(
+                        colored(f"Update order: {sid} {updated_ib_order}", "yellow")
+                    )
+                else:
+                    log.error(f"Can't update order: {ib_order}, {orderState.status}")
                 return
 
         log.error(f"Order not found: {data}")
@@ -486,16 +492,22 @@ class IBSyncExtended(IBSync):
         Отмена ордера в IB
         """
         local_id = data.get("local_id")
+        order_id = data.get("order_id")  # для отмены ордеров другого клиента
 
         inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
 
         # FIXME: _orders_by_pid обновляется в openOrder и не ловит состояние canceled
         for ib_order, contract, orderState in self._orders_by_pid.values():
-            if ib_order.orderRef == local_id and orderState.status not in inactive:
+            if orderState.status in inactive:
+                continue
+            if ib_order.orderRef == local_id or ib_order.permId == order_id:
                 sid = self.sid_for_contract(contract)
-                log.info(colored(f"Cancel, ib_order: {ib_order}", "magenta"))
-                self.cancelOrder(ib_order.orderId, "")
-                self.tg.message(f"Cancel order: {sid} {ib_order}")
+                if ib_order.orderId:
+                    self.cancelOrder(ib_order.orderId, "")
+                    log.info(colored(f"Cancel order: {sid} {ib_order}", "magenta"))
+                    self.tg.message(f"Cancel order: {sid} {ib_order}")
+                else:
+                    log.error(f"Can't cancel order: {ib_order}, {orderState.status}")
                 return
 
         log.error(f"Order not found: {data}")
@@ -767,6 +779,10 @@ class Sync:
         new_contracts = self.get_new_contracts(contracts_by_sid, uniq_contracts)
         Contract.objects.bulk_create(new_contracts)
 
+        # Перезагрузить все контракты из базы
+        contracts = Contract.objects.all()
+        contracts_by_sid = {c.sid: c for c in contracts}
+
         ############
         # Ордеры
         self.sync_orders(account, contracts_by_sid, ib_orders)
@@ -780,28 +796,31 @@ class Sync:
         for position in positions_by_sid.values():
             position.amount = 0
             position.avg_price = None
-            # position.unrealized_pnl = None
 
-        for acnt, con, pos, avgCost in ib_positions:
+        for acnt, con, pos, avg_cost in ib_positions:
             contract = uniq_contracts[con.conId]
             sid = self.ib.sid_for_contract(contract)
 
-            db_c = contracts_by_sid[sid]
+            db_contract = contracts_by_sid[sid]
 
             if acnt != account.uid:
                 log.warn(f"Skip wrong account: {acnt}")
                 continue
 
-            avg_price = avgCost / int(db_c.multiplier)  # * 100  # ???
+            avg_price = Decimal(avg_cost) / db_contract.multiplier
+            avg_price = round(avg_price / db_contract.min_tick) * db_contract.min_tick
+            avg_price = avg_price * db_contract.price_magnifier
 
             if sid in positions_by_sid:
                 # update position
                 position = positions_by_sid[sid]
                 position.avg_price = avg_price
                 position.amount = pos
+                if pos == 0:
+                    position.unrealized_pnl = None
             else:
                 # create position
-                position = Position.from_ib(account, db_c, pos, avg_price)
+                position = Position.from_ib(account, db_contract, pos, avg_price)
                 positions_to_create.append(position)
 
         positions_to_update = positions_by_sid.values()
@@ -975,10 +994,15 @@ class Sync:
                         # Уведомление после успешной синхронизации
                         self.redis_publish({"types": ["initial_sync"]})
                         break
+                except TimeoutError as e:
+                    log.error(f"Initial sync error: {e}")
+                    sleep(3)
+                    # FIXME: перезапуск GW
                 except Exception as e:
                     log.error(f"Initial sync error: {e}")
                     log.exception(e)
                     sleep(3)
+                    # FIXME: перезапуск GW
                 finally:
                     self.ib.lock_for_sync = False
 

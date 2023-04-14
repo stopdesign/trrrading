@@ -21,6 +21,7 @@ class Exchange(BaseExchange):
 
         # Это связь всей платформы с джангой
         from main.sync_client import SyncClient
+
         self.sync_client = SyncClient(
             self.positions,
             self.orders,
