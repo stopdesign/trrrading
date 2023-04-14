@@ -1,5 +1,4 @@
 import os
-from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -12,37 +11,35 @@ import pandas as pd
 BASE = "/Users/gregory/projects/trading/data/ib"
 
 
-def dt_to_ts(dt):
-    return int(dt.replace(tzinfo=timezone.utc).timestamp())
-
-
-def get_contracts(sid):
-    exchange, symbol = sid.split("_")
-    path = f"{BASE}/{exchange}/"
+def get_contracts(data_folder, sid):
+    """
+    Get a list of contract names for this sid.
+    """
     res = []
-    for f in os.scandir(path):
+    for f in os.scandir(data_folder):
         if not f.is_dir() and f.name.startswith(sid):
             res.append(f.name)
     return sorted(res)
 
 
-def main():
-    import pandas as pd
+def read_data_file(file_path):
+    """
+    Read a single data file.
+    """
+    df = pd.read_csv(file_path, parse_dates=True)
+    df.columns = "t,o,h,l,c,vw,v,n".split(",")
+    return df
 
-    sid = "CME_MES"
+
+def process_sid(sid):
+    print(f"Combine files for {sid}")
+    exchange = sid.split("_")[0]
 
     # Define the folder where the data files are stored
-    data_folder = BASE + "/CME"
+    data_folder = os.path.join(BASE, exchange)
 
-    # Get a list of all the data files in the folder
-    # data_files = os.listdir(data_folder)
-    contracts = get_contracts(sid)
-
-    # Define a function to read a single data file and return a DataFrame with the OHLC data
-    def read_data_file(file_path):
-        df = pd.read_csv(file_path, parse_dates=True)
-        df.columns = "t,o,h,l,c,vw,v,n".split(",")
-        return df
+    # Get a list of all the data files for this sid
+    contracts = get_contracts(data_folder, sid)
 
     # Read all the data files into a list of DataFrames
     con_dfs = {}
@@ -51,6 +48,7 @@ def main():
         exp_month = (contract.split("-")[0]).split("_")[-1]
         if exp_month.isnumeric():
             file_name = f"{data_folder}/{contract}"
+            print(contract)
             con_df = read_data_file(file_name)
             con_df["exp"] = exp_month
             con_df["day"] = pd.to_datetime(con_df["t"], unit="s").dt.date
@@ -58,6 +56,8 @@ def main():
             con_dfs[exp_month] = con_df
             grouped.columns = [exp_month]
             groups.append(grouped)
+
+    print("Processing...")
 
     # Concatenate all the DataFrames into a single DataFrame
     df = pd.concat(groups, join="outer", axis=1).fillna(0)
@@ -70,10 +70,17 @@ def main():
         df = con_dfs[contract]
         res.append(df[df["day"] == day])
 
-    roll_forward = pd.concat(res, axis=0)
-    del roll_forward["day"]
+    res = pd.concat(res, axis=0)
+    del res["day"]
 
-    roll_forward.to_csv(f"{data_folder}/{sid}_CONT-trades.csv", index=False)
+    res.to_csv(f"{data_folder}/{sid}_CONT-trades.csv", index=False)
+
+    print(f"Done {sid}\n")
+
+
+def main():
+    for sid in ["CME_MES", "CBOT_ZO", "CBOT_ZR"]:
+        process_sid(sid)
 
 
 if __name__ == "__main__":
