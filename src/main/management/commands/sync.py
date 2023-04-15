@@ -948,7 +948,7 @@ class Sync:
         Вообще он с 20, но после 17 всё равно ничего не работает.
         """
         now = datetime.now(ZoneInfo("America/Los_Angeles"))
-        return now.isoweekday() == 5 and now.hour >= 19 and now.minute >= 30
+        return now.isoweekday() == 5 and now.hour >= 18
 
     def run(self) -> None:
         """
