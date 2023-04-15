@@ -6,9 +6,10 @@ from datetime import datetime
 from decimal import Decimal
 from posixpath import abspath
 from time import monotonic, sleep
-
+from zoneinfo import ZoneInfo
 import redis
 import yaml
+import socket
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from ib_sync import IBSync, IBThread
@@ -57,6 +58,29 @@ def is_redis_available(r):
     return True
 
 
+def ibc_run_command(config, command):
+    """
+    Подключается в сокет канала управления IBC,
+    отправляет команду, читает ответ.
+    """
+    status = ""
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+
+    try:
+        sock.connect((config["host"], config["port"]))
+        sock.sendall((f"{command}\n").encode())
+        status = sock.recv(1024).decode("utf-8")
+        sock.sendall(b"EXIT\n")
+    except Exception as e:
+        status = f"Error: {e}"
+    finally:
+        sock.close()
+
+    return status
+
+
 ############################
 
 
@@ -90,10 +114,9 @@ class IBSyncExtended(IBSync):
         super().connectionClosed()
         # Все подписки сбрасываются, когда соединение закрывается
         self.connections["tws"] = "disconnected"
-        # for r_id, sub in self.request.items():
-        #     if not sub.get("cancelled"):
-        #         log.error(f"Subscription cancelled: {r_id} {sub['sid']}")
-        #         self.request[r_id]["cancelled"] = True
+        for r_id, sub in self.request.items():
+            if not sub.get("cancelled"):
+                self.request[r_id]["cancelled"] = True
 
     #####
     # Обработка событий с обновлениями данных
@@ -122,6 +145,7 @@ class IBSyncExtended(IBSync):
             log.error("NetLiquidation wasn't received yet")
             return
 
+        # Закэшированные начения из updateAccountValue
         account.net_value = values["NetLiquidation"]
         account.margin_used = values["MaintMarginReq"]
         account.cash_value = values["CashBalance"]
@@ -141,6 +165,9 @@ class IBSyncExtended(IBSync):
         realizedPNL,
         accountName,
     ):
+        """
+        Эта штука пишет только PnL и цену позиций, не критично.
+        """
         if self.lock_for_sync:
             return
 
@@ -150,18 +177,13 @@ class IBSyncExtended(IBSync):
 
         sid = self.sid_for_contract(contract)
 
-        log.info(colored(f"updatePortfolio: {sid} {position}", "cyan"))
+        log.debug(colored(f"updatePortfolio: {sid} {position}", "cyan"))
 
         db_position = Position.objects.get(account=account, contract__sid=sid)
         db_contract = db_position.contract
 
         if db_position.amount != position:
             log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
-
-        # FIXME: нужно чтобы SYNC с разными client_id получали все ордеры
-
-        # Или хрен с ним, пусть пишет в базу position?
-        # db_position.amount = position
 
         avg_price = Decimal(averageCost) / db_contract.multiplier
         avg_price = round(avg_price / db_contract.min_tick) * db_contract.min_tick
@@ -170,21 +192,6 @@ class IBSyncExtended(IBSync):
         db_position.avg_price = avg_price
         db_position.unrealized_pnl = unrealizedPNL
         db_position.save(update_fields=["avg_price", "unrealized_pnl"])
-
-        # TODO:
-        # 1. Проверить, что были изменения в полях
-        # 2. ???
-        # Боту не нужно знать pnl, такие обновления приходят слишком часто.
-
-        # TODO: взять из позиции sid и поставить вместо contract
-
-        action = {
-            "types": ["position"],
-            "info": {"contract": sid, "amount": db_position.amount},
-        }
-        msg = json.dumps(action, default=str)
-        a = self.redis_client.publish(SYNC_CHANNEL, msg)
-        log.info(f"To Redis: {msg}, {a}")
 
     def openOrder(self, orderId, contract, order, orderState):
         """
@@ -344,7 +351,11 @@ class IBSyncExtended(IBSync):
             db_order.status = status
             db_order.save()
 
-            action = {"types": ["order", "position"]}
+            action = {
+                "source": "order_status",
+                "types": ["order", "position"],
+                "info": {"sid": sid},
+            }
             msg = json.dumps(action, default=str)
             a = self.redis_client.publish(SYNC_CHANNEL, msg)
             log.info(f"To Redis: {msg}, {a}")
@@ -358,10 +369,12 @@ class IBSyncExtended(IBSync):
         self.prev_time["updateAccountTime"] = monotonic()
         log.debug(f"updateAccountTime: {args}")
 
-    def updateAccountValue(self, *args, **kwargs):
-        super().updateAccountValue(*args, **kwargs)
+    def updateAccountValue(self, key, value, currency, account):
+        super().updateAccountValue(key, value, currency, account)
         self.prev_time["updateAccountValue"] = monotonic()
-        # log.debug(f"updateAccountValue: {args}")
+        if key == "NetLiquidation":
+            txt = f"updateAccountValue: [{account}] {key} = {value} {currency}"
+            log.info(colored(txt, "green"))
 
     #################################
 
@@ -519,7 +532,8 @@ class IBSyncExtended(IBSync):
 class Sync:
     def __init__(self, config: dict) -> None:
         self.redis_config = config.get("redis", {})
-        self.gateway = config.get("gateway", {})
+        self.gateway_config = config.get("gateway", {})
+        self.ibc_config = config.get("ibc", {})
         self.running = True
 
         self.tg = TgAlert(config.get("telegram", {}))
@@ -530,12 +544,12 @@ class Sync:
         self.prev_subscribe = monotonic()
         self.prev_test_order = monotonic()
 
-        self.gw_client_id = self.gateway.get("sync_client_id", 0)
+        self.gw_client_id = self.gateway_config.get("sync_client_id", 0)
 
         self.tg.message("Start Sync")
 
         log.info(colored("Start Sync ⋅ﾐ(•ᵕ•)ﾉ", "magenta"))
-        log.info(f"Gateway: {self.gateway}")
+        log.info(f"Gateway: {self.gateway_config}")
         log.info(f"Redis: {self.redis_config}")
 
         self.rc = redis.Redis(**dict(self.redis_config))
@@ -547,6 +561,8 @@ class Sync:
         # FIXME:
         self.pnl_r_id = 0
 
+        self.in_ibkr_long_break = False
+
     def request_tws_time(self) -> None:
         self.request_time = datetime.utcnow()
         self.ib.reqCurrentTime()
@@ -556,13 +572,14 @@ class Sync:
         a = self.rc.publish(SYNC_CHANNEL, json_str)
         log.info(f"To Redis: {json_str}, {a}")
 
-    def is_delayed(self, event: str, max_delay: int) -> bool:
+    def is_delayed(self, event: str, max_delay: int, alert: bool = True) -> bool:
         """
         Проверка задержки данного типа события и алерт.
         """
         delay = monotonic() - self.ib.prev_time[event]
         if delay > max_delay:
-            log.error(f"Event {event} delay: {delay:0.2f} > {max_delay}")
+            if alert:
+                log.error(f"Event {event} delay: {delay:0.2f} > {max_delay}")
             return True
         return False
 
@@ -576,7 +593,7 @@ class Sync:
         # Проверяю openOrder, т.к. orderStatus не подергать руками
 
         if force or self.is_delayed("openOrder", 120):
-            self.ib.prev_time["openOrder"] = monotonic()
+            # self.ib.prev_time["openOrder"] = monotonic()
 
             if self.gw_client_id == 0:
                 # С AutoBind новые ордеры из TWS получают id от данного клиента.
@@ -586,41 +603,49 @@ class Sync:
                 log.warning(colored("Client ID != 0, no AutoBind", attrs=["bold"]))
                 self.ib.reqOpenOrders()
 
-            sleep(0.1)
-
         ########################################
-        # Подписка на всякое (отменить нельзя):
+        # Подписка на поля аккаунта и PnL
         # updateAccountValue
         # updateAccountTime
         # updatePortfolio
 
-        # Считаю, что если updateAccountTime приходит, значит всё OK
-        d_1 = force or self.is_delayed("updateAccountValue", 300)
-        d_2 = force or self.is_delayed("updateAccountTime", 200)
-        d_3 = force or self.is_delayed("updatePortfolio", 1800)
+        # Да пошли все на хуй, буду подписываться и на это
+        log.debug(f"reqPositions")
+        self.ib.reqPositions()
+        sleep(0.01)
+
+        # Переподписываться без алерта, если данных давно не было
+        d_1 = force or self.is_delayed("updateAccountValue", 30, False)
+        d_2 = force or self.is_delayed("updateAccountTime", 30, False)
+        d_3 = force or self.is_delayed("updatePortfolio", 30, False)
 
         if d_1 or d_2 or d_3:
-            self.ib.prev_time["updateAccountValue"] = monotonic()
-            self.ib.prev_time["updateAccountTime"] = monotonic()
-            self.ib.prev_time["updatePortfolio"] = monotonic()
-            self.ib.reqAccountUpdates(True, self.ib.account_id)
-            sleep(0.1)
+            self.ib.reqAccountUpdates(False, self.ib.account_id)  # Отписка
+            sleep(0.01)
+            self.ib.reqAccountUpdates(True, self.ib.account_id)  # Подписка
+            sleep(0.01)
+
+        # Алерты, если данных не было очень давно
+        if not force:
+            self.is_delayed("updateAccountValue", 200)
+            self.is_delayed("updateAccountTime", 200)
+            self.is_delayed("updatePortfolio", 200)
+            self.is_delayed("pnl", 200)
 
         ########################################
         # Подписка на PnL
 
-        if force or self.is_delayed("pnl", 200):
-            self.ib.prev_time["pnl"] = monotonic()
-
+        # Переподписка без алерта
+        if force or self.is_delayed("pnl", 60, False):
             if self.pnl_r_id:
                 self.ib.cancelPnL(self.pnl_r_id)
                 self.pnl_r_id = 0
-                sleep(0.1)
+                sleep(0.01)
 
-            # На это нельзя подписываться много раз, заебет.
+            # На это нельзя подписываться много раз, заебет
             self.pnl_r_id = self.ib.r_id
             self.ib.reqPnL(self.pnl_r_id, self.ib.account_id, "")
-            sleep(0.1)
+            sleep(0.01)
 
     def get_executions(self) -> None:
         ib: IBSyncExtended = self.ib
@@ -659,7 +684,7 @@ class Sync:
 
         if trades_to_create:
             Trade.objects.bulk_create(trades_to_create)
-            self.redis_publish({"types": ["trade"]})
+            self.redis_publish({"source": "executions", "types": ["trade"]})
 
         # Бывает так, что событие ордера не было поймано вовремя.
         # Тогда среднюю цену можно восстановить только по сделкам.
@@ -912,9 +937,18 @@ class Sync:
             self.get_executions()
 
         # Переподписка, если что-то отвалилось
-        if monotonic() - self.prev_subscribe > 30:
+        if monotonic() - self.prev_subscribe > 17:
             self.prev_subscribe = monotonic()
             self.maintain_subscriptions()
+
+    def long_break(self) -> bool:
+        """
+        Пятничный долгий перерыв IBKR.
+        Часовой пояс Los Angeles, чтобы перерыв поместился в один день.
+        Вообще он с 20, но после 17 всё равно ничего не работает.
+        """
+        now = datetime.now(ZoneInfo("America/Los_Angeles"))
+        return now.isoweekday() == 5 and now.hour >= 19 and now.minute >= 30
 
     def run(self) -> None:
         """
@@ -922,6 +956,17 @@ class Sync:
         соединения с TWS/GW и нужные подписки на данные.
         """
         while not sleep(0.1) and self.running:
+            # Во время большого перерыва ничего не делать
+            if self.long_break():
+                if not self.in_ibkr_long_break:
+                    log.warning("Enter IBKR long break")
+                    self.in_ibkr_long_break = True
+                    self.ib.disconnect()
+                continue
+            elif self.in_ibkr_long_break:
+                log.warning("Exit IBKR long break")
+                self.in_ibkr_long_break = False
+
             # Попытка дисконнекта, если есть чего
             try:
                 if self.ib:
@@ -931,8 +976,8 @@ class Sync:
 
             # Подключение к TWS
             try:
-                host = self.gateway["host"]
-                port = self.gateway["port"]
+                host = self.gateway_config["host"]
+                port = self.gateway_config["port"]
                 self.ib.tws_time = datetime.min
                 self.ib.connect(host, port, self.gw_client_id)
                 # Обработка событий блокируется до завершения initial_sync
@@ -986,23 +1031,23 @@ class Sync:
             self.request_tws_time()
 
             # После соединения происходит синхронизация базы с IB
-            while True:
+            while not sleep(0.1) and not self.long_break():
                 self.ib.lock_for_sync = True
+
                 try:
                     with transaction.atomic():
                         self.initial_sync()
                         # Уведомление после успешной синхронизации
-                        self.redis_publish({"types": ["initial_sync"]})
+                        self.redis_publish({"source": "sync", "types": ["all"]})
                         break
-                except TimeoutError as e:
-                    log.error(f"Initial sync error: {e}")
-                    sleep(3)
-                    # FIXME: перезапуск GW
+
                 except Exception as e:
-                    log.error(f"Initial sync error: {e}")
+                    log.error(f"Initial sync error: {e}, reconnect")
                     log.exception(e)
-                    sleep(3)
-                    # FIXME: перезапуск GW
+                    res = ibc_run_command(self.ibc_config, "RECONNECTACCOUNT")
+                    log.info(f"IBC reconnect account: {res}")
+                    sleep(5)
+
                 finally:
                     self.ib.lock_for_sync = False
 
@@ -1014,7 +1059,7 @@ class Sync:
             # Отсечки времени для periodic_actions
             self.prev_maintain = monotonic()
 
-            while not sleep(0.1) and self.ib.isConnected():
+            while not sleep(0.1) and not self.long_break():
                 try:
                     # Операции, которые нужно постоянно повторять
                     self.periodic_actions()
