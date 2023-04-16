@@ -8,7 +8,17 @@ try:
 except:
     LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
+try:
+    from .settings_local import NO_COLOR
+except:
+    NO_COLOR = False
+
 FMT = "%(asctime).19s • %(levelname).1s • %(name)s %(lineno)d • %(message)s"
+
+if NO_COLOR:
+    console_formater = "plainlogs"
+else:
+    console_formater = "coloredlogs"
 
 conf = {
     "version": 1,
@@ -17,6 +27,10 @@ conf = {
         "coloredlogs": {
             "()": coloredlogs.ColoredFormatter,
             "fmt": FMT,
+            "datefmt": LOG_DATE_FMT,
+        },
+        "plainlogs": {
+            "format": FMT,
             "datefmt": LOG_DATE_FMT,
         },
         "verbose": {
@@ -29,7 +43,7 @@ conf = {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
             "stream": sys.stdout,
-            "formatter": "coloredlogs",
+            "formatter": console_formater,
         },
         'syslog': {
             'level': 'ERROR',
