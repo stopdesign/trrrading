@@ -17,9 +17,11 @@ body {
 }
 
 #root {
+    min-width: 1500px;
     max-width: 1800px;
     margin: 0 auto;
     background: #fff;
+    overflow: hidden;
 }
 
 .logo_panel {
@@ -65,6 +67,7 @@ body {
     width: 400px;
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
 }
 
 .backtest .left_sidebar {

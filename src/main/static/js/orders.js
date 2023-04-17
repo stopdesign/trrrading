@@ -1,11 +1,10 @@
 import { html, useEffect, useState, useRef } from "./deps.js"
 
 
-const draw_trade = function (ac, order) {
+const draw_trade = function (ac, order, trade) {
+
   let color
   let icon_shape
-
-  const range = ac.getVisibleRange()
 
   if (order["side"] === "buy") {
     color = "#080"
@@ -15,60 +14,43 @@ const draw_trade = function (ac, order) {
     icon_shape = "0xf0d7"
   }
 
-  // Сделки
-  for (const ex of order.executions) {
-    // console.log(order, execution)
+  const price = parseFloat(trade["price"])
 
-    if (!ac.trades.includes(ex["id"])) {
-
-      if (ex.time < range.from || ex.time > range.to) {
-        continue
-      }
-
-      ac.trades.push(ex["id"])
-
-      const price = parseFloat(ex["price"])
-
-      const arrow_bg = ac.createShape(
-        { time: ex["time"], price: price },
-        {
-          shape: 'icon',
-          overrides: { color: "#fff", size: 26, scale: 1 },
-          icon: icon_shape,
-          zOrder: "top",
-          disableSelection: true,
-          disableSave: true,
-          disableUndo: true,
-          lock: true,
-          showInObjectsTree: false,
-        }
-      )
-      const arrow = ac.createShape(
-        { time: ex["time"], price: price },
-        {
-          shape: 'icon',
-          overrides: { color: color, size: 20, scale: 1 },
-          icon: icon_shape,
-          zOrder: "top",
-          disableSelection: true,
-          disableSave: true,
-          disableUndo: true,
-          lock: true,
-          showInObjectsTree: false,
-        }
-      )
-
+  ac.createShape(
+    { time: trade["time"], price: price },
+    {
+      shape: 'icon',
+      overrides: { color: "#fff", size: 30, scale: 0.8 },
+      icon: icon_shape,
+      zOrder: "top",
+      disableSelection: true,
+      disableSave: true,
+      disableUndo: true,
+      lock: true,
+      showInObjectsTree: false,
     }
-
-  }
-
+  )
+  ac.createShape(
+    { time: trade["time"], price: price },
+    {
+      shape: 'icon',
+      overrides: { color: color, size: 20, scale: 0.9 },
+      icon: icon_shape,
+      zOrder: "top",
+      disableSelection: true,
+      disableSave: true,
+      disableUndo: true,
+      lock: true,
+      showInObjectsTree: false,
+    }
+  )
 }
 
 
 const draw_order = function (ac, order) {
   let color
 
-  if (order["side"] === "buy") {
+  if (order.side === "buy") {
     color = "#080"
   } else {
     color = "#d00"
@@ -100,12 +82,13 @@ const draw_order = function (ac, order) {
 
 }
 
+
 const create_chart = (el) => {
   const Datafeeds = window["Datafeeds"]
 
   // noinspection JSPotentiallyInvalidConstructorUsage
   // https://github.com/serdimoa/charting/blob/master/Featuresets.md
-  window["tv"] = new TradingView.widget({
+  const chart_widget = new TradingView.widget({
     debug: false,
     fullscreen: false,
     symbol: "A",
@@ -157,6 +140,7 @@ const create_chart = (el) => {
   // const iframe = document.getElementById("tv_chart_container").getElementsByTagName("iframe")[0]
   // iframe.contentDocument.body.style.fontFamily = "Hack";
 
+  return chart_widget
 }
 
 
@@ -208,35 +192,6 @@ const Order = ({ data, curOrder, setOrder }) => {
 }
 
 
-const draw_orders = (ac, orders) => {
-  const range = ac.getVisibleRange()
-
-  // если графика нет, то рисовать на нем не надо
-  if (range["from"] == 0) {
-    return
-  }
-
-  // Удалить ордеры с графика
-  for (const chart_order of ac.orders) {
-    chart_order.remove()
-  }
-  const chart_orders = []
-
-  // Нарисовать все видимые ордеры
-  for (const order of orders) {
-    // Ордер со сделками
-    if (order.executions.length > 0) {
-      draw_trade(ac, order)
-    }
-    // Активный ордер (еще не весь исполнен)
-    if (order.status.includes("Submitted")) {
-      chart_orders.push(draw_order(ac, order))
-    }
-  }
-
-  ac.orders = chart_orders
-}
-
 
 const Orders = ({ account, symbol }) => {
   const [orders, setOrders] = useState([])
@@ -245,11 +200,10 @@ const Orders = ({ account, symbol }) => {
   const [selectionOnChart, setSelectionOnChart] = useState()
   const [dataLoaded, setDataLoaded] = useState()
   const [resized, setResized] = useState(false)
-  const [ac, setActiveChart] = useState()
   const [loading, setLoading] = useState(true)
   const controllerRef = useRef()
-  const symbolRef = useRef()
-
+  const acRef = useRef()
+  const ordersRef = useRef([])
 
   const fetchOrders = (symbol) => {
     if (controllerRef.current) {
@@ -267,7 +221,8 @@ const Orders = ({ account, symbol }) => {
         (response) => {
           response.json().then((res_json) => {
             setLoading(false)
-            setOrders(res_json)
+            ordersRef.current = res_json  // это для графика
+            setOrders(res_json)  // это для таблицы
             controllerRef.current = null
           })
         },
@@ -278,12 +233,25 @@ const Orders = ({ account, symbol }) => {
   // Создание графика при старте
   useEffect(() => {
 
-    console.error("create a chart")
-    create_chart("tv_chart_container")
+    const tv = create_chart("tv_chart_container")
 
-    window["tv"].onChartReady(() => {
-      const _ac = window["tv"].activeChart()
-      const ser = _ac.getSeries()
+    tv.headerReady().then(function () {
+      const button = tv.createButton()
+      button.setAttribute('title', 'My custom button tooltip')
+      button.addEventListener('click', function () {
+        console.log("Shapes cnt:", tv.activeChart().getAllShapes().length)
+      })
+      button.textContent = "Button"
+    })
+
+    tv.onChartReady(() => {
+      const ac = tv.activeChart()
+      const ser = ac.getSeries()
+
+      ac.orders = {}
+      ac.trades = []
+
+      acRef.current = ac
 
       ser.setChartStyleProperties(0, {
         "upColor": "#999",
@@ -293,38 +261,22 @@ const Orders = ({ account, symbol }) => {
       })
       ser.setUserEditEnabled(false)
 
-      _ac.applyOverrides({ "mainSeriesProperties.style": 0 })
-      _ac.applyOverrides({ "paneProperties.topMargin": '10' })
-      _ac.applyOverrides({ "paneProperties.bottomMargin": '5' })
+      ac.applyOverrides({ "mainSeriesProperties.style": 0 })
+      ac.applyOverrides({ "paneProperties.topMargin": '10' })
+      ac.applyOverrides({ "paneProperties.bottomMargin": '5' })
 
-      // _ac.onSymbolChanged().subscribe(null, () => {
-      //   console.log('The symbol was changed')
-      // });
-
-      _ac.dataReady(() => {
-        console.log('Data ready')
-      })
-
-      _ac.onDataLoaded().subscribe(
+      ac.onDataLoaded().subscribe(
         null,
         () => {
-          console.log('Data loaded')
-          const range = _ac.getVisibleRange()
+          const range = ac.getVisibleRange()
           if (range.to) {
             setDataLoaded((new Date()).toISOString())
+          } else {
+            setDataLoaded()
           }
-        },
-        false
+        }
       )
 
-      _ac.orders = []
-      _ac.trades = []
-
-      setActiveChart(_ac)
-
-      if (symbolRef.current) {
-        _ac.setSymbol(symbolRef.current)
-      }
     })
 
     // Запуск таймера при создании и остановка при уничтожении компонента
@@ -345,12 +297,53 @@ const Orders = ({ account, symbol }) => {
   // Изменились ордеры или прогрузился очередной кусок графика
   useEffect(() => {
 
-    if (ac && (orders.length > 500 || ac.trades.length > 500)) {
-      alert("too many orders or trades too show")
+    const ac = acRef.current
+
+    if (!(ac && ac.dataReady())) {
+      return
+    }
+
+    const range = ac.getVisibleRange()
+
+    const visibleOrderIds = []
+    for (const order of ordersRef.current) {
+      const id = parseInt(order.id)
+      if (order.status.includes("Submitted")) {
+        visibleOrderIds.push(id)
+      }
+    }
+
+    // Удалить ордеры, которые сейчас на графике, но не в visibleOrderIds
+    for (const [_id, order] of Object.entries(ac.orders)) {
+      const id = parseInt(_id)
+      if (!visibleOrderIds.includes(id)) {
+        order.remove()
+      }
+    }
+
+    // Нарисовать новые видимые ордеры
+    for (const order of ordersRef.current) {
+      const id = parseInt(order.id)
+      if (visibleOrderIds.includes(id) && !ac.orders[id]) {
+        ac.orders[id] = draw_order(ac, order)
+      }
+    }
+
+    // Сделки
+    for (const order of ordersRef.current) {
+      for (const trade of order.executions) {
+        if (trade.time < range.from || trade.time > range.to) {
+          continue
+        }
+        if (!ac.trades.includes(trade.id)) {
+          draw_trade(ac, order, trade)
+          ac.trades.push(trade.id)
+        }
+      }
     }
 
     // Масштабировать график по времени при первой загрузке данных
-    if (ac && dataLoaded && !resized) {
+    if (dataLoaded && !resized) {
       console.warn("first time")
       const to = ac.getVisibleRange().to
       ac.setVisibleRange(
@@ -360,37 +353,38 @@ const Orders = ({ account, symbol }) => {
       setResized(true)
     }
 
-    if (ac && ac.dataReady()) {
-      draw_orders(ac, orders)
-    } else {
-      console.warn("No chart")
-    }
   }, [orders, dataLoaded])
 
   // Изменился symbol
   useEffect(() => {
+
+    // Показать / скрыть график
+    const chartDiv = document.getElementById("tv_chart_container")
+    chartDiv.style.display = symbol ? 'block' : 'none'
+
     setSelectedOrder({})
 
-    symbolRef.current = symbol
-
-    const chartDiv = document.getElementById("tv_chart_container")
-    if (symbol) {
-      // Поменять символ на графике
-      if (ac) {
-        ac.removeAllShapes()
-        ac.setSymbol(symbol)
-        ac.trades = []
-      }
-      chartDiv.style.display = 'block'
-    } else {
-      // Скрыть график
-      chartDiv.style.display = 'none'
-    }
-
+    // помутнение таблицы
     setLoading(true)
+
+    // очистить список ордеров для графика
+    ordersRef.current = []
 
     // начать загрузку ордеров (если символа нет, то всех)
     fetchOrders(symbol)
+
+    if (acRef.current) {
+      const ac = acRef.current
+
+      // Удалить все ордеры и сделки с графика
+      ac.getAllShapes().forEach(({ id }) => ac.removeEntity(id, { disableUndo: true }))
+      Object.entries(ac.orders).forEach(([id, order]) => order.remove())
+
+      ac.orders = {}
+      ac.trades = []
+
+      ac.setSymbol(symbol || "")
+    }
 
     return () => {
       if (controllerRef.current) controllerRef.current.abort()
@@ -399,7 +393,12 @@ const Orders = ({ account, symbol }) => {
 
   // Выбрали новый order
   useEffect(() => {
-    if (!ac) return
+    const ac = acRef.current
+
+    if (!(ac && ac.dataReady())) {
+      return
+    }
+
     if (selectedOrder && selectedOrder.time) {
       if (selectedOrder.executions.length > 0) {  // есть сделки
         const execution = selectedOrder.executions[0]
@@ -414,7 +413,6 @@ const Orders = ({ account, symbol }) => {
         if (selectionOnChart) {
           ac.removeEntity(selectionOnChart)
         }
-        console.log(execution)
         setSelectionOnChart(id)
       } else {
         if (selectionOnChart) {
