@@ -10,6 +10,9 @@ from .base_source import BaseSource
 log = logging.getLogger("tradis_adapter")
 
 
+SYNC_CHANNEL = "SYNC"
+
+
 def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
@@ -29,7 +32,8 @@ class TradisAdapter(BaseSource):
 
     def __str__(self) -> str:
         host = self.redis.get_connection_kwargs().get("host")
-        return f"{self.__class__.__name__}(host={host})"
+        db = self.redis.get_connection_kwargs().get("db")
+        return f"{self.__class__.__name__}(host={host}, db={db})"
 
     def format_message(self, message):
         # Игнорировать subscribe messages
@@ -118,7 +122,9 @@ class TradisAdapter(BaseSource):
         # FIXME: плохо всё это держать в одной подписке, т.к. ломается timeout
         # Ну или нужно руками считать timeout по типам сообщений.
         # В любом случае SYNC лучше отсюда вынести. Это не часть канала данных.
-        pubsub.subscribe(["SYNC"])  # подписка на события от брокера
+        redis_db = self.redis.get_connection_kwargs().get("db")
+        sync_channel = f"{redis_db}_{SYNC_CHANNEL}"
+        pubsub.subscribe(sync_channel)  # подписка на события от брокера
 
         while True:
             try:
