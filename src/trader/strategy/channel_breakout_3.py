@@ -1,7 +1,4 @@
 import logging
-from decimal import Decimal
-
-from termcolor import colored
 
 from trader.data_types import Bar, Order, Trade
 from trader.exchange import Consolidator, Data
@@ -17,6 +14,9 @@ class ChBr(BaseStrategy):
         # Подписка на данные
         self.data_1m = Data(self.sid, rth=True, on_bar=self.on_bar)
 
+        self.ind_tf = Consolidator(self.data_1m, "15m")
+        self.ma = MovingAverage(self.data_1m, length=200)
+
         self.dc = DonchianChannels(
             self.data_1m,
             skip_extra_hours=True,
@@ -24,14 +24,17 @@ class ChBr(BaseStrategy):
             length=self.length or 0,
         )
 
-        # self.ind_tf = Consolidator(self.data_1m, "15m")
-        # self.ma = MovingAverage(self.data_1m, length=200)
-
     def get_amount(self, price):
-        return int(100_000 / price)
+        return 1
+        # return int(1_000 / price)
 
     def market_order(self, amount):
-        order = Order(self.sid, type="market", amount=amount)
+        order = Order(
+            self.sid,
+            type="MKT",
+            amount=amount,
+            ib_algo={"strategy": "Adaptive", "params": {"adaptivePriority": "Normal"}},
+        )
         self.place_order(order)
 
     def on_bar(self, bar: Bar):
@@ -51,8 +54,6 @@ class ChBr(BaseStrategy):
         if not bar:
             return
 
-        # print(colored(channel, "blue"), bar, colored(trade, "green"))
-
         if not (channel["lb"] and channel["ub"]):
             log.error(f"Indicator wasn't warmed up? {self.sid} {channel}")
             return
@@ -61,7 +62,6 @@ class ChBr(BaseStrategy):
             return
 
         for order in self.orders:
-            # TODO: проверить, что инструмент совпадает
             active = ["New", "Sent", "PreSubmitted", "Submitted"]
             if order.sid == self.sid and order.status in active:
                 log.warn(f"strategy has live order, {order}")
@@ -69,10 +69,10 @@ class ChBr(BaseStrategy):
 
         position = self.positions[self.sid]
 
-        # log.info(
-        #     f"strategy on trade, {channel}, {trade}, "
-        #     f"sid: {position.sid}, "
-        #     f"amount: {position.amount}"
+        # print(
+        #     f"Position: {position.amount}, "
+        #     f"Trade time: {trade.date.time()}, price: {trade.price:0.2f}, "
+        #     f"Channel: {channel} "
         # )
 
         current_amount = position.amount

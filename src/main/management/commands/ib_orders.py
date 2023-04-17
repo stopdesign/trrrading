@@ -75,7 +75,7 @@ class CustomIBOrder(Order):
             return
 
         strategy = str(ib_algo.get("strategy", "")).title()
-        params = [TagValue(*p) for p in ib_algo.get("params", {})]
+        params = [TagValue(*p) for p in ib_algo.get("params", {}).items()]
 
         if strategy not in ["Adaptive"]:
             raise ValueError(f"Unknown ib_algo_strategy: {str(data)}")

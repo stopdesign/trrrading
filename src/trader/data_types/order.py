@@ -18,6 +18,7 @@ class Order:
     created_at: datetime | None = None
     strategy: None = None
     rth: bool = True
+    ib_algo: dict | None = None
 
     @staticmethod
     def new_local_id():

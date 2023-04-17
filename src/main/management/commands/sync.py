@@ -179,8 +179,12 @@ class IBSyncExtended(IBSync):
 
         log.debug(colored(f"updatePortfolio: {sid} {position}", "cyan"))
 
-        db_position = Position.objects.get(account=account, contract__sid=sid)
-        db_contract = db_position.contract
+        try:
+            db_position = Position.objects.get(account=account, contract__sid=sid)
+            db_contract = db_position.contract
+        except Position.DoesNotExist:
+            log.error(f"Position not found: ib = {position}")
+            return
 
         if db_position.amount != position:
             log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
