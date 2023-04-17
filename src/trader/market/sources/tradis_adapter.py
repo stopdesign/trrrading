@@ -141,7 +141,7 @@ class TradisAdapter(BaseSource):
                 continue
 
             try:
-                if message and message.get("channel") == "SYNC":
+                if message and message.get("channel") == self.sync_channel:
                     if message.get("type") == "message":
                         on_broker_event(message.get("data"))
                 elif payload := self.format_message(message):
