@@ -38,6 +38,7 @@ DEF_CONFIG = "../config/bot.yaml"
 BOT_ID_PREFIX = "bot_"
 
 SYNC_CHANNEL = "SYNC"
+BOT_CHANNEL = "BOT_ACTIONS"
 
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -85,10 +86,10 @@ def ibc_run_command(config, command):
 
 
 class IBSyncExtended(IBSync):
-    def __init__(self, redis_client, tg_alert):
+    def __init__(self, tg_alert, redis_publish):
         super().__init__()
         self.tg = tg_alert
-        self.redis_client = redis_client
+        self.redis_publish = redis_publish
         self.lock_for_sync = False  # запрет обработки событий до синхронизации базы
         self.connections = {
             "tws": "disconnected",
@@ -292,7 +293,10 @@ class IBSyncExtended(IBSync):
 
                 if BOT_ID_PREFIX and BOT_ID_PREFIX in str(order.orderRef):
                     try:
-                        db_order = Order.objects.get(local_id=order.orderRef)
+                        db_order = Order.objects.get(
+                            account=account,
+                            local_id=order.orderRef,
+                        )
                         db_order.order_id = order.permId  # сохранить себе permId
                     except Order.DoesNotExist:
                         log.warn(f"Bot order not found in DB: {order.orderRef}")
@@ -360,9 +364,7 @@ class IBSyncExtended(IBSync):
                 "types": ["order", "position"],
                 "info": {"sid": sid},
             }
-            msg = json.dumps(action, default=str)
-            a = self.redis_client.publish(SYNC_CHANNEL, msg)
-            log.info(f"To Redis: {msg}, {a}")
+            self.redis_publish(action)
 
             # После всего важного (блокирующий запрос)
             if pos_amount_changed:
@@ -540,6 +542,11 @@ class Sync:
         self.ibc_config = config.get("ibc", {})
         self.running = True
 
+        # Разделение live и paper по разным каналам pubsub
+        redis_db = self.redis_config.get("db", 0)
+        self.sync_channel = f"{redis_db}_{SYNC_CHANNEL}"
+        self.bot_channel = f"{redis_db}_{BOT_CHANNEL}"
+
         self.tg = TgAlert(config.get("telegram", {}))
 
         # Отметки, когда что произошло
@@ -557,10 +564,10 @@ class Sync:
         log.info(f"Redis: {self.redis_config}")
 
         self.rc = redis.Redis(**dict(self.redis_config))
-        self.ib = IBSyncExtended(self.rc, self.tg)
+        self.ib = IBSyncExtended(self.tg, self.redis_publish)
 
         self.pubsub = self.rc.pubsub()
-        self.pubsub.subscribe("BOT_ACTIONS")
+        self.pubsub.subscribe(self.bot_channel)
 
         # FIXME:
         self.pnl_r_id = 0
@@ -573,7 +580,7 @@ class Sync:
 
     def redis_publish(self, action: dict) -> None:
         json_str = json.dumps(action, default=str)
-        a = self.rc.publish(SYNC_CHANNEL, json_str)
+        a = self.rc.publish(self.sync_channel, json_str)
         log.info(f"To Redis: {json_str}, {a}")
 
     def is_delayed(self, event: str, max_delay: int, alert: bool = True) -> bool:

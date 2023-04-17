@@ -24,14 +24,18 @@ class SyncClient:
         self.positions = positions
         self.orders = orders
         self.redis_client = redis_client
-        self.channel = BOT_CHANNEL
+
+        # Разделение live и paper по разным каналам pubsub
+        redis_db = redis_client.connection_pool.connection_kwargs["db"]
+        self.bot_channel = f"{redis_db}_{BOT_CHANNEL}"
 
         self.db_account = DbAccount.objects.get(uid=self.account["uid"])
         self.update_broker_data({"types": ["init"]})
 
     def place_order(self, order: Order):
         action = {"action": "create_order", "order": order.as_dict()}
-        self.redis_client.publish(self.channel, json.dumps(action, default=str, ignore_nan=True))
+        msg = json.dumps(action, default=str, ignore_nan=True)
+        self.redis_client.publish(self.bot_channel, msg)
 
         # как-то нужно добавить ордер в ордеры, но так, чтобы он автоматически
         # удалился при появлении его в TWS
@@ -42,13 +46,15 @@ class SyncClient:
         for k, v in kwargs.items():
             order_dict[k] = v
         action = {"action": "update_order", "order": order_dict}
-        self.redis_client.publish(self.channel, json.dumps(action, default=str, ignore_nan=True))
+        msg = json.dumps(action, default=str, ignore_nan=True)
+        self.redis_client.publish(self.bot_channel, msg)
 
         # NOTE: Нужно ли обновлять значение stop_price в self.orders ???
 
     def cancel_order(self, order: Order):
         action = {"action": "cancel_order", "order": order.as_dict()}
-        self.redis_client.publish(self.channel, json.dumps(action, default=str, ignore_nan=True))
+        msg = json.dumps(action, default=str, ignore_nan=True)
+        self.redis_client.publish(self.bot_channel, msg)
 
     def update_broker_data(self, payload):
         # TODO: Смотреть payload и обновлять только нужный тип объектов
