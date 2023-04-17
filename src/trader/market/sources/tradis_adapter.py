@@ -24,16 +24,23 @@ def parse_dt(dt: str) -> datetime:
 
 
 class TradisAdapter(BaseSource):
-    def __init__(self, redis_client):
+    def __init__(self, redis_client, redis_db=None):
         # Есть ли в базе QUOTES
         self.quotes = False
 
         self.redis = redis_client
 
+        # FIXME: это префикс канала SYNC
+        if redis_db is not None:
+            self.sync_channel = f"{redis_db}_{SYNC_CHANNEL}"
+        else:
+            self.sync_channel = None
+
     def __str__(self) -> str:
         host = self.redis.get_connection_kwargs().get("host")
         db = self.redis.get_connection_kwargs().get("db")
-        return f"{self.__class__.__name__}(host={host}, db={db})"
+        s = self.sync_channel
+        return f"{self.__class__.__name__}(host={host}, db={db}, sync={s})"
 
     def format_message(self, message):
         # Игнорировать subscribe messages
@@ -122,9 +129,8 @@ class TradisAdapter(BaseSource):
         # FIXME: плохо всё это держать в одной подписке, т.к. ломается timeout
         # Ну или нужно руками считать timeout по типам сообщений.
         # В любом случае SYNC лучше отсюда вынести. Это не часть канала данных.
-        redis_db = self.redis.get_connection_kwargs().get("db")
-        sync_channel = f"{redis_db}_{SYNC_CHANNEL}"
-        pubsub.subscribe(sync_channel)  # подписка на события от брокера
+        if self.sync_channel:
+            pubsub.subscribe(self.sync_channel)  # подписка на события от брокера
 
         while True:
             try:

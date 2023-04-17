@@ -80,8 +80,11 @@ class Trader:
         # Список всех инструментов, используемых в стратегиях
         self.instruments = list(sorted(set([ds.sid for ds in self.data_sources])))
 
+        # Префикс канала синхронизации
+        redis_db = self.config["redis"].get("db", 0)
+
         self.config_start_end(run_config, warm_up=timedelta(days=15))
-        self.config_sources(run_config, config["sources"])
+        self.config_sources(run_config, config["sources"], redis_db)
 
         # Добывает данные, запускает события
         self.data_provider = DataProvider(
@@ -196,7 +199,7 @@ class Trader:
         # Хорошо бы сделать какую-то автоматизацию выбора интервала.
         self.dt_prior = self.dt_start - warm_up
 
-    def config_sources(self, run_config, sources):
+    def config_sources(self, run_config, sources, redis_db=None):
         history = run_config["history"]
         feed = run_config.get("feed")
 
@@ -224,7 +227,7 @@ class Trader:
 
         if "redis" in feed:
             redis_client = redis.Redis(**(REDIS_CONF | feed_conf))
-            self.feed_source = TradisAdapter(redis_client)
+            self.feed_source = TradisAdapter(redis_client, redis_db)
         elif "polygon" in feed:
             self.feed_source = PolygonAdapter(**feed_conf)
         else:
