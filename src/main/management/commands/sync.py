@@ -609,15 +609,15 @@ class Sync:
         # updateAccountTime
         # updatePortfolio
 
-        # Да пошли все на хуй, буду подписываться и на это
-        log.debug(f"reqPositions")
-        self.ib.reqPositions()
-        sleep(0.01)
+        # # Да пошли все на хуй, буду подписываться и на это
+        # log.debug(f"reqPositions")
+        # self.ib.reqPositions()
+        # sleep(0.01)
 
         # Переподписываться без алерта, если данных давно не было
-        d_1 = force or self.is_delayed("updateAccountValue", 30, False)
-        d_2 = force or self.is_delayed("updateAccountTime", 30, False)
-        d_3 = force or self.is_delayed("updatePortfolio", 30, False)
+        d_1 = force or self.is_delayed("updateAccountValue", 200, False)
+        d_2 = force or self.is_delayed("updateAccountTime", 200, False)
+        d_3 = force or self.is_delayed("updatePortfolio", 200, False)
 
         if d_1 or d_2 or d_3:
             self.ib.reqAccountUpdates(False, self.ib.account_id)  # Отписка
@@ -627,16 +627,16 @@ class Sync:
 
         # Алерты, если данных не было очень давно
         if not force:
-            self.is_delayed("updateAccountValue", 200)
-            self.is_delayed("updateAccountTime", 200)
-            self.is_delayed("updatePortfolio", 200)
-            self.is_delayed("pnl", 200)
+            self.is_delayed("updateAccountValue", 220)
+            self.is_delayed("updateAccountTime", 220)
+            self.is_delayed("updatePortfolio", 220)
+            self.is_delayed("pnl", 220)
 
         ########################################
         # Подписка на PnL
 
         # Переподписка без алерта
-        if force or self.is_delayed("pnl", 60, False):
+        if force or self.is_delayed("pnl", 200, False):
             if self.pnl_r_id:
                 self.ib.cancelPnL(self.pnl_r_id)
                 self.pnl_r_id = 0
