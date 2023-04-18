@@ -318,6 +318,7 @@ const Orders = ({ account, symbol }) => {
       const id = parseInt(_id)
       if (!visibleOrderIds.includes(id)) {
         order.remove()
+        delete ac.orders[id]
       }
     }
 
