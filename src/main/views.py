@@ -2,14 +2,14 @@ import glob
 import json
 import os.path
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import orjson
 import requests
 from django.conf import settings
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import render
-from django.db.models import Q
 
 from main.models import Account, Contract, Order, Position, Trade
 
@@ -156,9 +156,17 @@ def account(request):
 def positions(request):
     account_id = request.GET.get("account", 0)
     res = []
-    positions = Position.objects.filter(account_id=account_id).prefetch_related()
+
+    utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    too_old = utc_now - timedelta(days=1)
+
+    positions = Position.objects.filter(account_id=account_id)
     positions = positions.order_by("contract__sec_type", "contract__sid")
+    positions = positions.prefetch_related()
     for position in positions:
+        # Позиция нулевая и давно не обновлялась
+        if not bool(position.amount) and position.updated_at < too_old:
+            continue
         if position.avg_price:
             if position.contract.sec_type in [Contract.Type.cash, Contract.Type.crypto]:
                 price = f"{position.avg_price:0.4f}"

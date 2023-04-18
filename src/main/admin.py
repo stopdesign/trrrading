@@ -118,6 +118,12 @@ class OrderAdmin(admin.ModelAdmin):
         "status",
         "created_at",
     )
+    search_fields = (
+        "order_id",
+        "local_id",
+        "contract__sid",
+        "raw",
+    )
     actions_on_top = False
     actions_on_bottom = True
     # actions = None
