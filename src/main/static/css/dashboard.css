@@ -485,13 +485,13 @@ svg rect.border {
         padding: 6px 6px 6px 0;
     }
     .left_sidebar {
-        width: 350px;
+        width: 320px;
     }
     .hide_mobile {
         display: none;
     }
     #root {
-        min-width: 1350px;
+        min-width: 1150px;
     }
 }
 
