@@ -2,7 +2,7 @@ import json
 import logging
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from posixpath import abspath
 from time import monotonic, sleep
@@ -624,11 +624,6 @@ class Sync:
         # updateAccountTime
         # updatePortfolio
 
-        # # Да пошли все на хуй, буду подписываться и на это
-        # log.debug(f"reqPositions")
-        # self.ib.reqPositions()
-        # sleep(0.01)
-
         # Переподписываться без алерта, если данных давно не было
         d_1 = force or self.is_delayed("updateAccountValue", 200, False)
         d_2 = force or self.is_delayed("updateAccountTime", 200, False)
@@ -663,18 +658,18 @@ class Sync:
             sleep(0.01)
 
     def get_executions(self) -> None:
-        ib: IBSyncExtended = self.ib
-        account = Account.objects.get(uid=ib.account_id)
+        account = Account.objects.get(uid=self.ib.account_id)
 
-        # FIXME: выбрать только последние пару дней
-        trades = Trade.objects.filter(account=account).order_by("id")[:1000]
-        trades_by_exec_id = {t.exec_id: t for t in trades}
+        utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        too_old = utc_now - timedelta(days=5)
 
-        # FIXME: выбрать только последние пару дней
-        orders = Order.objects.filter(account=account).order_by("id")[:500]
-        orders_by_id = {o.order_id: o for o in orders}
+        trades = Trade.objects.filter(account=account, created_at__gt=too_old)
+        trades_by_exec_id = {t.exec_id: t for t in trades.order_by("-id")}
 
-        executions = ib.get_executions()
+        orders = Order.objects.filter(account=account, created_at__gt=too_old)
+        orders_by_id = {o.order_id: o for o in orders.order_by("-id")}
+
+        executions = self.ib.get_executions()
 
         trades_to_create = []
         updated_orders = []
@@ -722,18 +717,17 @@ class Sync:
         """
         Новые контракты для добавления в базу данных.
         """
-        ib: IBSyncExtended = self.ib
         contracts_to_create = []
         for con_id, contract in uniq_contracts.items():
             cd = None
             if not contract.primaryExchange:
-                cd = ib.get_contract_details(contract)[0]
+                cd = self.ib.get_contract_details(contract)[0]
                 contract = cd.contract
                 uniq_contracts[con_id] = contract
-            sid = ib.sid_for_contract(contract)
+            sid = self.ib.sid_for_contract(contract)
             if sid not in contracts_by_sid:
                 if not cd:
-                    cd = ib.get_contract_details(contract)[0]
+                    cd = self.ib.get_contract_details(contract)[0]
                 c = Contract.from_ib(contract, cd, sid)
                 contracts_by_sid[sid] = c
                 contracts_to_create.append(c)
@@ -745,8 +739,11 @@ class Sync:
         Создать в базе новые ордеры из IB, обновить старые.
         """
 
-        orders = Order.objects.filter(account=account)
-        orders_by_id = {o.order_id: o for o in orders}
+        utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        too_old = utc_now - timedelta(days=5)
+
+        orders = Order.objects.filter(account=account, created_at__gt=too_old)
+        orders_by_id = {o.order_id: o for o in orders.order_by("-id")}
 
         orders_to_create = []
 

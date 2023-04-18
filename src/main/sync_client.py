@@ -62,7 +62,7 @@ class SyncClient:
 
         # обновить данные в self.positions, self.account...
         db_positions = DbPosition.objects.filter(account=self.db_account)
-        db_positions = db_positions.order_by("-id")[:100]
+        db_positions = db_positions.order_by("-updated_at")[:100]
 
         for key in list(self.positions.keys()):
             self.positions.pop(key)
@@ -77,9 +77,9 @@ class SyncClient:
 
         self.orders.clear()
 
-        # FIXME: вытащить только актуальные ордеры, а не всю историю
+        # FIXME: вытащить актуальные ордеры, а не хрен знает что
         db_orders = DbOrder.objects.filter(account=self.db_account)
-        db_orders = db_orders.order_by("-id")[:50]
+        db_orders = db_orders.order_by("-updated_at")[:100]
 
         for order in db_orders:
             amount = order.amount
@@ -88,7 +88,8 @@ class SyncClient:
             # log.error(f"db order: {order}, local_id: {order.local_id}")
             o = Order(
                 sid=order.contract.sid,
-                local_id=order.local_id or "",  # FIXME: хуйня какая-то
+                # FIXME: хуйня какая-то (чтобы конструктор не создал local_id)
+                local_id=order.local_id or "",
                 type=order.type,
                 amount=amount,
                 status=order.status,
