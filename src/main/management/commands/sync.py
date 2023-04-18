@@ -467,12 +467,14 @@ class IBSyncExtended(IBSync):
             ib_order, _, state = self.place_order(ib_contract, ib_order)
             db_order.status = str(state.status)
             db_order.save()
-            self.tg.message(f"Order created: {sid} {db_order.amount:+f}")
+            self.tg.message(f"Order created: {sid} {db_order}")
         except Exception as e:
             db_order.status = "Error"
             db_order.system_comment = f"{e}"
             db_order.save()
-            self.tg.message(f"Order error: {sid} {db_order.amount:+f} {e}")
+            txt = f"Create order error: {sid} {db_order} {e}"
+            log.error(txt)
+            self.tg.message(txt)
 
     def update_order(self, data):
         """
@@ -494,14 +496,16 @@ class IBSyncExtended(IBSync):
                     updated_ib_order = CustomIBOrder(contract, data)
                     updated_ib_order.orderId = ib_order.orderId
 
-                    self.placeOrder(
-                        updated_ib_order.orderId, contract, updated_ib_order
-                    )
-                    log.info(
-                        colored(f"Update order: {sid} {updated_ib_order}", "yellow")
-                    )
+                    try:
+                        self.place_order(contract, updated_ib_order)
+                    except Exception as e:
+                        txt = f"Update order order: {sid} {updated_ib_order} {e}"
+                        log.error(txt)
+                        self.tg.message(txt)
                 else:
-                    log.error(f"Can't update order: {ib_order}, {orderState.status}")
+                    txt = f"Can't update order: {ib_order}, {orderState.status}"
+                    log.error(txt)
+                    self.tg.message(txt)
                 return
 
         log.error(f"Order not found: {data}")
@@ -1079,16 +1083,22 @@ class Sync:
                     raise e
 
                 except FatalException as e:
-                    log.error(f"Fatal exception: {e}")
+                    txt = f"Fatal exception: {e}"
+                    log.error(txt)
+                    self.tg.message(txt)
                     break
 
                 except TimeoutError as e:
-                    log.error(f"{e}")
+                    txt = f"{e}"
+                    log.error(txt)
+                    self.tg.message(txt)
 
                 except Exception as e:
                     # Что-то пошло не так, но соединение активно.
-                    log.error(f"Worker exception: {e}")
+                    txt = f"Worker exception: {e}"
+                    log.error(txt)
                     log.exception(e)
+                    self.tg.message(txt)
 
 
 ############################
@@ -1117,8 +1127,10 @@ class Command(BaseCommand):
                 break
             except Exception as e:
                 # Что-то пошло не так очень глобально.
-                log.error(f"Sync run exception: {e}")
+                txt = f"Sync run exception: {e}"
+                log.error(txt)
                 log.exception(e)
+                sync.tg.message(txt)
 
         # Подождать завершения активных потоков
         dt = monotonic()
