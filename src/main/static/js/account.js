@@ -45,18 +45,19 @@ const Account = ({ account, account_uid }) => {
 
   return html`
       <div className=account_panel>
-          <p>Account: ${account_uid}
+          <div className=account_uid>Account: ${account_uid}
             <span className="delay ${delay >= 1 && 'long_delay'}">delay ${delay} min</span>
-          </p>
+          </div>
           <div className=connections>
             ${connections.map(con => html`<div key=${con[0]}>
                 <b>${con[0]}</b> - <span className="status status-${con[1]}">${con[1]}</span>
               </div>`)}
           </div>
-          <br/>
-          <p>Net Value:  ${values["net_value"]}</p>
-          <p>Margin Used:  ${values["margin_used"]}</p>
-          <p>Unrealized PnL:  ${values["unrealized_pnl"]}</p>
+          <div className=account_values>
+            <div>Net Value:  ${values["net_value"]}</div>
+            <div>Margin Used:  ${values["margin_used"]}</div>
+            <div>Unrealized PnL:  ${values["unrealized_pnl"]}</div>
+          </div>
       </div>
   `
 }

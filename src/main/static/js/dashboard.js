@@ -13,12 +13,17 @@ const Dashboard = ({ accounts }) => {
   return html`
       <div className="dashboard">
           <div className="left_sidebar">
+              <div class="logo_panel">
+                <div class="logo">
+                  <div class="logo_text">TRRRADING</div>
+                </div>
+              </div>
               <div className="health_panel">
-                  <h4>Accounts</h4>
                   <div className="accounts">
                     ${accounts.map((a) => html`
                       <span onClick="${ () => setAccount(a) }">${a.uid}</span>
                     `)}
+                    <a className=tradis_link href="http://10.0.10.1:8080/">Data Dashboard</a>
                   </div>
               </div>
               <${Account} account=${account.id} account_uid=${account.uid} key="2"/>

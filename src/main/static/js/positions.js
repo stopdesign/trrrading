@@ -68,7 +68,7 @@ const Positions = ({ account, symbol, setSymbol }) => {
           <table className="positions">
               <thead>
               <tr>
-                  <td>instrument</td>
+                  <td>contract</td>
                   <td>amount</td>
                   <td>price</td>
                   <td>P&L</td>

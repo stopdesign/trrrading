@@ -38,7 +38,7 @@ body {
     height: 30px;
     position: absolute;
     top: 10px;
-    left: 15px;
+    left: 17px;
     font: 12px "PT Sans", sans-serif;
     letter-spacing: 0.5px;
 }
@@ -47,9 +47,9 @@ body {
     font-size: 18px;
     font-style: italic;
     font-weight: bold;
-    margin-left: 42px;
+    margin-left: 40px;
     margin-right: 30px;
-    padding-top: 5px;
+    padding-top: 6px;
 }
 
 
@@ -85,7 +85,7 @@ body {
 
 .health_panel {
     border-bottom: 5px solid #eee;
-    padding: 0 20px 20px 20px;
+    padding: 0 20px 15px 20px;
 }
 
 .health_panel .accounts span {
@@ -94,19 +94,25 @@ body {
     cursor: pointer;
 }
 
+.health_panel .tradis_link {
+    float: right;
+    color: #58e;
+}
+
 /* Account */
 .account_panel {
     border-bottom: 5px solid #eee;
-    padding: 10px 20px;
+    padding: 5px 20px;
 }
 
-.account_panel p {
+.account_uid {
     margin: 10px 0;
-    font-size: 16px;
 }
-
-.account_panel .connections {
-    font-size: 14px;
+.account_values {
+    margin: 10px 0;
+}
+.account_values div {
+    margin: 3px 0;
 }
 
 .account_panel .connections .status-connected {
@@ -310,7 +316,7 @@ table.orders {
 }
 .orders thead td i {
     color: #999;
-    padding: 8px;
+    padding: 8px 8px 8px 2px;
     border-bottom: 2px solid #ddd;
     display: block;
     font-style: normal;
@@ -460,3 +466,32 @@ svg rect.border {
     stroke: #ccc;
     stroke-width: 0.5;
 }
+
+
+@media only screen
+  and (min-device-width: 768px)
+  and (max-device-width: 1366px)
+  and (-webkit-min-device-pixel-ratio: 1) {
+
+    body {
+        font-size: 13px;
+    }
+    .orders td,
+    .results td,
+    .positions td {
+        padding: 6px;
+    }
+    .orders thead td i {
+        padding: 6px 6px 6px 0;
+    }
+    .left_sidebar {
+        width: 350px;
+    }
+    .hide_mobile {
+        display: none;
+    }
+    #root {
+        min-width: 1350px;
+    }
+}
+

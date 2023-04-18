@@ -277,12 +277,15 @@ def orders(request):
         if order.created_at:
             created = datetime.strftime(order.created_at, "%Y-%m-%d %H:%M:%S")
             time_ts = dt_to_ts(order.created_at)
+        sid = order.contract.sid
+        name = (sid.split("_", 1)[1]).replace("_", " ")
         res.append(
             {
                 "id": order.pk,
                 "order_id": order.order_id,
                 "local_id": order.local_id,
-                "sid": order.contract.sid,
+                "sid": sid,
+                "name": name,
                 "type": str(order.type).upper(),
                 "algo_strategy": order.algo_strategy,
                 "oca_group": order.oca_group,

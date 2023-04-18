@@ -162,7 +162,7 @@ const Order = ({ data, curOrder, setOrder }) => {
   }
   let side = typeof data.side == "string" ? data.side.toLowerCase() : ""
 
-  let sid = data.sid
+  let sid = data.name
   if (data.oca_group) {
     sid = ""
     row_class += " in_oca_group "
@@ -173,7 +173,7 @@ const Order = ({ data, curOrder, setOrder }) => {
           className="${row_class}"
       >
           <td className="instrument">${sid}</td>
-          <td className="order_id">${data.order_id}</td>
+          <td className="order_id hide_mobile">${data.order_id}</td>
           <td className="local_id">${data.local_id}</td>
           <td className="order_type">
             ${data.algo_strategy && html`<span>${data.algo_strategy}</span>`}
@@ -186,7 +186,7 @@ const Order = ({ data, curOrder, setOrder }) => {
           <td>${data.limit_price}</td>
           <td>${price}</td>
           <td className="status">${data.status}</td>
-          <td>${data.created}</td>
+          <td className="created">${data.created}</td>
       </tr>
   `
 }
@@ -438,34 +438,34 @@ const Orders = ({ account, symbol }) => {
       <div className="orders_and_chart">
           <div id="tv_chart_container"></div>
 
-              <table className="orders ${loading ? 'loading' : ''}">
-                  <thead>
-                  <tr>
-                      <td><i>instrument</i></td>
-                      <td><i>order_id</i></td>
-                      <td><i>local_id</i></td>
-                      <td><i>type</i></td>
-                      <td><i>side</i></td>
-                      <td><i>amount</i></td>
-                      <td><i>filled</i></td>
-                      <td><i>stop price</i></td>
-                      <td><i>limit price</i></td>
-                      <td><i>fill price</i></td>
-                      <td><i>status</i></td>
-                      <td><i>created</i></td>
-                  </tr>
-                  </thead>
-                  <tbody>
-                  ${orders.map((data, i) => html`
-                      <${Order}
-                              data=${data}
-                              curOrder=${selectedOrder}
-                              setOrder=${setSelectedOrder}
-                              key=${i}
-                      />
-                  `)}
-                  </tbody>
-              </table>
+          <table className="orders ${loading ? 'loading' : ''}">
+            <thead>
+              <tr>
+                  <td><i>contract</i></td>
+                  <td className=hide_mobile><i>order_id</i></td>
+                  <td><i>local_id</i></td>
+                  <td><i>type</i></td>
+                  <td><i>side</i></td>
+                  <td><i>amnt</i></td>
+                  <td><i>filled</i></td>
+                  <td><i>stop</i></td>
+                  <td><i>limit</i></td>
+                  <td><i>fill price</i></td>
+                  <td><i>status</i></td>
+                  <td className=created><i>created</i></td>
+              </tr>
+              </thead>
+            <tbody>
+              ${orders.map((data, i) => html`
+                  <${Order}
+                          data=${data}
+                          curOrder=${selectedOrder}
+                          setOrder=${setSelectedOrder}
+                          key=${i}
+                  />
+              `)}
+            </tbody>
+          </table>
 
       </div>
   `
