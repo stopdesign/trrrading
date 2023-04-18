@@ -467,12 +467,12 @@ class IBSyncExtended(IBSync):
             ib_order, _, state = self.place_order(ib_contract, ib_order)
             db_order.status = str(state.status)
             db_order.save()
-            self.tg.message(f"Order created: {sid} {db_order}")
+            self.tg.message(f"Order created: {db_order}")
         except Exception as e:
             db_order.status = "Error"
             db_order.system_comment = f"{e}"
             db_order.save()
-            txt = f"Create order error: {sid} {db_order} {e}"
+            txt = f"Create order error: {db_order} {e}"
             log.error(txt)
             self.tg.message(txt)
 
@@ -499,7 +499,7 @@ class IBSyncExtended(IBSync):
                     try:
                         self.place_order(contract, updated_ib_order)
                     except Exception as e:
-                        txt = f"Update order order: {sid} {updated_ib_order} {e}"
+                        txt = f"Update order: {sid} {updated_ib_order} {e}"
                         log.error(txt)
                         self.tg.message(txt)
                 else:

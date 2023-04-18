@@ -2,7 +2,6 @@ import { html, useState } from "./deps.js"
 import Positions from "./positions.js"
 import Account from "./account.js"
 import Orders from "./orders.js"
-import Health from "./health.js"
 
 
 const Dashboard = ({ accounts }) => {

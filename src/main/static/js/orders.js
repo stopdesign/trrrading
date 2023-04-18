@@ -86,6 +86,11 @@ const draw_order = function (ac, order) {
 const create_chart = (el) => {
   const Datafeeds = window["Datafeeds"]
 
+  let chart_height = 500
+  if (window.screen.width < 1200) {
+    chart_height = 350
+  }
+
   // noinspection JSPotentiallyInvalidConstructorUsage
   // https://github.com/serdimoa/charting/blob/master/Featuresets.md
   const chart_widget = new TradingView.widget({
@@ -130,7 +135,7 @@ const create_chart = (el) => {
       // "right_bar_stays_on_scroll",
     ],
     width: "100%",
-    height: "500px",
+    height: chart_height + "px",
     toolbar_bg: '#f4f7f9',
 
     // set local timezone
