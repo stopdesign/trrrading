@@ -202,6 +202,7 @@ const Orders = ({ account, symbol }) => {
   const [resized, setResized] = useState(false)
   const [loading, setLoading] = useState(true)
   const controllerRef = useRef()
+  const symbolRef = useRef()
   const acRef = useRef()
   const ordersRef = useRef([])
 
@@ -264,6 +265,8 @@ const Orders = ({ account, symbol }) => {
       ac.applyOverrides({ "mainSeriesProperties.style": 0 })
       ac.applyOverrides({ "paneProperties.topMargin": '10' })
       ac.applyOverrides({ "paneProperties.bottomMargin": '5' })
+
+      ac.setSymbol(symbolRef.current || "")
 
       ac.onDataLoaded().subscribe(
         null,
@@ -358,6 +361,8 @@ const Orders = ({ account, symbol }) => {
 
   // Изменился symbol
   useEffect(() => {
+
+    symbolRef.current = symbol
 
     // Показать / скрыть график
     const chartDiv = document.getElementById("tv_chart_container")
