@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable
@@ -26,9 +27,9 @@ class EventManager:
         self.dt_last = None
         self.quotes = False  # в данных есть quotes
 
-        self.prev_bar_dt = datetime.min
-        self.prev_bar_rth = None
-        self.in_the_gap = True
+        self.prev_bar_dt: dict = defaultdict(lambda: datetime.min)
+        self.prev_bar_rth: dict = defaultdict(lambda: None)
+        self.in_the_gap: dict = defaultdict(lambda: True)
 
     # FIXME: сомневаюсь, что это должно быть здесь
     def bar_to_trades(self, bar: Bar) -> list[Trade]:
@@ -69,22 +70,22 @@ class EventManager:
         Проверка соблюдения последовательности
         интервалов и промежутков между интервалами.
         """
-        # FIXME: сделать контроль gaps для нескольких инструментов одновременно
-        bar_gap = int((bar.date - self.prev_bar_dt).total_seconds() / 60) - 1
-        if bar_gap > 0:
-            if not self.in_the_gap and bar_gap:
-                if bar.rth and self.prev_bar_rth:
-                    log.error(f"Large gap: {bar.date}, {bar_gap} min")
-            self.in_the_gap = True
+        sid = bar.sid
+        bar_gap = bar.date - self.prev_bar_dt[sid]
+        bar_gap_min = int(bar_gap.total_seconds() / 60) - 1
+        if bar_gap_min > 0:
+            if not self.in_the_gap[sid] and bar_gap_min:
+                if bar.rth and self.prev_bar_rth[sid]:
+                    log.error(f"Large gap: {bar.date}, {bar_gap_min} min")
+            self.in_the_gap[sid] = True
         else:
-            self.in_the_gap = False
+            self.in_the_gap[sid] = False
 
-        # FIXME: поставить 0, когда будет поддержка разных инструментов
-        if bar_gap < -1:
-            log.error(f"Negative gap: {bar.date}, {bar_gap} min")
+        if bar_gap_min < 0:
+            log.error(f"Negative gap: {bar.date}, {bar_gap_min} min")
 
-        self.prev_bar_dt = bar.date
-        self.prev_bar_rth = bar.rth
+        self.prev_bar_dt[sid] = bar.date
+        self.prev_bar_rth[sid] = bar.rth
 
     def notify(self, payload: dict):
         """

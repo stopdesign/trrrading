@@ -159,7 +159,8 @@ class Trader:
             # FIXME: переделать на работу через data_sources
             # 3. Передать trade в стратегии
             for strategy in self.strategies:
-                strategy.on_tick(copy(payload))
+                if strategy.sid == payload.sid:
+                    strategy.on_tick(copy(payload))
 
             # 4. Запустить обработку ордеров
             self.exchange.process_orders()
