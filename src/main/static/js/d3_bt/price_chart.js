@@ -54,7 +54,7 @@ function print_info(data, data_z) {
 
 export class PriceChart {
 
-  margin = { top: 40, right: 70, bottom: 50, left: 70 }
+  margin = { top: 40, right: 70, bottom: 30, left: 70 }
 
   height = 500
 
@@ -450,7 +450,7 @@ export class PriceChart {
     // Вертикальный автомасштаб по сжатым данным
     this.verticalScale(this.yScale, small)
 
-    print_info(data_z, small)
+    // print_info(data_z, small)
   }
 
   draw_indicator_lines(data) {

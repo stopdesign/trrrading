@@ -38,7 +38,8 @@ const Orders = ({curResult, curStrategy}) => {
     if (curResult && curStrategy) {
 
       // console.log("show chart", curResult, curStrategy);
-      
+
+      document.querySelector('#d3_charts_results').innerHTML = "";
       document.querySelector('#d3_charts_info').innerHTML = "";
 
       chart.run(curResult, curStrategy)
@@ -56,6 +57,7 @@ const Orders = ({curResult, curStrategy}) => {
       <div className="orders_and_chart">
           <div id="d3_charts_container"></div>
           <div id="d3_charts_info"></div>
+          <div id="d3_charts_results"></div>
       </div>
   `;
 }

@@ -424,8 +424,33 @@ https://www.interactivebrokers.com/en/software/mobileandroid/trade/status-colors
 
 /* d3.js */
 
-#d3_charts_info {
+#d3_charts_info,
+#d3_charts_results {
     margin-left: 70px;
+}
+
+#d3_charts_results {
+    width: 200px;
+}
+#d3_charts_results h3 {
+    font-weight: 500;
+    margin: 10px 0;
+    padding: 0;
+}
+#d3_charts_results .results-row {
+    display: flex;
+    border-top: 1px dotted #ccc;
+    padding: 3px 0;
+}
+#d3_charts_results .results-row:last-child {
+    border-bottom: 1px dotted #ccc;
+}
+#d3_charts_results .results-key {
+    width: 100px;
+}
+#d3_charts_results .results-value {
+    text-align: right;
+    flex-grow: 1;
 }
 
 #crosshair_label_time rect,

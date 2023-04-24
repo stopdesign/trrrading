@@ -6,7 +6,7 @@ import * as d3 from "https://cdn.skypack.dev/d3@7";
 
 export class NavChart {
 
-  margin = { top: 40, right: 70, bottom: 50, left: 70 }
+  margin = { top: 30, right: 70, bottom: 30, left: 70 }
 
   height = 80
 

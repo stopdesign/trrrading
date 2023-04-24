@@ -6,7 +6,8 @@ import * as d3 from "https://cdn.skypack.dev/d3@7"
 import { PriceChart } from "./price_chart.js"
 import { PerformanceChart } from "./performance_chart.js"
 import { NavChart } from "./nav_chart.js"
-import { PriceAroundTrades } from "./price_around_trades.js"
+import { Results } from "./results.js"
+// import { PriceAroundTrades } from "./price_around_trades.js"
 
 export class ChartManager {
 
@@ -26,7 +27,7 @@ export class ChartManager {
     let events = await d3.json(`${base}/bt/events?result=${bt_uid}&strategy=${symbol}`);
     let meta = await d3.json(`${base}/bt/meta?result=${bt_uid}`);
 
-    console.log(meta)
+    console.log(meta.results)
 
     let indicators = []
     if (meta && meta.strategies) {
@@ -220,6 +221,8 @@ export class ChartManager {
     // this.priceAroundTrades = new PriceAroundTrades(this.chartArea, ohlc, trades_1)
 
     this.navChart = new NavChart(this.chartArea, this.priceChart, this.performanceChart)
+
+    this.results = new Results(this.chartArea, meta.results)
 
   }
 

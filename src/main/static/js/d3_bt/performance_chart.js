@@ -11,7 +11,7 @@ function randId() {
 
 export class PerformanceChart {
 
-  margin = { top: 40, right: 70, bottom: 50, left: 70 }
+  margin = { top: 10, right: 70, bottom: 0, left: 70 }
 
   height = 150
 
