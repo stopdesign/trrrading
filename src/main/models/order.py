@@ -45,7 +45,7 @@ class Order(models.Model):
     contract = models.ForeignKey("Contract", null=False, on_delete=models.PROTECT)
     action = models.CharField(max_length=50, choices=Side.choices, null=True)
 
-    order_id = models.PositiveIntegerField(unique=True, null=True)  # perm id IBKR
+    order_id = models.IntegerField(unique=True, null=True)  # perm id IBKR
     local_id = models.CharField(max_length=250, null=True)  # локальный id гейтвея
 
     amount = models.PositiveIntegerField(default=0)
