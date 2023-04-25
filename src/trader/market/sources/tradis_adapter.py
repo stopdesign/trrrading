@@ -10,9 +10,6 @@ from .base_source import BaseSource
 log = logging.getLogger("tradis_adapter")
 
 
-SYNC_CHANNEL = "SYNC"
-
-
 def dt_to_ts(dt):
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
@@ -24,23 +21,15 @@ def parse_dt(dt: str) -> datetime:
 
 
 class TradisAdapter(BaseSource):
-    def __init__(self, redis_client, redis_db=None):
+    def __init__(self, redis_client):
         # Есть ли в базе QUOTES
         self.quotes = False
-
         self.redis = redis_client
-
-        # FIXME: это префикс канала SYNC
-        if redis_db is not None:
-            self.sync_channel = f"{redis_db}_{SYNC_CHANNEL}"
-        else:
-            self.sync_channel = None
 
     def __str__(self) -> str:
         host = self.redis.get_connection_kwargs().get("host")
         db = self.redis.get_connection_kwargs().get("db")
-        s = self.sync_channel
-        return f"{self.__class__.__name__}(host={host}, db={db}, sync={s})"
+        return f"{self.__class__.__name__}(host={host}, db={db})"
 
     def format_message(self, message):
         # Игнорировать subscribe messages
@@ -116,7 +105,7 @@ class TradisAdapter(BaseSource):
         # Отсортировать по score и символу
         return sorted(all_data)
 
-    def listen(self, sids, on_market_event, on_broker_event):
+    def listen(self, sids, on_market_event):
         """
         Подписка на события в Redis pubsub.
         """
@@ -125,12 +114,6 @@ class TradisAdapter(BaseSource):
         # Подписка на pubsub
         for sid in sids:
             pubsub.subscribe([f"{sid}:TRADES", f"{sid}:BARS"])
-
-        # FIXME: плохо всё это держать в одной подписке, т.к. ломается timeout
-        # Ну или нужно руками считать timeout по типам сообщений.
-        # В любом случае SYNC лучше отсюда вынести. Это не часть канала данных.
-        if self.sync_channel:
-            pubsub.subscribe(self.sync_channel)  # подписка на события от брокера
 
         while True:
             try:
@@ -141,10 +124,7 @@ class TradisAdapter(BaseSource):
                 continue
 
             try:
-                if message and message.get("channel") == self.sync_channel:
-                    if message.get("type") == "message":
-                        on_broker_event(message.get("data"))
-                elif payload := self.format_message(message):
+                if payload := self.format_message(message):
                     on_market_event(payload)
             except Exception as e:
                 log.exception(e)

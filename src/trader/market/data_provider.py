@@ -84,9 +84,6 @@ class DataProvider:
         else:
             log.warning(f"Unknown format: {payload}")
 
-    def on_broker_event(self, payload):
-        self.on_event("broker", dt=datetime.now(), payload=payload)
-
     def warm_up(self):
         """
         Получение исторических данных и запуск
@@ -133,4 +130,4 @@ class DataProvider:
         if not self.feed:
             raise Exception("No feed source to listen")
 
-        self.feed.listen(self.instruments, self.on_market_event, self.on_broker_event)
+        self.feed.listen(self.instruments, self.on_market_event)

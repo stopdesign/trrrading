@@ -1,6 +1,8 @@
-import simplejson as json
 import logging
 from decimal import Decimal
+from time import sleep
+
+import simplejson as json
 
 from main.models import Account as DbAccount
 from main.models import Order as DbOrder
@@ -11,6 +13,7 @@ log = logging.getLogger("sync_client")
 
 
 BOT_CHANNEL = "BOT_ACTIONS"
+SYNC_CHANNEL = "SYNC"
 
 
 class SyncClient:
@@ -28,6 +31,10 @@ class SyncClient:
         # Разделение live и paper по разным каналам pubsub
         redis_db = redis_client.connection_pool.connection_kwargs["db"]
         self.bot_channel = f"{redis_db}_{BOT_CHANNEL}"
+        self.sync_channel = f"{redis_db}_{SYNC_CHANNEL}"
+
+        log.info(f"bot_channel: {self.bot_channel}")
+        log.info(f"sync_channel: {self.sync_channel}")
 
         self.db_account = DbAccount.objects.get(uid=self.account["uid"])
         self.update_broker_data({"types": ["init"]})
@@ -56,6 +63,28 @@ class SyncClient:
         msg = json.dumps(action, default=str, ignore_nan=True)
         self.redis_client.publish(self.bot_channel, msg)
 
+    def listen(self):
+        """
+        Подписка на события в Redis pubsub.
+        """
+        pubsub = self.redis_client.pubsub()
+        pubsub.subscribe(self.sync_channel)
+
+        while True:
+            try:
+                message = pubsub.get_message(timeout=100)
+            except Exception as e:
+                log.error(f"Redis pubsub get_message error: {e}")
+                sleep(1)
+                continue
+
+            try:
+                if message and message.get("type") == "message":
+                    log.info(f"NEW broker_event: {message.get('data')}")
+                    self.update_broker_data(message.get("data"))
+            except Exception as e:
+                log.exception(e)
+
     def update_broker_data(self, payload):
         # TODO: Смотреть payload и обновлять только нужный тип объектов
         # init обновляет всё
@@ -75,6 +104,7 @@ class SyncClient:
                 avg_price=position.avg_price,
             )
 
+        # FIXME: обращения к self.orders и self.positions из разных потоков
         self.orders.clear()
 
         # FIXME: вытащить актуальные ордеры, а не хрен знает что

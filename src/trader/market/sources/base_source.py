@@ -11,5 +11,5 @@ class BaseSource:
     def load(self, instruments: list, dt_1: datetime, dt_2: datetime):
         raise NotImplementedError()
 
-    def listen(self, instruments: list, on_market_event, on_broker_event):
+    def listen(self, instruments: list, on_market_event):
         raise NotImplementedError()

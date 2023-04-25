@@ -3,6 +3,7 @@ import logging
 from copy import copy
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+import threading
 
 import redis
 from termcolor import colored
@@ -61,7 +62,8 @@ class Trader:
             account_uid = run_config.get("account")
             redis_config = self.config["redis"]
             redis_client = redis.Redis(**(REDIS_CONF | redis_config))
-            log.info(f"Redis PubSub: {redis_client}")
+            log.info(f"Redis PubSub: {redis_config}")
+            # TODO: вынести sync_client сюда?
             self.exchange = Exchange(self.on_event, account_uid, redis_client)
 
         # Инициализация стратегий и список индикаторов
@@ -80,11 +82,8 @@ class Trader:
         # Список всех инструментов, используемых в стратегиях
         self.instruments = list(sorted(set([ds.sid for ds in self.data_sources])))
 
-        # Префикс канала синхронизации
-        redis_db = self.config["redis"].get("db", 0)
-
         self.config_start_end(run_config, warm_up=timedelta(days=15))
-        self.config_sources(run_config, config["sources"], redis_db)
+        self.config_sources(run_config, config["sources"])
 
         # Добывает данные, запускает события
         self.data_provider = DataProvider(
@@ -120,7 +119,7 @@ class Trader:
         Порядок событий пока хрен знает какой.
         """
         if dt and dt > self.dt_start and not self.backtest:
-            # log.info(f"EVENT {colored(event, 'red')} {sid} {payload}")
+            log.info(f"EVENT {colored(event, 'red')} {sid} {payload}")
             pass
 
         if event == "quote":
@@ -172,6 +171,7 @@ class Trader:
         #         strategy.on_order_event(payload)
 
         # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
+        # Событие приходит в отдельном потоке.
         if event == "broker":
             self.exchange.on_broker_update(copy(payload))
 
@@ -200,7 +200,7 @@ class Trader:
         # Хорошо бы сделать какую-то автоматизацию выбора интервала.
         self.dt_prior = self.dt_start - warm_up
 
-    def config_sources(self, run_config, sources, redis_db=None):
+    def config_sources(self, run_config, sources):
         history = run_config["history"]
         feed = run_config.get("feed")
 
@@ -228,7 +228,7 @@ class Trader:
 
         if "redis" in feed:
             redis_client = redis.Redis(**(REDIS_CONF | feed_conf))
-            self.feed_source = TradisAdapter(redis_client, redis_db)
+            self.feed_source = TradisAdapter(redis_client)
         elif "polygon" in feed:
             self.feed_source = PolygonAdapter(**feed_conf)
         else:
@@ -249,6 +249,12 @@ class Trader:
                 # TODO: после завершения бэктеста закрыть все позиции
                 # self.close_all()
             else:
+                # Отдельный поток занимается синхронизацией с базой
+                t = threading.Thread(
+                    target=self.exchange.sync_client.listen,
+                    daemon=True,
+                )
+                t.start()
                 self.data_provider.listen()
         except KeyboardInterrupt:
             print()
@@ -306,25 +312,31 @@ class Trader:
             }
 
             for ds in strategy.data_sources:
-                res["data_sources"].append({
-                    "type": "Data",
-                    "sid": ds.sid,
-                    "rth": ds.rth,
-                })
+                res["data_sources"].append(
+                    {
+                        "type": "Data",
+                        "sid": ds.sid,
+                        "rth": ds.rth,
+                    }
+                )
 
             for ds in strategy.consolidators:
-                res["data_sources"].append({
-                    "type": "Consolidator",
-                    "sid": ds.sid,
-                    "rule": ds.rule,
-                })
+                res["data_sources"].append(
+                    {
+                        "type": "Consolidator",
+                        "sid": ds.sid,
+                        "rule": ds.rule,
+                    }
+                )
 
             for ind in strategy.indicators:
-                res["indicators"].append({
-                    "name": ind.name,
-                    "params": ind.kwargs,
-                    "chart": ind.chart,
-                })
+                res["indicators"].append(
+                    {
+                        "name": ind.name,
+                        "params": ind.kwargs,
+                        "chart": ind.chart,
+                    }
+                )
 
             meta["strategies"].append(res)
 
