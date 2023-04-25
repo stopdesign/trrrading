@@ -293,7 +293,7 @@ class IBSyncExtended(IBSync):
                 db_contract = Contract.objects.get(sid=sid)
             except Contract.DoesNotExist:
                 log.warn(f"Create new contract {sid}")
-                cd = self.get_contract_details(contract)
+                cd = self.get_contract_details(contract)[0]
                 db_contract = Contract.from_ib(contract, cd, sid)
                 db_contract.save()
 
