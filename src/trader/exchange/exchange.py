@@ -1,9 +1,10 @@
+from decimal import Decimal
 import logging
 from typing import Callable
 
 from termcolor import colored
 
-from trader.data_types import Order
+from trader.data_types import Order, Position
 
 from .base_exchange import BaseExchange
 
@@ -28,6 +29,21 @@ class Exchange(BaseExchange):
             self.account,
             redis_client,
         )
+
+    def init_positions(self, sids):
+        """
+        Пустые позиции заполняются один раз,
+        чтобы не было ошибок в процессе работы.
+        """
+        self.sync_client.update_broker_data(None)
+        if not self.positions:
+            raise ValueError("Can't init empty positions")
+        for sid in sids:
+            if sid in self.positions:
+                continue
+            log.warning(f"Add zero position: {sid}")
+            zero = Position(sid, capital=Decimal(0), amount=Decimal(0))
+            self.positions[sid] = zero
 
     def place_order(self, order: Order):
         log.info(colored(f"PLACE ORDER: {order}", "green"))

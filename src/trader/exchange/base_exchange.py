@@ -4,7 +4,7 @@ from copy import copy
 from decimal import ROUND_DOWN, Decimal
 from typing import Callable
 
-from trader.data_types import Bar, BidAsk, Order
+from trader.data_types import Bar, BidAsk, Order, Position
 
 log = logging.getLogger("base_exchange")
 
@@ -26,6 +26,18 @@ class BaseExchange:
         self.bars = defaultdict(list)  # market data bar including indicators values
         self.dt_last = None
         self.on_event = on_event
+
+    def init_positions(self, sids):
+        """
+        Пустые позиции заполняются один раз,
+        чтобы не было ошибок в процессе работы.
+        """
+        for sid in sids:
+            if sid in self.positions:
+                continue
+            log.warning(f"Add zero position: {sid}")
+            zero = Position(sid, capital=Decimal(0), amount=Decimal(0))
+            self.positions[sid] = zero
 
     # NOTE: код из старого класса Exchange
     def get_price(self, sid: str, side: str) -> Decimal:

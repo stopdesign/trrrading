@@ -82,6 +82,9 @@ class Trader:
         # Список всех инструментов, используемых в стратегиях
         self.instruments = list(sorted(set([ds.sid for ds in self.data_sources])))
 
+        # Добавляются нулевые позиции для инструментов
+        self.exchange.init_positions(self.instruments)
+
         self.config_start_end(run_config, warm_up=timedelta(days=15))
         self.config_sources(run_config, config["sources"])
 
