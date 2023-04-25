@@ -1,5 +1,6 @@
 import json
 import logging
+import socket
 import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -7,9 +8,9 @@ from decimal import Decimal
 from posixpath import abspath
 from time import monotonic, sleep
 from zoneinfo import ZoneInfo
+
 import redis
 import yaml
-import socket
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from ib_sync import IBSync, IBThread
@@ -176,6 +177,10 @@ class IBSyncExtended(IBSync):
 
         account = Account.objects.get(uid=accountName)
 
+        # В данном случае контракт приходит достаточно наполненный.
+        # Есть корректное значение primaryExchange для ARCA и дата
+        # экспирации для фьючерсов. sid_for_contract должен сработать.
+
         sid = self.sid_for_contract(contract)
 
         log.debug(colored(f"updatePortfolio: {sid} {position}", "cyan"))
@@ -231,6 +236,20 @@ class IBSyncExtended(IBSync):
         оставшегося количества. Если мы отслеживаем исполнение,
         то нет смысла там сохранять ордер.
         """
+        super().orderStatus(
+            orderId,
+            status,
+            filled,
+            remaining,
+            avgFillPrice,
+            permId,
+            parentId,
+            lastFillPrice,
+            clientId,
+            whyHeld,
+            mktCapPrice,
+        )
+
         if self.lock_for_sync:
             return
 
@@ -242,29 +261,28 @@ class IBSyncExtended(IBSync):
             # TODO: для активного ордера проверить время его получения
             order, contract, state = self._orders_by_pid[permId]
         else:
-            log.error(f"Order not found, {permId}")
+            log.error(f"Order not found in cache, {permId}")
             return
+
+        sid = self.sid_for_contract(contract)
 
         log.info(
             colored(
                 (
-                    f"OrderStatus: oId: {orderId}, clientId: {clientId}, "
-                    f"pId: {permId}, {state.status} >> {status}, "
-                    f"amnt: {filled}/{remaining}, "
-                    f"lmt: {order.lmtPrice}, "
-                    f"aux: {order.auxPrice}, "
-                    f"fill: {av_fill_price}, "
-                    f"whyHeld: {whyHeld}"
+                    f"OrderStatus: oId: {orderId}, "
+                    f"clientId: {clientId}, "
+                    f"SID: {sid}, "
+                    f"pId: {permId}, "
+                    f"{state.status} >> {status}, "
+                    f"amnt: {filled}/{remaining+filled}"
+                    # f"lmt: {order.lmtPrice}, "
+                    # f"aux: {order.auxPrice}, "
+                    # f"fill: {av_fill_price}, "
+                    # f"whyHeld: {whyHeld}"
                 ),
                 "blue",
             )
         )
-
-        # Обновление статуса ордера в кэше
-        state.status = status
-        self._orders_by_pid[permId] = order, contract, state
-
-        sid = self.sid_for_contract(contract)
 
         # TODO: закешировать?
         account = Account.objects.get(uid=order.account)
@@ -718,16 +736,11 @@ class Sync:
         Новые контракты для добавления в базу данных.
         """
         contracts_to_create = []
-        for con_id, contract in uniq_contracts.items():
-            cd = None
-            if not contract.primaryExchange:
-                cd = self.ib.get_contract_details(contract)[0]
-                contract = cd.contract
-                uniq_contracts[con_id] = contract
+        for contract in uniq_contracts.values():
+            # self.ib.qualify_contract(contract)
             sid = self.ib.sid_for_contract(contract)
             if sid not in contracts_by_sid:
-                if not cd:
-                    cd = self.ib.get_contract_details(contract)[0]
+                cd = self.ib.get_contract_details(contract)[0]
                 c = Contract.from_ib(contract, cd, sid)
                 contracts_by_sid[sid] = c
                 contracts_to_create.append(c)
@@ -834,10 +847,8 @@ class Sync:
             position.amount = 0
             position.avg_price = None
 
-        for acnt, con, pos, avg_cost in ib_positions:
-            contract = uniq_contracts[con.conId]
+        for acnt, contract, pos, avg_cost in ib_positions:
             sid = self.ib.sid_for_contract(contract)
-
             db_contract = contracts_by_sid[sid]
 
             if acnt != account.uid:

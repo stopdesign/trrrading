@@ -13,7 +13,7 @@ try:
 except:
     NO_COLOR = False
 
-FMT = "%(asctime).19s • %(levelname).1s • %(name)s %(lineno)d • %(message)s"
+FMT = "%(asctime).19s • %(levelname).1s • %(name)s %(lineno)d • %(threadName)s • %(message)s"
 
 if NO_COLOR:
     console_formater = "plainlogs"
