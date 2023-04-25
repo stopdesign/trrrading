@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 from main.models.order import new_local_id
 
 
-BOT_CHANNEL = "BOT_ACTIONS"
+BOT_CHANNEL = "5_BOT_ACTIONS"
 
 
 class Command(BaseCommand):
