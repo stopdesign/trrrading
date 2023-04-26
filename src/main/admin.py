@@ -74,9 +74,9 @@ class OrderEventInline(admin.TabularInline):
     model = OrderEvent
     readonly_fields = (
         "status",
+        "code",
         "message",
         "time",
-        "created_at",
     )
     extra = 0
 
@@ -127,7 +127,7 @@ class OrderAdmin(admin.ModelAdmin):
     actions_on_top = False
     actions_on_bottom = True
     # actions = None
-    inlines = [TradeInline]
+    inlines = [TradeInline, OrderEventInline]
 
     @boolean
     @short_description("")

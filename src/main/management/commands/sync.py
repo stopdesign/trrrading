@@ -17,7 +17,7 @@ from ib_sync import IBSync, IBThread
 from ibapi.order import Order as IBOrder
 from termcolor import colored
 
-from main.models import Account, Contract, Order, Position, Trade
+from main.models import Account, Contract, Order, OrderEvent, Position, Trade
 from project.helpers.alert import TgAlert
 
 from .ib_orders import CustomIBOrder, StateNew  # FIXME: унести в ib_sync
@@ -166,6 +166,43 @@ class IBSyncExtended(IBSync):
         for r_id, sub in self.request.items():
             if not sub.get("cancelled"):
                 self.request[r_id]["cancelled"] = True
+
+    def error(
+        self,
+        reqId: int,
+        errorCode: int,
+        errorString: str,
+        advancedOrderRejectJson="",
+    ):
+        processed = False
+        if errorCode in [201, 202, 399, 400]:
+            txt = f"Order {reqId}, code: {errorCode}, msg: {errorString}"
+            log.warning(txt)
+
+            account = Account.objects.get(uid=self.account_id)
+            utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+            too_old = utc_now - timedelta(minutes=10)
+
+            db_orders = Order.objects.filter(account=account, created_at__gt=too_old)
+
+            for order in db_orders:
+                if f'"orderId": {reqId},' in str(order.raw):
+                    oe = OrderEvent(
+                        order=order,
+                        status=order.status,
+                        code=str(errorCode),
+                        message=str(errorString),
+                        time=utc_now,
+                    )
+                    oe.save()
+                    processed = True
+                    self.tg.message(txt)
+                    break
+            else:
+                log.error("Order not found in DB by orderId")
+
+        if not processed:
+            super().error(reqId, errorCode, errorString, advancedOrderRejectJson)
 
     #####
     # Обработка событий с обновлениями данных
@@ -512,8 +549,14 @@ class IBSyncExtended(IBSync):
             self.tg.message(f"Order created: {db_order}")
         except Exception as e:
             db_order.status = "Error"
-            db_order.system_comment = f"{e}"
             db_order.save()
+            oe = OrderEvent(
+                order=db_order,
+                status=db_order.status,
+                code="",
+                message=str(e),
+            )
+            oe.save()
             txt = f"Create order error: {db_order} {e}"
             log.error(txt)
             self.tg.message(txt)
@@ -525,6 +568,8 @@ class IBSyncExtended(IBSync):
         local_id = data.get("local_id")
 
         inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
+
+        # TODO: добыть ордер из базы, создать OrderEvent
 
         for ib_order, contract, orderState in self._orders_by_pid.values():
             if orderState.status in inactive:
