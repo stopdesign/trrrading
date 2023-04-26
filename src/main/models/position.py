@@ -7,8 +7,8 @@ class Position(models.Model):
     contract = models.ForeignKey("Contract", null=False, on_delete=models.PROTECT)
 
     amount = models.IntegerField(default=0)
-    avg_price = models.DecimalField(max_digits=12, decimal_places=5, null=True)
-    unrealized_pnl = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    avg_price = models.DecimalField(max_digits=12, decimal_places=5, null=True, blank=True)
+    unrealized_pnl = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

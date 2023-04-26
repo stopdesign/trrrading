@@ -31,7 +31,6 @@ class AccountAdmin(admin.ModelAdmin):
     list_display = (
         "uid",
         "paper",
-        "username",
         "net_value",
         "ex_liq_sec",
         "ex_liq_com",
@@ -108,7 +107,6 @@ class OrderAdmin(admin.ModelAdmin):
         "amount",
         "filled",
         "status",
-        "system_comment",
         "order_settings",
         "raw",
     )

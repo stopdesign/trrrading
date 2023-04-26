@@ -45,17 +45,17 @@ class Order(models.Model):
     contract = models.ForeignKey("Contract", null=False, on_delete=models.PROTECT)
     action = models.CharField(max_length=50, choices=Side.choices, null=True)
 
-    order_id = models.IntegerField(unique=True, null=True)  # perm id IBKR
-    local_id = models.CharField(max_length=250, null=True)  # локальный id гейтвея
+    order_id = models.IntegerField(unique=True, null=True, db_index=True, blank=True)  # perm id IBKR, negative
+    local_id = models.CharField(max_length=250, null=True, db_index=True, blank=True)  # локальный id гейтвея
 
     amount = models.PositiveIntegerField(default=0)
     filled = models.PositiveIntegerField(default=0)
     type = models.CharField(max_length=50, choices=Type.choices, null=True)
 
-    oca_group = models.PositiveIntegerField(null=True)
+    oca_group = models.IntegerField(null=True, db_index=True, blank=True)
 
-    algo_strategy = models.CharField(max_length=50, null=True)
-    algo_params = models.CharField(max_length=200, null=True)
+    algo_strategy = models.CharField(max_length=50, null=True, blank=True)
+    algo_params = models.CharField(max_length=200, null=True, blank=True)
 
     signal_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     limit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -64,22 +64,13 @@ class Order(models.Model):
     trailing_percent = models.DecimalField(max_digits=10, decimal_places=2, null=True)
 
     avg_fill_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
-    status = models.CharField(max_length=50, null=True)
-    raw = models.TextField(null=True)
-    tif = models.CharField(max_length=10, null=True)
+    status = models.CharField(max_length=50, null=True, db_index=True, blank=True)
+    raw = models.TextField(null=True, blank=True)
+    tif = models.CharField(max_length=10, null=True, blank=True)
     outside_rth = models.BooleanField(default=False)
 
     # Настройки ордера, которые нужно пробрасывать из бота
-    order_settings = models.CharField(max_length=500, null=True)
-
-    # Всякие статусы, которые возвращаются брокером
-    system_comment = models.CharField(max_length=500, null=True)
-
-    # Строка orderDesc из IBKR
-    string_repr = models.CharField(max_length=500, null=True)
-
-    # Некий слепок ордера, по которому понимаем, что он изменился в IBKR
-    version = models.CharField(max_length=50, null=True)
+    order_settings = models.CharField(max_length=500, null=True, blank=True)
 
     created_at = models.DateTimeField(null=True, auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

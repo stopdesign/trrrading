@@ -11,7 +11,7 @@ class Contract(models.Model):
         cash = "CASH", "Cash"
         crypto = "CRYPTO", "Crypto"
 
-    sid = models.CharField(max_length=50, default="")
+    sid = models.CharField(max_length=50, default="", db_index=True)
     sec_type = models.CharField(max_length=50, choices=Type.choices, default=Type.stk)
     multiplier = models.DecimalField(
         default=Decimal(1), max_digits=10, decimal_places=4

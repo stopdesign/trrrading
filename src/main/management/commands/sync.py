@@ -643,7 +643,7 @@ class Sync:
 
         # Отметки, когда что произошло
         self.request_time = datetime.min
-        self.prev_executions = monotonic()
+        self.prev_executions = 0
         self.prev_subscribe = monotonic()
         self.prev_test_order = monotonic()
 
@@ -823,6 +823,23 @@ class Sync:
                 contracts_to_create.append(c)
                 log.info(f"Create contract: {c.sid}")
         return contracts_to_create
+
+    def sync_completed_order_status(self):
+        """
+        Идиотская необходимость регулярно проверять статус ордера,
+        т.к. Inactive без уведомления становится Cancelled.
+        """
+        orders = self.ib.get_completed_api_orders()
+        for _, order, orderState in orders:
+            if not order.permId:
+                continue
+            try:
+                db_order = Order.objects.get(order_id=order.permId)
+            except Order.DoesNotExist:
+                log.warn(f"Order not found in DB by pId: {order.permId}")
+            else:
+                db_order.status = str(orderState.status)
+                db_order.save(update_fields=["status"])
 
     def sync_orders(self, account, ib_orders):
         """
@@ -1025,6 +1042,7 @@ class Sync:
         # Получить executions
         if monotonic() - self.prev_executions > 13:
             self.prev_executions = monotonic()
+            self.sync_completed_order_status()
             self.get_executions()
 
         # Переподписка, если что-то отвалилось
