@@ -24,7 +24,7 @@ class EventManager:
 
     def __init__(self, on_event: Callable):
         self.on_event = on_event
-        self.dt_last = None
+        self.dt_last: datetime = datetime.min
         self.quotes = False  # в данных есть quotes
 
         self.prev_bar_dt: dict = defaultdict(lambda: datetime.min)
@@ -53,7 +53,9 @@ class EventManager:
         """
         Запустить интервальное событие при необходимости.
         """
-        if self.dt_last and dt.minute != self.dt_last.minute:
+        if dt <= self.dt_last:
+            return
+        if dt.minute != self.dt_last.minute:
             norm_dt = dt.replace(second=0, microsecond=0)
             if dt.day != self.dt_last.day:
                 norm_dt = norm_dt.replace(hour=0, minute=0)
