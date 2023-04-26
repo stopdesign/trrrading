@@ -15,7 +15,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from ib_sync import IBSync, IBThread
 from ibapi.order import Order as IBOrder
-from termcolor import colored, cprint
+from termcolor import colored
 
 from main.models import Account, Contract, Order, Position, Trade
 from project.helpers.alert import TgAlert
@@ -305,7 +305,7 @@ class IBSyncExtended(IBSync):
                 # Если в ref лежит наш идентификатор, то нужно сначала искать ордер
                 # в базе по нему. Если не нашлось, то поискать по permId.
 
-                log.info(f"IBOrder: perm_id: {order.permId}, ref: {order.orderRef}")
+                log.debug(f"IBOrder: perm_id: {order.permId}, ref: {order.orderRef}")
 
                 db_order = None
 
@@ -335,7 +335,7 @@ class IBSyncExtended(IBSync):
                 # Если ордера всё еще нет в базе - создать
                 db_order = Order.from_ib(order, account, db_contract, state)
 
-            log.info(f"Order in DB {db_order}")
+            log.debug(f"Order in DB {db_order}")
 
             # Используется последнее известное значение позиции контракта
             try:
@@ -439,9 +439,15 @@ class IBSyncExtended(IBSync):
         order.lmtPrice = 100
         order.whatIf = True
 
-        contract, order_res, orderState = self.place_order(contract, order)
-
-        log.debug(f"WTF order: {order_res} | Status: {orderState.status}")
+        # Синхронная отправка ордера
+        try:
+            contract, order_res, orderState = self.place_order(contract, order)
+            txt = f"WTF order: {order_res} | Status: {orderState.status}"
+            log.info(colored(txt, "white"))
+        except Exception as e:
+            txt = f"Test order error: {order} {e}"
+            log.error(txt)
+            self.tg.message(txt)
 
     def create_order(self, data):
         """
@@ -498,8 +504,6 @@ class IBSyncExtended(IBSync):
         """
         Редактирование ордера в IB
         """
-        # log.debug(colored(f"Update order: {data}", "yellow"))
-
         local_id = data.get("local_id")
 
         inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
@@ -513,7 +517,7 @@ class IBSyncExtended(IBSync):
                     # собирается новый ib_order
                     updated_ib_order = CustomIBOrder(contract, data)
                     updated_ib_order.orderId = ib_order.orderId
-
+                    log.info(colored(f"Update, ib_order: {ib_order}", "cyan"))
                     try:
                         self.place_order(contract, updated_ib_order)
                     except Exception as e:
@@ -707,8 +711,9 @@ class Sync:
                     f"client_id: order={exec.clientId} sync={self.gw_client_id}"
                 )
                 if self.gw_client_id != 0:
-                    pass
-                    # TODO: resync orders (+ contracts)
+                    # Resync orders (+ contracts)
+                    ib_orders = self.ib.get_orders()
+                    self.sync_orders(account, ib_orders)
 
         if trades_to_create:
             Trade.objects.bulk_create(trades_to_create)
@@ -747,16 +752,28 @@ class Sync:
                 log.info(f"Create contract: {c.sid}")
         return contracts_to_create
 
-    def sync_orders(self, account, contracts_by_sid, ib_orders):
+    def sync_orders(self, account, ib_orders):
         """
         Создать в базе новые ордеры из IB, обновить старые.
         """
+        # Все известные контракты из базы
+        contracts = Contract.objects.all()
+        contracts_by_sid = {c.sid: c for c in contracts}
 
         utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
         too_old = utc_now - timedelta(days=5)
 
         orders = Order.objects.filter(account=account, created_at__gt=too_old)
         orders_by_id = {o.order_id: o for o in orders.order_by("-id")}
+
+        uniq_contracts = {r[0].conId: r[0] for r in ib_orders}
+        if nc := self.get_new_contracts(contracts_by_sid, uniq_contracts):
+            # Создаются неизвестные контракты
+            Contract.objects.bulk_create(nc)
+
+            # Перезагрузка контрактов
+            contracts = Contract.objects.all()
+            contracts_by_sid = {c.sid: c for c in contracts}
 
         orders_to_create = []
 
@@ -835,7 +852,7 @@ class Sync:
 
         ############
         # Ордеры
-        self.sync_orders(account, contracts_by_sid, ib_orders)
+        self.sync_orders(account, ib_orders)
 
         ############
         # Позиции

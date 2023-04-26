@@ -1,9 +1,9 @@
 import json
 import logging
+import threading
 from copy import copy
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-import threading
 
 import redis
 from termcolor import colored
@@ -121,7 +121,7 @@ class Trader:
         В стриме биржи возникло новое событие.
         Порядок событий пока хрен знает какой.
         """
-        if dt and dt > self.dt_start and not self.backtest:
+        if dt and dt > self.dt_start and not self.backtest and event != "tick":
             log.info(f"EVENT {colored(event, 'red')} {sid} {payload}")
             pass
 
@@ -256,6 +256,7 @@ class Trader:
                 t = threading.Thread(
                     target=self.exchange.sync_client.listen,
                     daemon=True,
+                    name="SyncThread",
                 )
                 t.start()
                 self.data_provider.listen()
