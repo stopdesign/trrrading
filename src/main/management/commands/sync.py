@@ -83,6 +83,53 @@ def ibc_run_command(config, command):
     return status
 
 
+def update_or_create_order(account, order, db_contract, state) -> Order:
+    """
+    Поиск ордера для обновления или создание нового.
+
+    - ордер создан на стороне IB, мы сразу знаем permId
+    - ордер создан через базу и лежит там без permId
+
+    Про ref нужно понимать, что чужие ref могут быть не уникальными.
+    Если в ref лежит наш идентификатор, то нужно сначала искать ордер
+    в базе по нему. Если не нашлось, то поискать по permId.
+    """
+
+    db_order = None
+    ref = str(order.orderRef)
+
+    # Поиск ордера бота по local_id
+    if BOT_ID_PREFIX and BOT_ID_PREFIX in ref:
+        try:
+            db_order = Order.objects.get(account=account, local_id=ref)
+            db_order.order_id = order.permId  # сохранить себе permId
+        except Order.DoesNotExist:
+            log.warn(f"Order not found in DB by Ref: {order.orderRef}")
+
+    # Поиск ордера по permId
+    if not db_order:
+        try:
+            db_order = Order.objects.get(order_id=order.permId)
+        except Order.DoesNotExist:
+            log.warn(f"Order not found in DB by pId: {order.permId}")
+
+    # Парсинг ордера IB в формат базы
+    ib_order = Order.from_ib(order, account, db_contract, state)
+
+    if db_order:
+        # FIXME: Если ордер нашелся - обновить обновляемые поля
+        db_order.stop_price = ib_order.stop_price
+        db_order.limit_price = ib_order.limit_price
+        db_order.amount = ib_order.amount
+        db_order.trailing_amount = ib_order.trailing_amount
+        db_order.trailing_percent = ib_order.trailing_percent
+    else:
+        # Если ордер не нашелся в базе - создать
+        db_order = ib_order
+
+    return db_order
+
+
 ############################
 
 
@@ -189,13 +236,13 @@ class IBSyncExtended(IBSync):
             db_position = Position.objects.get(account=account, contract__sid=sid)
             db_contract = db_position.contract
         except Position.DoesNotExist:
-            txt = f"Position not found: ib = {position}"
+            txt = f"Position not found: {sid}, ib = {position}"
             log.error(txt)
             self.tg.message(txt)
             return
 
         if db_position.amount != position:
-            txt = f"Position missmatch: db = {db_position.amount}, ib = {position}"
+            txt = f"Position error: {sid}, db = {db_position.amount}, ib = {position}"
             log.error(txt)
             self.tg.message(txt)
 
@@ -298,43 +345,17 @@ class IBSyncExtended(IBSync):
                 db_contract = Contract.from_ib(contract, cd, sid)
                 db_contract.save()
 
-            try:
-                # Два варианта:
-                # - ордер создан на стороне IB, мы сразу знаем permId
-                # - ордер создан через базу и лежит там без permId
-                # Про ref нужно понимать, что чужие ref могут быть не уникальными.
-                # Если в ref лежит наш идентификатор, то нужно сначала искать ордер
-                # в базе по нему. Если не нашлось, то поискать по permId.
+            log.debug(f"IBOrder: perm_id: {order.permId}, ref: {order.orderRef}")
 
-                log.debug(f"IBOrder: perm_id: {order.permId}, ref: {order.orderRef}")
+            # Обновление или создание ордера
+            db_order = update_or_create_order(account, order, db_contract, state)
 
-                db_order = None
+            # Поля, которые обновляются только этим событием
+            db_order.avg_fill_price = av_fill_price
+            db_order.filled = filled
+            db_order.status = status
 
-                if BOT_ID_PREFIX and BOT_ID_PREFIX in str(order.orderRef):
-                    try:
-                        db_order = Order.objects.get(
-                            account=account,
-                            local_id=order.orderRef,
-                        )
-                        db_order.order_id = order.permId  # сохранить себе permId
-                    except Order.DoesNotExist:
-                        log.warn(f"Bot order not found in DB: {order.orderRef}")
-
-                # Ордер не из бота или не нашелся
-                if not db_order:
-                    db_order = Order.objects.get(order_id=order.permId)
-
-                # FIXME: обновить обновляемые поля
-                ib_order = Order.from_ib(order, account, db_contract, state)
-                db_order.stop_price = ib_order.stop_price
-                db_order.limit_price = ib_order.limit_price
-                db_order.amount = ib_order.amount
-                db_order.trailing_amount = ib_order.trailing_amount
-                db_order.trailing_percent = ib_order.trailing_percent
-
-            except Order.DoesNotExist:
-                # Если ордера всё еще нет в базе - создать
-                db_order = Order.from_ib(order, account, db_contract, state)
+            db_order.save()
 
             log.debug(f"Order in DB {db_order}")
 
@@ -372,11 +393,6 @@ class IBSyncExtended(IBSync):
                     account, db_contract, known_ib_position, avg_price
                 )
                 db_position.save()
-
-            db_order.avg_fill_price = av_fill_price
-            db_order.filled = filled
-            db_order.status = status
-            db_order.save()
 
             action = {
                 "source": "order_status",
@@ -688,11 +704,12 @@ class Sync:
         account = Account.objects.get(uid=self.ib.account_id)
 
         utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        too_old = utc_now - timedelta(days=5)
 
+        too_old = utc_now - timedelta(days=5)
         trades = Trade.objects.filter(account=account, created_at__gt=too_old)
         trades_by_exec_id = {t.exec_id: t for t in trades.order_by("-id")}
 
+        too_old = utc_now - timedelta(days=15)
         orders = Order.objects.filter(account=account, created_at__gt=too_old)
         orders_by_id = {o.order_id: o for o in orders.order_by("-id")}
 
@@ -740,6 +757,8 @@ class Sync:
                     order.save(update_fields=["avg_fill_price"])
                     log.warning(f"Updated avg_fill_price, order: {order}")
 
+        # FIXME: Если trade пришел, а ордер не обновился, будет position missmatch
+
         # TODO: Нужно взять все актуальные ордеры и проверить,
         # TODO: совпадают ли значения в orders и executions.
         # TODO: При несовпадении можно провести пересинхронизацию.
@@ -768,12 +787,6 @@ class Sync:
         contracts = Contract.objects.all()
         contracts_by_sid = {c.sid: c for c in contracts}
 
-        utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        too_old = utc_now - timedelta(days=5)
-
-        orders = Order.objects.filter(account=account, created_at__gt=too_old)
-        orders_by_id = {o.order_id: o for o in orders.order_by("-id")}
-
         uniq_contracts = {r[0].conId: r[0] for r in ib_orders}
         if nc := self.get_new_contracts(contracts_by_sid, uniq_contracts):
             # Создаются неизвестные контракты
@@ -783,35 +796,17 @@ class Sync:
             contracts = Contract.objects.all()
             contracts_by_sid = {c.sid: c for c in contracts}
 
-        orders_to_create = []
-
         for contract, order, state in ib_orders:
-            # log.info(
-            #     f"IB ORDER {order} > {order.orderRef}, "
-            #     f"tq:{order.totalQuantity}, {state.status}"
-            # )
-
             if not order.permId:
                 continue
 
-            if db_order := orders_by_id.get(order.permId):
-                # FIXME: сделать нормально
-                # проверить изменения ордеров из базы,
-                # которые не финализированы
-                if state.status != db_order.status:
-                    msg = f"UPDATE in DB {order} {db_order}"
-                    log.info(colored(msg, "magenta"))
-                    db_order.status = state.status
-                    db_order.save(update_fields=["status"])
-            else:
-                # Создание ордера в базе
-                sid = self.ib.sid_for_contract(contract)
-                db_c = contracts_by_sid[sid]
-                db_order = Order.from_ib(order, account, db_c, state)
-                orders_to_create.append(db_order)
+            sid = self.ib.sid_for_contract(contract)
+            db_contract = contracts_by_sid[sid]
 
-        if orders_to_create:
-            Order.objects.bulk_create(orders_to_create)
+            # Создание или обновление ордера
+            db_order = update_or_create_order(account, order, db_contract, state)
+            db_order.status = state.status
+            db_order.save()
 
     def initial_sync(self) -> None:
         """
