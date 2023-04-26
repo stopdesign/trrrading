@@ -189,11 +189,15 @@ class IBSyncExtended(IBSync):
             db_position = Position.objects.get(account=account, contract__sid=sid)
             db_contract = db_position.contract
         except Position.DoesNotExist:
-            log.error(f"Position not found: ib = {position}")
+            txt = f"Position not found: ib = {position}"
+            log.error(txt)
+            self.tg.message(txt)
             return
 
         if db_position.amount != position:
-            log.error(f"Position missmatch: db = {db_position.amount}, ib = {position}")
+            txt = f"Position missmatch: db = {db_position.amount}, ib = {position}"
+            log.error(txt)
+            self.tg.message(txt)
 
         avg_price = Decimal(averageCost) / db_contract.multiplier
         avg_price = round(avg_price / db_contract.min_tick) * db_contract.min_tick
@@ -266,23 +270,20 @@ class IBSyncExtended(IBSync):
 
         sid = self.sid_for_contract(contract)
 
-        log.info(
-            colored(
-                (
-                    f"OrderStatus: oId: {orderId}, "
-                    f"clientId: {clientId}, "
-                    f"SID: {sid}, "
-                    f"pId: {permId}, "
-                    f"{state.status} >> {status}, "
-                    f"amnt: {filled}/{remaining+filled}"
-                    # f"lmt: {order.lmtPrice}, "
-                    # f"aux: {order.auxPrice}, "
-                    # f"fill: {av_fill_price}, "
-                    # f"whyHeld: {whyHeld}"
-                ),
-                "blue",
-            )
+        txt = (
+            f"OrderStatus. "
+            f"SID: {sid}, "
+            f"oId: {orderId}, "
+            f"pId: {permId}, "
+            # f"clientId: {clientId}, "
+            f"{state.status} >> {status}, "
+            f"amnt: {filled}/{remaining+filled}"
+            # f"lmt: {order.lmtPrice}, "
+            # f"aux: {order.auxPrice}, "
+            # f"fill: {av_fill_price}, "
+            # f"whyHeld: {whyHeld}"
         )
+        log.info(colored(txt, "blue"))
 
         # TODO: закешировать?
         account = Account.objects.get(uid=order.account)
@@ -424,8 +425,9 @@ class IBSyncExtended(IBSync):
         """
         Создается whatIf ордер, чтобы проверить openOrder callback.
         """
-        oid = self.nextValidOrderId
-        self.nextValidOrderId += 1
+
+        # Синхронно запрашиваю новый nextValidOrderId
+        oid = self.get_next_order_id()
 
         contract = self.contract_for_sid("ARCA_SPY")
 
@@ -549,10 +551,13 @@ class IBSyncExtended(IBSync):
                 sid = self.sid_for_contract(contract)
                 if ib_order.orderId:
                     self.cancelOrder(ib_order.orderId, "")
-                    log.info(colored(f"Cancel order: {sid} {ib_order}", "magenta"))
-                    self.tg.message(f"Cancel order: {sid} {ib_order}")
+                    txt = f"Cancel order: {sid} {ib_order}"
+                    log.info(colored(txt, "magenta"))
+                    self.tg.message(txt)
                 else:
-                    log.error(f"Can't cancel order: {ib_order}, {orderState.status}")
+                    txt = f"Can't cancel order: {ib_order}, {orderState.status}"
+                    log.error(txt)
+                    self.tg.message(txt)
                 return
 
         log.error(f"Order not found: {data}")
@@ -710,10 +715,8 @@ class Sync:
                     f"order.perm_id: {exec.permId}, "
                     f"client_id: order={exec.clientId} sync={self.gw_client_id}"
                 )
-                if self.gw_client_id != 0:
-                    # Resync orders (+ contracts)
-                    ib_orders = self.ib.get_orders()
-                    self.sync_orders(account, ib_orders)
+                self.tg.message("Resync, execution without order.")
+                self.run_initial_sync()
 
         if trades_to_create:
             Trade.objects.bulk_create(trades_to_create)
@@ -724,6 +727,7 @@ class Sync:
         for order in orders:
             # Если ордер исполнен (хотя бы частично), но нет средней цены,
             # значит ордер создан при инициализации, где нет этих данных.
+            # FIXME: убрать filled, искать расхождение sum(trades) и amount.
             if order.filled and not order.avg_fill_price:
                 total_value = Decimal(0)
                 total_amount = Decimal(0)
@@ -734,7 +738,11 @@ class Sync:
                     av_price = total_value / total_amount
                     order.avg_fill_price = av_price
                     order.save(update_fields=["avg_fill_price"])
-                    log.info(f"Update avg_fill_price, order: {order}")
+                    log.warning(f"Updated avg_fill_price, order: {order}")
+
+        # TODO: Нужно взять все актуальные ордеры и проверить,
+        # TODO: совпадают ли значения в orders и executions.
+        # TODO: При несовпадении можно провести пересинхронизацию.
 
     def get_new_contracts(self, contracts_by_sid, uniq_contracts) -> list:
         """
@@ -821,6 +829,9 @@ class Sync:
         """
         txt = f"Start initial_sync, account: {self.ib.account_id}"
         log.info(colored(txt, attrs=["bold"]))
+
+        # На всякий случай запрашиваю next order ID
+        self.ib.reqIds(0)
 
         # Получить данные из базы
         account = Account.objects.get(uid=self.ib.account_id)
@@ -990,6 +1001,32 @@ class Sync:
         now = datetime.now(ZoneInfo("America/Los_Angeles"))
         return now.isoweekday() == 5 and now.hour >= 18
 
+    def run_initial_sync(self) -> None:
+        """
+        Синхронизация базы с IB в одну транзакцию.
+        """
+        log.warning("Resync with DB")
+
+        while not sleep(0.1) and not self.long_break():
+            self.ib.lock_for_sync = True
+
+            try:
+                with transaction.atomic():
+                    self.initial_sync()
+                    # Уведомление после успешной синхронизации
+                    self.redis_publish({"source": "sync", "types": ["all"]})
+                    break
+
+            except Exception as e:
+                log.error(f"Initial sync error: {e}, reconnect")
+                log.exception(e)
+                res = ibc_run_command(self.ibc_config, "RECONNECTACCOUNT")
+                log.info(f"IBC reconnect account: {res}")
+                sleep(5)
+
+            finally:
+                self.ib.lock_for_sync = False
+
     def run(self) -> None:
         """
         Бесконечный цикл, в котором поддерживаются нужные
@@ -1070,28 +1107,8 @@ class Sync:
             # В этом месте должно быть активное подключение
             self.request_tws_time()
 
-            # После соединения происходит синхронизация базы с IB
-            while not sleep(0.1) and not self.long_break():
-                self.ib.lock_for_sync = True
-
-                try:
-                    with transaction.atomic():
-                        self.initial_sync()
-                        # Уведомление после успешной синхронизации
-                        self.redis_publish({"source": "sync", "types": ["all"]})
-                        break
-
-                except Exception as e:
-                    log.error(f"Initial sync error: {e}, reconnect")
-                    log.exception(e)
-                    res = ibc_run_command(self.ibc_config, "RECONNECTACCOUNT")
-                    log.info(f"IBC reconnect account: {res}")
-                    sleep(5)
-
-                finally:
-                    self.ib.lock_for_sync = False
-
-            sleep(1)
+            # После соединения происходит синхронизация
+            self.run_initial_sync()
 
             # Подписка на нужные события TWS
             self.maintain_subscriptions(force=True)
