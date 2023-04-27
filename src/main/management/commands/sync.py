@@ -1088,11 +1088,13 @@ class Sync:
                     break
 
             except Exception as e:
-                log.error(f"Initial sync error: {e}, reconnect")
+                txt = f"Initial sync error: '{e}', reconnect"
+                self.tg.message(txt)
+                log.error(txt)
                 log.exception(e)
                 res = ibc_run_command(self.ibc_config, "RECONNECTACCOUNT")
                 log.info(f"IBC reconnect account: {res}")
-                sleep(5)
+                sleep(20)  # reconnect происходит какое-то время
 
             finally:
                 self.ib.lock_for_sync = False
@@ -1207,7 +1209,7 @@ class Sync:
 
                 except Exception as e:
                     # Что-то пошло не так, но соединение активно.
-                    txt = f"Worker exception: {e}"
+                    txt = f"Periodic actions exception: {e}"
                     log.error(txt)
                     log.exception(e)
                     self.tg.message(txt)
