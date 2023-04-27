@@ -22,9 +22,6 @@ class PortfolioStats:
         self.max_drawdown = Decimal("-Infinity")
         self.max_trade_drawdown = Decimal("-Infinity")
         self.cur_drawdown = 0
-        self.gross_profit = 0
-        self.gross_loss = 0
-        self.trades_count = {"buy": 0, "sell": 0, "close": 0}
         self.cash_initial = cash_initial
         self.prev_net_value = cash_initial
         self.deposits = [cash_initial]
@@ -74,16 +71,20 @@ class PortfolioStats:
     def summary(self):
         net = self.exchange.get_net_value()
 
+        gross_profit = 0
+        gross_loss = 0
+
+        trades_count = {"buy": 0, "sell": 0, "close": 0}
         for trade in self.exchange.trades:
             if trade["profit"] > 0:
-                self.gross_profit += trade["profit"]
+                gross_profit += trade["profit"]
             else:
-                self.gross_loss += trade["profit"]
-            self.trades_count[trade["side"]] += 1
+                gross_loss += trade["profit"]
+            trades_count[trade["side"]] += 1
 
-        pf = self.gross_profit / abs(self.gross_loss) if self.gross_loss else 0
+        pf = gross_profit / abs(gross_loss) if gross_loss else 0
         p = net - self.cash_initial
-        trades = sum(self.trades_count.values())
+        trades = sum(trades_count.values())
 
         # Не уверен, что это можно считать ROI, но это профит
         # на единицу задействованных в торговле денег.
@@ -104,17 +105,16 @@ class PortfolioStats:
                 r2 = float("nan")
             # gp = float(self.gross_profit)
             # rel_slpg = self.slippage / (gp + self.slippage) * 100 if gp else 0
+            mdd = self.max_drawdown
         else:
             r2 = float("nan")
-            self.max_drawdown = 0
+            mdd = 0
             # rel_slpg = 0
 
         if self.exchange.dt_last:
             end = self.exchange.dt_last.date()
         else:
             end = "—"
-
-        mdd = self.max_drawdown
 
         roi = round(roi, 4) if roi and not math.isnan(roi) else float("nan")
         pf = round(pf, 4) if pf and not math.isnan(pf) else float("nan")
