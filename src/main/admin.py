@@ -1,5 +1,4 @@
 import json
-from decimal import Decimal
 
 from django.contrib import admin
 from django.forms import widgets
@@ -58,6 +57,7 @@ class ContractAdmin(admin.ModelAdmin):
 class TradeInline(admin.TabularInline):
     model = Trade
     readonly_fields = (
+        "exchange",
         "order",
         "amount",
         "price",
@@ -65,7 +65,7 @@ class TradeInline(admin.TabularInline):
         "commission",
         "time",
     )
-    # readonly_fields =
+    exclude = ("account",)
     extra = 0
 
 
@@ -104,10 +104,14 @@ class OrderAdmin(admin.ModelAdmin):
         "updated_at",
     )
     fields = (
+        "account",
+        "contract",
+        "order_id",
+        "local_id",
+        "action",
         "amount",
         "filled",
         "status",
-        "order_settings",
         "raw",
     )
     list_filter = (
@@ -141,38 +145,8 @@ class OrderAdmin(admin.ModelAdmin):
     def get_rth(self, obj):
         return "no" if obj.outside_rth else "yes"
 
-    @short_description("commission")
-    def get_commission(self, obj):
-        trades = obj.trades.all()
-        commission = Decimal(0)
-        for trade in trades:
-            commission += trade.commission
-        return commission
-
-    @short_description("duration")
-    def get_duration(self, obj):
-        if obj.status != "Filled":
-            return None
-        last_trade = obj.trades.last()
-        if last_trade:
-            return int((last_trade.time - obj.created_at).total_seconds() - 32400)
-
-    @short_description("slippage")
-    def get_slippage(self, obj):
-        if not (obj.signal_price and obj.avg_fill_price):
-            return None
-        if obj.action.lower() == "sell":
-            slippage = obj.signal_price - obj.avg_fill_price
-        else:
-            slippage = obj.avg_fill_price - obj.signal_price
-        if slippage >= 0:
-            slippage = f"+{slippage}"
-        else:
-            slippage = f"−{abs(slippage)}"
-        return slippage
-
-    def has_add_permission(self, request):
-        return False
+    # def has_add_permission(self, request):
+    #     return False
 
     # def has_change_permission(self, request, obj=None):
     #     return False
@@ -183,7 +157,7 @@ class OrderAdmin(admin.ModelAdmin):
     def formfield_for_dbfield(self, db_field, **kwargs):
         if db_field.name == "raw":
             kwargs["widget"] = PrettyJSONWidget
-        return super().formfield_for_dbfield(db_field,**kwargs)
+        return super().formfield_for_dbfield(db_field, **kwargs)
 
 
 @admin.register(Position, site=admin_site)
