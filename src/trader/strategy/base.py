@@ -15,10 +15,10 @@ class BaseStrategy:
         self.exchange = kwargs.pop("exchange")
         self.name = str(kwargs.pop("strategy", None))
         self.sid: str = str(kwargs.get("sid"))
-        self.length = kwargs.get("length")
         self.params = namedtuple(self.name, kwargs.keys())(*kwargs.values())
         self.data = []
         self.warmed = False
+        self.log = logging.getLogger(self.name.lower())
 
         self.bars = self.exchange.bars
         self.quotes = self.exchange.quotes
@@ -53,6 +53,9 @@ class BaseStrategy:
 
     def update_order(self, *args, **kwargs):
         self.exchange.update_order(*args, **kwargs)
+
+    def cancel_order(self, *args, **kwargs):
+        self.exchange.cancel_order(*args, **kwargs)
 
     @property
     def market_system(self):

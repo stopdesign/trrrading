@@ -11,7 +11,7 @@ class BidAsk:
     sid: str
     bid: Decimal = Decimal("nan")
     ask: Decimal = Decimal("nan")
-    rth: bool = None
+    rth: bool | None = None
 
     def __repr__(self):
         return (

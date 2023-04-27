@@ -1,5 +1,6 @@
+from .base import BaseIndicator
 from .donchian_channels import DonchianChannels
-from .moving_average import MovingAverage
 from .hull_ma import HullMA
+from .moving_average import MovingAverage
 
-__all__ = ["DonchianChannels", "MovingAverage", "HullMA"]
+__all__ = ["BaseIndicator", "DonchianChannels", "HullMA", "MovingAverage"]

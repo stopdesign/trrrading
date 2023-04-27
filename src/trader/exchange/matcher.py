@@ -58,7 +58,7 @@ class LocalMatcher:
 
         side = "buy" if order.amount > 0 else "sell"
 
-        if order.type == "market":
+        if order.type == "MKT":
             execute = True
 
             # Не исполнять RTH-ордер, если сейчас не RTH
@@ -68,10 +68,10 @@ class LocalMatcher:
 
             price = self.exchange.get_price(order.sid, side)  # "mid"
 
-        if order.type == "limit":
+        if order.type == "LMT":
             pass
 
-        if order.type == "stop":
+        if order.type == "STP":
             # TODO: сделать нормальный алгоритм
             bar = self.exchange.bars[order.sid][-1]
 

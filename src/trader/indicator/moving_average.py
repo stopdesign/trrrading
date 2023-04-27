@@ -2,8 +2,7 @@ from talipp.indicators import SMA
 
 from trader.data_types import Bar
 from trader.exchange import Data
-
-from .base import BaseIndicator
+from trader.indicator import BaseIndicator
 
 
 class MovingAverage(BaseIndicator):
@@ -16,15 +15,19 @@ class MovingAverage(BaseIndicator):
         source: Data,
         *,
         skip_extra_hours: bool = True,
-        skip_zero_volume: bool = True,
+        skip_empty: bool = True,
         length: int = 10
     ):
         super().__init__(
             source,
             skip_extra_hours=skip_extra_hours,
-            skip_zero_volume=skip_zero_volume,
+            skip_empty=skip_empty,
             length=length,
         )
+
+    @property
+    def ready(self):
+        return bool(self.value.get("ma"))
 
     def init(self, **kwargs):
         length = kwargs.get("length", 10)
@@ -36,7 +39,7 @@ class MovingAverage(BaseIndicator):
         if self.skip_extra_hours and not bar.rth:
             skip = True
 
-        if self.skip_zero_volume and bar.volume == 0:
+        if self.skip_empty and bar.volume == 0:
             skip = True
 
         # Добавить данные в индикатор

@@ -20,13 +20,13 @@ class BaseIndicator:
         source: Data,
         *,
         skip_extra_hours: bool = True,
-        skip_zero_volume: bool = True,
+        skip_empty: bool = True,
         **kwargs,
     ):
         self.name = self.__class__.__name__
         self.source: Data = source
         self.skip_extra_hours = skip_extra_hours
-        self.skip_zero_volume = skip_zero_volume
+        self.skip_empty = skip_empty
         self.kwargs = kwargs
 
         self.source_version = None
@@ -36,6 +36,10 @@ class BaseIndicator:
         self.values_by_ts = {}
 
         self.init(**kwargs)
+
+    @property
+    def ready(self):
+        return True
 
     def __repr__(self) -> str:
         kwargs = ", ".join(f"{k}={v}" for k, v in self.kwargs.items())

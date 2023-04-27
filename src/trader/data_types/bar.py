@@ -11,8 +11,8 @@ class Bar:
     high: Decimal
     low: Decimal
     close: Decimal
-    volume: int = None
-    rth: bool = None
+    volume: int | None = None
+    rth: bool | None = None
 
     def __repr__(self):
         return f"Bar({self.sid}, date={self.date}, rth={self.rth}, v={self.volume})"

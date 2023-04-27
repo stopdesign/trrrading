@@ -28,6 +28,7 @@ class Consolidator(Data):
         self.data = data
         self.rule = rule
         self.sid = data.sid
+        self.rth = data.rth
         self.on_bar = on_bar
         self.bars: list[Bar] = []
         self.inner_bars: list[Bar] = []
@@ -56,7 +57,7 @@ class Consolidator(Data):
         }
         res["high"] = max([b.high for b in self.inner_bars])
         res["low"] = min([b.low for b in self.inner_bars])
-        res["volume"] = sum([b.volume for b in self.inner_bars])
+        res["volume"] = sum([b.volume or 0 for b in self.inner_bars])
         self.bars.append(Bar(**res))
         self.inner_bars = []
 

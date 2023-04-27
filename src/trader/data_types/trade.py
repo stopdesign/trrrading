@@ -8,8 +8,8 @@ class Trade:
     date: datetime
     sid: str
     price: Decimal
-    volume: int = None
-    rth: bool = None
+    volume: int | None = None
+    rth: bool | None = None
 
     def __repr__(self):
         return (

@@ -18,8 +18,7 @@ from talipp.indicators import HMA
 
 from trader.data_types import Bar
 from trader.exchange import Data
-
-from .base import BaseIndicator
+from trader.indicator import BaseIndicator
 
 
 class HullMA(BaseIndicator):
@@ -33,15 +32,19 @@ class HullMA(BaseIndicator):
         source: Data,
         *,
         skip_extra_hours: bool = True,
-        skip_zero_volume: bool = True,
+        skip_empty: bool = True,
         length: int = 10
     ):
         super().__init__(
             source,
             skip_extra_hours=skip_extra_hours,
-            skip_zero_volume=skip_zero_volume,
+            skip_empty=skip_empty,
             length=length,
         )
+
+    @property
+    def ready(self):
+        return bool(self.value.get("hma") and self.value.get("prev_hma"))
 
     def init(self, **kwargs):
         length = kwargs.get("length", 10)
@@ -53,7 +56,7 @@ class HullMA(BaseIndicator):
         if self.skip_extra_hours and not bar.rth:
             skip = True
 
-        if self.skip_zero_volume and bar.volume == 0:
+        if self.skip_empty and bar.volume == 0:
             skip = True
 
         # Добавить данные в индикатор
@@ -62,5 +65,5 @@ class HullMA(BaseIndicator):
 
         return {
             "hma": self.data[-1] if self.data else None,
-            "prev_hma": self.data[-3] if len(self.data) > 5 else None,
+            "prev_hma": self.data[-3] if len(self.data) >= 3 else None,
         }

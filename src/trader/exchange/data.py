@@ -1,4 +1,4 @@
-from trader.data_types import Bar
+from trader.data_types import Bar, Trade
 
 
 class Data:
@@ -31,12 +31,13 @@ class Data:
             self.version = int(bar.date.timestamp())
             self.bars.append(bar)
 
-    def trigger_events(self) -> None:
-        # bars
-        if self.on_bar and self.bars:
-            bar = self.bars[-1]
-            self.on_bar(bar)
+    def trigger_events(self, event, payload) -> None:
 
-        # FIXME: здесь я ожидаю уже побитые бары или реальные сделки
-        # # ticks ???
-        # if self.on_tick and self.bars:
+        if self.rth and not payload.rth:
+            return
+
+        if event == "bar" and self.on_bar:
+            self.on_bar(payload)
+
+        if event == "tick" and getattr(self, "on_tick", None) and self.on_tick:
+            self.on_tick(payload)

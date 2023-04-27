@@ -106,8 +106,12 @@ class Trader:
         # Прогреть индикторы прогоном исторических данных
         self.data_provider.warm_up()
 
+        # Проверка прогретости индикаторов
+        for indicator in self.indicators:
+            if not indicator.ready:
+                log.error(f"Indicator is not ready: {indicator}")
+
         # Отметить, что стратегии прогреты.
-        # Может, лучше сделать это внутри стратегии?
         for strategy in self.strategies:
             strategy.warmed = True
 
@@ -152,17 +156,15 @@ class Trader:
             # Теперь источники данных и консолидаторы могут дернуть события
             for source in self.data_sources + self.consolidators:
                 if source.sid == payload.sid:
-                    source.trigger_events()
+                    source.trigger_events(event, payload)
 
             # # 4. Запустить обработку ордеров
             # self.exchange.process_orders()
 
         if event == "tick":
-            # FIXME: переделать на работу через data_sources
-            # 3. Передать trade в стратегии
-            for strategy in self.strategies:
-                if strategy.sid == payload.sid:
-                    strategy.on_tick(copy(payload))
+            for source in self.data_sources + self.consolidators:
+                if source.sid == payload.sid:
+                    source.trigger_events(event, payload)
 
             # 4. Запустить обработку ордеров
             self.exchange.process_orders()
