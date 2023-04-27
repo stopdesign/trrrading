@@ -824,21 +824,33 @@ class Sync:
                 log.info(f"Create contract: {c.sid}")
         return contracts_to_create
 
-    def sync_completed_order_status(self):
+    def fix_inactive_order_status(self):
         """
-        Идиотская необходимость регулярно проверять статус ордера,
-        т.к. Inactive без уведомления становится Cancelled.
+        Inactive становится Cancelled, но не присылают OrderStatus.
+        Нужно вызывать список ордеров и менять статус принудительно.
         """
-        orders = self.ib.get_completed_api_orders()
-        for _, order, orderState in orders:
-            if not order.permId:
+        account = Account.objects.get(uid=self.ib.account_id)
+        utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        too_old = utc_now - timedelta(minutes=10)
+        recent_inactive_orders = Order.objects.filter(
+            account=account,
+            status="Inactive",
+            created_at__gt=too_old,
+        )
+        # Свежие ордеры в статусе Inactive по permId
+        orders_by_id = {o.order_id: o for o in recent_inactive_orders}
+
+        if not orders_by_id:
+            return
+
+        ib_orders = self.ib.get_completed_api_orders()
+        for _, order, state in ib_orders:
+            if order.permId not in orders_by_id:
                 continue
-            try:
-                db_order = Order.objects.get(order_id=order.permId)
-            except Order.DoesNotExist:
-                log.warn(f"Order not found in DB by pId: {order.permId}")
-            else:
-                db_order.status = str(orderState.status)
+            db_order = orders_by_id[order.permId]
+            if db_order.status != state.status:
+                log.warning(f"{db_order}, fix status: {state.status}")
+                db_order.status = str(state.status)
                 db_order.save(update_fields=["status"])
 
     def sync_orders(self, account, ib_orders):
@@ -1042,7 +1054,7 @@ class Sync:
         # Получить executions
         if monotonic() - self.prev_executions > 13:
             self.prev_executions = monotonic()
-            self.sync_completed_order_status()
+            self.fix_inactive_order_status()
             self.get_executions()
 
         # Переподписка, если что-то отвалилось
