@@ -209,13 +209,14 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
         end_dt = t1.strftime("%Y%m%d-%H:%M:%S")
 
         # Запрос к IB
-        day_data = ib._get_historical_data(
+        day_data = ib.get_historical_data(
             contract=contract,
             end_dt=end_dt,
             duration="86400 S",
             bar_size="1 min",
             data_type=data_type,
             use_rth=0,
+            timeout=100,
         )
 
         # Если в работе биржи есть перерывы, то в 86400 рабочих секунд

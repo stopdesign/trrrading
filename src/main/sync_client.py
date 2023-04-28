@@ -93,6 +93,7 @@ class SyncClient:
         db_positions = DbPosition.objects.filter(account=self.db_account)
         db_positions = db_positions.order_by("-updated_at")[:100]
 
+        sids = list(self.positions.keys())
         for key in list(self.positions.keys()):
             self.positions.pop(key)
         for position in db_positions:
@@ -103,6 +104,10 @@ class SyncClient:
                 amount=position.amount,
                 avg_price=position.avg_price,
             )
+        for sid in sids:
+            if sid not in self.positions:
+                zero = Position(sid, capital=Decimal(100_000), amount=Decimal(0))
+                self.positions[sid] = zero
 
         # FIXME: обращения к self.orders и self.positions из разных потоков
         self.orders.clear()
