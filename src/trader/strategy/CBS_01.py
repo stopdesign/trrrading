@@ -32,7 +32,7 @@ class CBS_01(BaseStrategy):
         # return int(100_000 / price)
 
     def stop_order(self, amount, price):
-        order = Order(self.sid, "STP", amount, stop_price=price, rth=True)
+        order = Order(self.sid, "STP", amount, stop_price=price, rth=False)
         self.place_order(order)
 
     def on_bar(self, bar: Bar):
