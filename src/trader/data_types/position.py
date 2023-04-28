@@ -5,8 +5,8 @@ from decimal import Decimal
 @dataclass
 class Position:
     sid: str
-    capital: Decimal
-    amount: Decimal = Decimal("nan")
+    capital: Decimal = Decimal(100_000)
+    amount: Decimal = Decimal(0)
     avg_price: Decimal = Decimal("nan")
     profit: Decimal = Decimal(0)  # реализованный профит без учета slippage
     max_profit: Decimal = Decimal(0)

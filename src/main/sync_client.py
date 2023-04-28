@@ -1,8 +1,10 @@
 import logging
 from decimal import Decimal
-from time import sleep
+from time import monotonic, sleep
 
 import simplejson as json
+from django.db.models import Q
+from termcolor import colored
 
 from main.models import Account as DbAccount
 from main.models import Order as DbOrder
@@ -38,6 +40,9 @@ class SyncClient:
 
         self.db_account = DbAccount.objects.get(uid=self.account["uid"])
         self.update_broker_data({"types": ["init"]})
+
+    ########################################
+    # Отправка команд в Sync
 
     def place_order(self, order: Order):
         action = {"action": "create_order", "order": order.as_dict()}
@@ -85,52 +90,94 @@ class SyncClient:
             except Exception as e:
                 log.exception(e)
 
+    ########################################
+    # Актуализация состояния объектов
+
     def update_broker_data(self, payload):
         # TODO: Смотреть payload и обновлять только нужный тип объектов
-        # init обновляет всё
 
-        # обновить данные в self.positions, self.account...
+        dt = monotonic()
+        self.sync_positions()
+        self.sync_orders()
+        txt = f"update_broker_data done in {(monotonic() - dt):0.3f} sec, "
+        txt += f"{len(self.positions)} positions, {len(self.orders)} orders"
+        log.info(colored(txt, "green"))
+
+    def sync_positions(self):
+        """
+        В self.positions должны быть все позиции из базы плюс нулевые
+        позиции для инструментов, которые есть в стратегиях, но не в базе.
+
+        Не хотелось бы каждый раз создавать новый list.
+
+        Данные будут использованы в другом потоке (иногда в тот же момент).
+        """
+
         db_positions = DbPosition.objects.filter(account=self.db_account)
-        db_positions = db_positions.order_by("-updated_at")[:100]
+        db_positions = db_positions.select_related("contract")
+        db_positions_by_sid = {p.contract.sid: p for p in db_positions}
 
-        sids = list(self.positions.keys())
-        for key in list(self.positions.keys()):
-            self.positions.pop(key)
-        for position in db_positions:
-            sid = position.contract.sid
-            self.positions[sid] = Position(
-                sid=sid,
-                capital=Decimal(100_000),
-                amount=position.amount,
-                avg_price=position.avg_price,
-            )
+        # Все ключи, которые должны быть в self.positions
+        sids = set(list(self.positions.keys()) + list(db_positions_by_sid.keys()))
+
         for sid in sids:
-            if sid not in self.positions:
-                zero = Position(sid, capital=Decimal(100_000), amount=Decimal(0))
-                self.positions[sid] = zero
+            if db_position := db_positions_by_sid.get(sid):
+                amount = Decimal(db_position.amount)
+                price = db_position.avg_price or Decimal("nan")
+            else:
+                amount = Decimal(0.0)
+                price = Decimal("nan")
+            self.positions[sid] = Position(sid, amount=amount, avg_price=price)
 
-        # FIXME: обращения к self.orders и self.positions из разных потоков
-        self.orders.clear()
+    def sync_orders(self):
+        """
+        Актуализация состояния ордеров. Обновить всё старое и добавить новое.
 
-        # FIXME: вытащить актуальные ордеры, а не хрен знает что
-        db_orders = DbOrder.objects.filter(account=self.db_account)
-        db_orders = db_orders.order_by("-updated_at")[:100]
+        Ордеры с local_id должны остаться в массиве, у них обновляются поля.
 
-        for order in db_orders:
-            amount = order.amount
-            if order.action == DbOrder.Side.sell:
-                amount = -order.amount
-            # log.error(f"db order: {order}, local_id: {order.local_id}")
-            o = Order(
-                sid=order.contract.sid,
-                # FIXME: хуйня какая-то (чтобы конструктор не создал local_id)
-                local_id=order.local_id or "",
-                type=order.type,
+        Ордеры без local_id не попадают в выборку.
+        Они были созданы кем-то другим, пусть сами и разбираются.
+
+        Можно ограничить выборку только теми sid, которые нужны боту.
+
+        Все активные ордеры должны попасть в массив, даже если они старые.
+        """
+        sids = list(self.positions.keys())
+        local_ids = {o.local_id for o in self.orders if o.local_id}
+
+        done = ["Cancelled", "Filled"]
+
+        db_orders = DbOrder.objects.select_related("contract")
+        db_orders = db_orders.filter(account=self.db_account, contract__sid__in=sids)
+
+        # Выбрать ордеры с известными local_id или активным статусом
+        db_orders = db_orders.filter(Q(local_id__in=local_ids) | ~Q(status__in=done))
+
+        # Исключить ордеры без local_id
+        db_orders = db_orders.exclude(Q(local_id__isnull=True) | Q(local_id=""))
+
+        db_orders_by_local_id = {o.local_id: o for o in db_orders}
+
+        for order in self.orders:
+            db_order = db_orders_by_local_id.get(order.local_id)
+
+            if not db_order:
+                log.error(f"Order {order} not found in the DB")
+                order.status = "Gone"
+                continue
+
+            amount = db_order.amount
+            if db_order.action == DbOrder.Side.sell:
+                amount = -db_order.amount
+
+            order = Order(
+                sid=db_order.contract.sid,
+                local_id=db_order.local_id,
+                type=db_order.type,
                 amount=amount,
-                status=order.status,
-                fill_price=order.avg_fill_price,
-                limit_price=order.limit_price,
-                stop_price=order.stop_price,
-                created_at=order.created_at,
+                status=db_order.status,
+                fill_price=db_order.avg_fill_price,
+                limit_price=db_order.limit_price,
+                stop_price=db_order.stop_price,
+                created_at=db_order.created_at,
             )
-            self.orders.append(o)

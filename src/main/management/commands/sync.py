@@ -288,7 +288,7 @@ class IBSyncExtended(IBSync):
         avg_price = avg_price * db_contract.price_magnifier
 
         db_position.avg_price = avg_price
-        db_position.unrealized_pnl = unrealizedPNL
+        db_position.unrealized_pnl = Decimal(unrealizedPNL or "nan")
         db_position.save(update_fields=["avg_price", "unrealized_pnl"])
 
     def openOrder(self, orderId, contract, order, orderState):
@@ -388,8 +388,8 @@ class IBSyncExtended(IBSync):
             db_order = update_or_create_order(account, order, db_contract, state)
 
             # Поля, которые обновляются только этим событием
-            db_order.avg_fill_price = av_fill_price
-            db_order.filled = filled
+            db_order.avg_fill_price = Decimal(av_fill_price or "nan")
+            db_order.filled = int(filled or 0)
             db_order.status = status
 
             db_order.save()
@@ -576,6 +576,11 @@ class IBSyncExtended(IBSync):
                 continue
             if ib_order.orderRef == local_id:
                 sid = self.sid_for_contract(contract)
+                if ib_order.clientId != self.clientId:
+                    txt = f"Can't update other client's order: {sid} {ib_order}"
+                    log.error(txt)
+                    self.tg.message(txt)
+                    return
                 if ib_order.orderId:
                     # собирается новый ib_order
                     updated_ib_order = CustomIBOrder(contract, data)
@@ -610,6 +615,11 @@ class IBSyncExtended(IBSync):
                 continue
             if ib_order.orderRef == local_id or ib_order.permId == order_id:
                 sid = self.sid_for_contract(contract)
+                if ib_order.clientId != self.clientId:
+                    txt = f"Can't cancel other client's order: {sid} {ib_order}"
+                    log.error(txt)
+                    self.tg.message(txt)
+                    return
                 if ib_order.orderId:
                     self.cancelOrder(ib_order.orderId, "")
                     txt = f"Cancel order: {sid} {ib_order}"
@@ -906,6 +916,7 @@ class Sync:
         account = Account.objects.get(uid=self.ib.account_id)
 
         positions = Position.objects.filter(account=account)
+        positions = positions.select_related("contract")
         positions_by_sid = {p.contract.sid: p for p in positions}
 
         contracts = Contract.objects.all()
