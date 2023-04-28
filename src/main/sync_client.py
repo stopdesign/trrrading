@@ -145,7 +145,7 @@ class SyncClient:
         sids = list(self.positions.keys())
         local_ids = {o.local_id for o in self.orders if o.local_id}
 
-        done = ["Cancelled", "Filled"]
+        done = ["Cancelled", "Filled", "Error"]
 
         db_orders = DbOrder.objects.select_related("contract")
         db_orders = db_orders.filter(account=self.db_account, contract__sid__in=sids)
@@ -158,13 +158,34 @@ class SyncClient:
 
         db_orders_by_local_id = {o.local_id: o for o in db_orders}
 
+        # Обновление известных ордеров
         for order in self.orders:
-            db_order = db_orders_by_local_id.get(order.local_id)
-
-            if not db_order:
+            try:
+                db_order = db_orders_by_local_id.pop(order.local_id)
+            except KeyError:
                 log.error(f"Order {order} not found in the DB")
                 order.status = "Gone"
                 continue
+
+            log.info(f"Updating {db_order.local_id} {db_order.status}")
+
+            amount = db_order.amount
+            if db_order.action == DbOrder.Side.sell:
+                amount = -db_order.amount
+
+            order.sid = db_order.contract.sid
+            order.local_id = db_order.local_id
+            order.type = db_order.type
+            order.amount = amount
+            order.status = db_order.status
+            order.fill_price = db_order.avg_fill_price
+            order.limit_price = db_order.limit_price
+            order.stop_price = db_order.stop_price
+            order.created_at = db_order.created_at
+
+        # Новые ордеры
+        for db_order in db_orders_by_local_id.values():
+            log.info(f"Creating {db_order.local_id} {db_order.status}")
 
             amount = db_order.amount
             if db_order.action == DbOrder.Side.sell:
@@ -181,3 +202,6 @@ class SyncClient:
                 stop_price=db_order.stop_price,
                 created_at=db_order.created_at,
             )
+            self.orders.append(order)
+
+        # TODO: через какое-то время выбрасывать из списка ордеры в статусе done
