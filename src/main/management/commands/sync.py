@@ -283,12 +283,20 @@ class IBSyncExtended(IBSync):
             log.error(txt)
             self.tg.message(txt)
 
-        avg_price = Decimal(averageCost) / db_contract.multiplier
-        avg_price = round(avg_price / db_contract.min_tick) * db_contract.min_tick
-        avg_price = avg_price * db_contract.price_magnifier
+        # TODO: переделать парсинг на Position.from_ib
+        if averageCost is not None and averageCost < 10**10:
+            avg_price = Decimal(averageCost) / db_contract.multiplier
+            avg_price = round(avg_price / db_contract.min_tick) * db_contract.min_tick
+            avg_price = avg_price * db_contract.price_magnifier
+            db_position.avg_price = avg_price
+        else:
+            db_position.avg_price = None
 
-        db_position.avg_price = avg_price
-        db_position.unrealized_pnl = Decimal(unrealizedPNL or "nan")
+        if unrealizedPNL is not None and unrealizedPNL < 10**10:
+            db_position.unrealized_pnl = Decimal(unrealizedPNL)
+        else:
+            db_position.unrealized_pnl = None
+
         db_position.save(update_fields=["avg_price", "unrealized_pnl"])
 
     def openOrder(self, orderId, contract, order, orderState):
@@ -343,7 +351,7 @@ class IBSyncExtended(IBSync):
 
         self.prev_time["orderStatus"] = monotonic()
 
-        av_fill_price = avgFillPrice if avgFillPrice < 10**10 else None
+        av_fill_price = Decimal(avgFillPrice) if avgFillPrice < 10**10 else None
 
         if permId and permId in self._orders_by_pid:
             # TODO: для активного ордера проверить время его получения
@@ -388,7 +396,7 @@ class IBSyncExtended(IBSync):
             db_order = update_or_create_order(account, order, db_contract, state)
 
             # Поля, которые обновляются только этим событием
-            db_order.avg_fill_price = Decimal(av_fill_price or "nan")
+            db_order.avg_fill_price = av_fill_price
             db_order.filled = int(filled or 0)
             db_order.status = status
 
