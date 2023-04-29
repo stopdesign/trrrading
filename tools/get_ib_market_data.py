@@ -5,17 +5,15 @@
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from time import sleep, monotonic
+from time import monotonic, sleep
 
 import click
 import coloredlogs
-from ib_sync import IbContract, IBSync, IBThread
+from ib_sync import Contract, IBSync, IBThread
 from pandas_market_calendars import MarketCalendar
 
 # Логгер для этого файла
 log = logging.getLogger()
-
-# log.setLevel(logging.INFO)
 
 coloredlogs.install(
     "INFO", fmt="%(asctime).19s • %(levelname).1s • %(name)s • %(message)s"
@@ -91,15 +89,26 @@ class IBSyncData(IBSync):
 
 
 def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
-
     symbol, exchange = str(symbol).upper().split(".")
 
-    # Абстрактное описание контракта, не включающее дату экспирации
-    base_contract = IbContract(symbol, secType="FUT", exchange=exchange)
+    base_contract = Contract()
+    base_contract.symbol = symbol
+    base_contract.secType = "FUT"
+    base_contract.exchange = exchange
     base_contract.includeExpired = True
 
     # Получение списка контрактов с разными датами
-    details = ib.get_contract_details(base_contract)
+    details = None
+    for _ in range(10):
+        try:
+            details = ib.get_contract_details(base_contract)
+            break
+        except Exception as e:
+            log.warning(f"Error get_contract_details: {e}")
+            sleep(10)
+    else:
+        log.error(f"Can't get_contract_details for {symbol}")
+        return
 
     # Сортировка по дате экспирации (или типа того)
     details = [(c.contract.lastTradeDateOrContractMonth, c) for c in details]
@@ -123,7 +132,18 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
             continue
 
         # Получить первый день контракта
-        ts = ib.get_head_timestamp(contract)
+        ts = None
+        for _ in range(10):
+            try:
+                ts = ib.get_head_timestamp(contract)
+                break
+            except Exception as e:
+                log.warning(f"Error get_head_timestamp: {e}")
+                sleep(10)
+        else:
+            log.error(f"Can't get_head_timestamp for {contract}")
+            return
+
         first_day = datetime.utcfromtimestamp(int(ts)).date()
 
         # Последние две недели обычно можно не грузить
@@ -135,11 +155,18 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
         if dt_1 >= dt_2:
             continue
 
-        get_one_contract(ib, contract, data_type, dt_1, dt_2, force)
+        for _ in range(10):
+            try:
+                get_one_contract(ib, contract, data_type, dt_1, dt_2, force)
+                break
+            except Exception as e:
+                log.warning(f"Error get_one_contract: {e}")
+                sleep(10)
+        else:
+            log.error(f"Can't get_one_contract: {contract}")
 
 
 def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
-
     # Разные заголовки и переменные для разных типов данных
     if data_type == "TRADES":
         header = "t,o,h,l,c,vw,v,n\n"
@@ -163,7 +190,6 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
     # Создание имени файла и пути по шаблону
     f_name = f"{sid}-{data_type.lower()}.csv"
     f_path = os.path.abspath(f"{BASE_DIR}/{exchange}/{f_name}")
-
 
     # Проверить наличие файла и добыть последний сохраненный интервал
     valid_file_with_data = False
@@ -263,15 +289,15 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
 @click.option("--trades/--no-trades", is_flag=True, default=True)
 def main(**kwargs):
     """
-    python get_ib_market_data.py mes.cme --start 2020-12-20
+    python get_ib_market_data.py --start 2021-01-02 mes.cme
 
-    Examples:
-        mes.cme
-        mym.cbot
-        hg.nymex
-        aapl.nasdaq
-        fcx.nyse
-        copx.arca
+    mes.cme nq.cme mym.cbot
+    ng.nymex hg.nymex
+    zl.cbot zs.cbot zo.cbot zr.cbot zc.cbot zw.cbot ke.cbot
+
+    aapl.nasdaq
+    fcx.nyse
+    copx.arca
     """
     dt = datetime.now()
 
