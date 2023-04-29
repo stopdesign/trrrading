@@ -4,7 +4,11 @@ import { html, React, useState, useEffect } from "./deps.js"
 const Backtest = ({ data, curResult, setResult }) => {
   return html`
     <tr
-      onClick=${() => setResult(data)}
+      onClick=${() => {
+        localStorage.removeItem("range_left");
+        localStorage.removeItem("range_right");
+        setResult(data)
+      }}
       className=${data === curResult ? "active" : ""}
     >
       <td>${data.replace('_', ', ')}</td>

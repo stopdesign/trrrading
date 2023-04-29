@@ -180,6 +180,7 @@ const Order = ({ data, curOrder, setOrder }) => {
           <td className="instrument">${sid}</td>
           <td className="order_id hide_mobile">${data.order_id}</td>
           <td className="local_id">${data.local_id}</td>
+          <td className="rth">${data.outside_rth ? "" : "RTH"}</td>
           <td className="order_type">
             ${data.algo_strategy && html`<span>${data.algo_strategy}</span>`}
             ${data.type}
@@ -449,6 +450,7 @@ const Orders = ({ account, symbol }) => {
                   <td><i>contract</i></td>
                   <td className=hide_mobile><i>order_id</i></td>
                   <td><i>local_id</i></td>
+                  <td><i>rth</i></td>
                   <td><i>type</i></td>
                   <td><i>side</i></td>
                   <td><i>amnt</i></td>

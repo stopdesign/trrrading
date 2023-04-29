@@ -86,6 +86,10 @@ export class NavChart {
 
       const rangeClient = range.map(this.mainChart.xScale)
 
+      // Сохранение зума
+      localStorage.setItem("range_left", rangeClient[0]);
+      localStorage.setItem("range_right", rangeClient[1]);
+
       // подвинуть границы brush под границы основного графика
       this.chart.call(this.brush.move, rangeClient)
 
@@ -112,6 +116,16 @@ export class NavChart {
         .tickFormat((val) => this.mainChart.timeTickFormat(val))
       )
     this.drawAxes();
+
+    // Восстановление сохраненного зума
+    const range_left = localStorage.getItem("range_left");
+    const range_right = localStorage.getItem("range_right");
+    if (range_left !== undefined && range_right !== undefined) {
+      const rangeClient = [parseInt(range_left), parseInt(range_right)]
+      this.onBrushed({sourceEvent: 1, selection: rangeClient})
+      this.onBrushed({sourceEvent: 1, selection: rangeClient})
+      this.mainChart.moveCrosshair(false)
+    }
 
   }
 
