@@ -14,13 +14,12 @@ import yaml
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from ib_sync import IBSync, IBThread
-from ibapi.order import Order as IBOrder
 from termcolor import colored
 
 from main.models import Account, Contract, Order, OrderEvent, Position, Trade
 from project.helpers.alert import TgAlert
 
-from .ib_orders import CustomIBOrder, StateNew  # FIXME: унести в ib_sync
+from .ib_orders import CustomIBOrder, StateNew, WhatIfOrder  # FIXME: унести в ib_sync
 
 # Логгер для этого файла
 log = logging.getLogger("sync")
@@ -486,29 +485,20 @@ class IBSyncExtended(IBSync):
         """
         Создается whatIf ордер, чтобы проверить openOrder callback.
         """
+        wtf_order = WhatIfOrder()
 
         # Синхронно запрашиваю новый nextValidOrderId
-        oid = self.get_next_order_id()
+        wtf_order.orderId = self.get_next_order_id()
 
         contract = self.contract_for_sid("ARCA_SPY")
 
-        # TODO: вынести в ib_orders
-
-        order = IBOrder()
-        order.orderId = oid
-        order.action = "BUY"
-        order.totalQuantity = Decimal(1)
-        order.orderType = "LMT"
-        order.lmtPrice = 100
-        order.whatIf = True
-
         # Синхронная отправка ордера
         try:
-            contract, order_res, orderState = self.place_order(contract, order)
+            contract, order_res, orderState = self.place_order(contract, wtf_order)
             txt = f"WTF order: {order_res} | Status: {orderState.status}"
             log.info(colored(txt, "white"))
         except Exception as e:
-            txt = f"Test order error: {order} {e}"
+            txt = f"Test order error: {wtf_order} {e}"
             log.error(txt)
             self.tg.message(txt)
 
@@ -577,7 +567,7 @@ class IBSyncExtended(IBSync):
 
         inactive = ["Filled", "Cancelled", "ApiCancelled", "Inactive"]
 
-        # TODO: добыть ордер из базы, создать OrderEvent
+        # TODO: добыть ордер из базы, создать OrderEvent (только при изменениях)
 
         for ib_order, contract, orderState in self._orders_by_pid.values():
             if orderState.status in inactive:

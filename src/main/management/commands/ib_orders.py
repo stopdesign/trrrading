@@ -23,9 +23,19 @@ def action_and_amount(data: dict) -> tuple[str, Decimal]:
     return action, amount
 
 
+class WhatIfOrder(Order):
+    def __init__(self) -> None:
+        super().__init__()
+        self.action = "BUY"
+        self.totalQuantity = Decimal(1)
+        self.orderType = "LMT"
+        self.lmtPrice = 100
+        self.whatIf = True
+
+
 class CustomIBOrder(Order):
     """
-    Штука создает IB Order.
+    Штука создает IB Order по заданной конфигурации.
     """
 
     def __init__(self, contract: Contract, data: dict) -> None:
