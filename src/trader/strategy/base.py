@@ -1,5 +1,6 @@
 import logging
 from collections import namedtuple
+from secrets import token_hex
 
 from trader.data_types import Order
 from trader.exchange import BaseExchange, Consolidator, Data
@@ -18,6 +19,7 @@ class BaseStrategy:
         self.params = namedtuple(self.name, kwargs.keys())(*kwargs.values())
         self.data = []
         self.warmed = False
+        self.uid = token_hex(2)
         self.log = logging.getLogger(self.name.lower())
 
         self.bars = self.exchange.bars
@@ -58,8 +60,9 @@ class BaseStrategy:
         self.exchange.cancel_order(*args, **kwargs)
 
     @property
-    def market_system(self):
-        return f"{self.sid}-{self.name}"
+    def market_system(self) -> str:
+        sid = self.sid.split("-")[0]
+        return f"{sid}-{self.name}-{self.uid}"
 
     @property
     def indicators(self):

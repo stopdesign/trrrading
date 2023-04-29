@@ -100,6 +100,7 @@ class PolygonAdapter(BaseSource):
 
         for sid in list(sids):
             exchange, ticker = sid.split("_", 1)
+            ticker = ticker.split("-")[0]
 
             if self.offline:
                 # Фьючерсы из ib

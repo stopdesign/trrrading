@@ -61,10 +61,11 @@ def bt_strategies(request):
     files = glob.glob(f"{RES_DIR}/{result}/*-ohlc.jsonl")
     for file in files:
         file = os.path.basename(file)
-        instrument, strategy, data_type = file.split("-")
+        split = file.split("-")
+        instrument, strategy, var, _ = split
         res.append(
             {
-                "id": f"{instrument}-{strategy}",
+                "id": f"{instrument}-{strategy}-{var}",
                 "strategy": strategy,
                 "instrument": instrument,
             }

@@ -3,6 +3,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from secrets import token_hex
+from typing import TYPE_CHECKING
+
+# Питон, который мы заслужили, блядь
+if TYPE_CHECKING:
+    from trader.strategy.base import BaseStrategy
 
 
 @dataclass  # (slots=True) - не будет работать с as_dict
@@ -16,7 +21,7 @@ class Order:
     stop_price: float = float("nan")
     fill_price: Decimal = Decimal("nan")
     created_at: datetime | None = None
-    strategy: None = None
+    strategy: "BaseStrategy | None" = None
     rth: bool = True
     ib_algo: dict | None = None
 

@@ -71,7 +71,7 @@ class LocalMatcher:
         if order.type == "LMT":
             pass
 
-        if order.type == "STP":
+        if order.type in ["STP", "STP LMT"]:
             # TODO: сделать нормальный алгоритм
             bar = self.exchange.bars[order.sid][-1]
 
@@ -109,8 +109,7 @@ class LocalMatcher:
 
             dt = self.exchange.dt_last.replace(second=0)
             log.info(
-                f"Fill {order.local_id}, {dt}  "
-                f"{side.upper():>4} {order.sid:>10},  "
+                f"Fill {dt} {side.upper():>4} {order.sid:>10},  "
                 f"amnt: {abs(order.amount):6.0f},  "
                 f"price: {order.fill_price:0.2f},  "
                 f"trade: {profit_str},  "
@@ -123,7 +122,7 @@ class LocalMatcher:
             data = {
                 "dt": self.exchange.dt_last,
                 "time": dt_to_ts(self.exchange.dt_last),
-                "ms": order.strategy.market_system,
+                "ms": order.strategy.market_system if order.strategy else "",
                 "sid": order.sid,
                 "side": side,
                 "amount": abs(order.amount),
