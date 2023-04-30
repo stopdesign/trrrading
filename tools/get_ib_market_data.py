@@ -242,7 +242,7 @@ def get_one_contract(ib: IBSync, contract, data_type, dt_start, dt_end, force):
             bar_size="1 min",
             data_type=data_type,
             use_rth=0,
-            timeout=100,
+            timeout=30,
         )
 
         # Если в работе биржи есть перерывы, то в 86400 рабочих секунд
