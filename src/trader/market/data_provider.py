@@ -1,9 +1,9 @@
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
-from .event_manager import EventManager
+from .payload_parser import PayloadParser
 from .market_calendar import MarketCalendar
 from .sources.base_source import BaseSource
 
@@ -35,9 +35,9 @@ class DataProvider:
         on_event: Callable,
         dt_prior: datetime,
         dt_start: datetime,
-        dt_end: datetime|None,
+        dt_end: datetime | None,
         history: BaseSource,
-        feed: BaseSource|None = None,
+        feed: BaseSource | None = None,
     ):
         self.instruments = instruments
 
@@ -49,38 +49,75 @@ class DataProvider:
         # Инициализация календаря для всех нужных символов и дней
         self.schedule = MarketCalendar(self.instruments, dt_prior, dt_end)
 
+        # Источники данных
         self.history = history
         self.feed = feed
 
-        self.history.schedule = self.schedule
-
         # Умеет отправлять сообщения о новых событиях
-        self.event_manager = EventManager(on_event)
+        self.payload_parser = PayloadParser(on_event)
 
-        self.last_processed_dt = defaultdict(lambda: datetime.min)
+        self.prev_processed_bar_dt = defaultdict(lambda: datetime.min)
+        self.in_the_gap: dict = defaultdict(lambda: True)
+
+    def find_prev_not_rth(self, sid, dt) -> datetime | None:
+        """
+        Ищется интервал, после которого данные должны быть непрерывны.
+        Сейчас проверка работает по RTH, но можно сделать как-то иначе.
+        """
+        cur_dt = dt
+        for _ in range(5000):
+            cur_dt -= timedelta(minutes=1)
+            if not self.schedule.is_rth(sid, cur_dt):
+                return cur_dt + timedelta(minutes=1)
+
+    def validate_bar_time(self, payload):
+        """
+        Проверка правильного порядка интервалов
+        и величины промежутков между ними.
+        """
+        process = True
+        sid, dt = payload["sid"], payload["dt"]
+
+        # Bar
+        if "o" in payload:
+            gap_t1 = self.prev_processed_bar_dt[sid] + timedelta(minutes=1)
+            bar_gap = int((dt - gap_t1).total_seconds() / 60)
+
+            if 0 < bar_gap < 10**10:
+                prev_min = dt - timedelta(minutes=1)
+                if not self.in_the_gap[sid] and self.schedule.is_rth(sid, prev_min):
+                    self.in_the_gap[sid] = True
+                    gap_t1 = self.find_prev_not_rth(sid, dt) or gap_t1
+                    gap_min = int((dt - gap_t1).total_seconds() / 60)
+                    log.error(f"Large gap: {sid}, {dt}, {gap_min} min")
+            else:
+                self.in_the_gap[sid] = False
+
+            # Нарушение последовательности или дублирование
+            if self.prev_processed_bar_dt[sid] >= dt:
+                log.error(f"Interval has been processed: {sid}, {dt}")
+                process = False
+
+            self.prev_processed_bar_dt[sid] = dt
+
+        return process
 
     def on_market_event(self, payload):
         """
-        Обработка данных из события, передача в event_manager
+        Обработка данных из события, передача в payload_parser
         """
 
-        # Дополнить payload информацией о расписании биржи
         if "sid" in payload and "dt" in payload:
+            # Дополнить payload информацией о расписании биржи
+            payload["rth"] = self.schedule.is_rth(payload["sid"], payload["dt"])
 
-            dt, sid = payload["dt"], payload["sid"]
+            if not self.validate_bar_time(payload):
+                return
 
-            # Для OHLC проверить, что эти данные новее всех уже обработанных
-            if "o" in payload:
-                if self.last_processed_dt[sid] >= dt:
-                    log.warning(f"Interval has been processed: {sid}, {dt}")
-                    return
-                self.last_processed_dt[sid] = dt
-
-            # Приходится здесь размечать RTH, т.к. здесь есть расписание
-            payload["rth"] = self.schedule.is_rth(sid, dt)
-
-            # Формат данных, проверка large gap и вызов Trader.on_event
-            self.event_manager.notify(payload)
+            # - парсинг payload различных типов
+            # - эмуляция tick и quotes из bar
+            # - вызов trader.on_event
+            self.payload_parser.notify(payload)
         else:
             log.warning(f"Unknown format: {payload}")
 
@@ -119,7 +156,6 @@ class DataProvider:
 
         for ts, instrument, payload in records:
             self.on_market_event(payload)
-
 
     def listen(self):
         """

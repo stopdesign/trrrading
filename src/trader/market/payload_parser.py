@@ -6,7 +6,7 @@ from typing import Callable
 
 from trader.data_types import Bar, BidAsk, Trade
 
-log = logging.getLogger("event_manager")
+log = logging.getLogger("payload_parser")
 
 
 def parse_dt(dt: str) -> datetime:
@@ -15,7 +15,7 @@ def parse_dt(dt: str) -> datetime:
     return datetime.strptime(dt, "%Y-%m-%d %H:%M:%S.%f")
 
 
-class EventManager:
+class PayloadParser:
     """
     Служебный класс для DataProvider.
     Преобразует данные из dict в dataclass разных типов.
@@ -67,28 +67,6 @@ class EventManager:
             #     self.on_event("minute", norm_dt)
         self.dt_last = dt
 
-    def validate_bar_time(self, bar: Bar):
-        """
-        Проверка соблюдения последовательности
-        интервалов и промежутков между интервалами.
-        """
-        sid = bar.sid
-        bar_gap = bar.date - self.prev_bar_dt[sid]
-        bar_gap_min = int(bar_gap.total_seconds() / 60) - 1
-        if bar_gap_min > 0:
-            if not self.in_the_gap[sid] and bar_gap_min:
-                if bar.rth and self.prev_bar_rth[sid]:
-                    log.error(f"Large gap: {bar.date}, {bar_gap_min} min")
-            self.in_the_gap[sid] = True
-        else:
-            self.in_the_gap[sid] = False
-
-        if bar_gap_min < 0:
-            log.error(f"Negative gap: {bar.date}, {bar_gap_min} min")
-
-        self.prev_bar_dt[sid] = bar.date
-        self.prev_bar_rth[sid] = bar.rth
-
     def notify(self, payload: dict):
         """
         Преобразование payload в dataclass нужного типа.
@@ -121,8 +99,6 @@ class EventManager:
                 self.on_event("quote", quote.date, quote.sid, quote)
 
             bar = Bar.from_redis(payload)
-
-            self.validate_bar_time(bar)
 
             ########################################
             ## Tick emulation

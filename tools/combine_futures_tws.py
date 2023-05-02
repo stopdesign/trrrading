@@ -79,7 +79,10 @@ def process_sid(sid):
 
 
 def main():
-    for sid in ["CME_MES", "CBOT_ZO", "CBOT_ZR"]:
+    for sid in [
+        "CME_NQ", "CME_MES", "NYMEX_NG", "CBOT_MYM", "CBOT_ZL",
+        "CBOT_ZS", "CBOT_ZO", "CBOT_ZR", "CBOT_ZC", "CBOT_ZW", "CBOT_KE"
+    ]:
         process_sid(sid)
 
 
