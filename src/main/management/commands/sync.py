@@ -756,17 +756,17 @@ class Sync:
     def get_executions(self) -> None:
         account = Account.objects.get(uid=self.ib.account_id)
 
-        utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        executions = self.ib.get_executions()
 
-        too_old = utc_now - timedelta(days=5)
-        trades = Trade.objects.filter(account=account, created_at__gt=too_old)
-        trades_by_exec_id = {t.exec_id: t for t in trades.order_by("-id")}
+        utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
 
         too_old = utc_now - timedelta(days=15)
         orders = Order.objects.filter(account=account, created_at__gt=too_old)
         orders_by_id = {o.order_id: o for o in orders.order_by("-id")}
 
-        executions = self.ib.get_executions()
+        too_old = utc_now - timedelta(days=5)
+        trades = Trade.objects.filter(account=account, created_at__gt=too_old)
+        trades_by_exec_id = {t.exec_id: t for t in trades.order_by("-id")}
 
         trades_to_create = []
         updated_orders = []
@@ -777,7 +777,9 @@ class Sync:
 
             if order := orders_by_id.get(exec.permId):
                 log.info(colored("New trade: " + f"{exec}"[-120:], "cyan"))
-                trades_to_create.append(Trade.from_ib(exec, account, order))
+                new_trade = Trade.from_ib(exec, account, order)
+                trades_to_create.append(new_trade)
+                trades_by_exec_id[exec.execId] = new_trade
                 updated_orders.append(order)
             else:
                 log.error(
