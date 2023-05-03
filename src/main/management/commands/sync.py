@@ -331,6 +331,9 @@ class IBSyncExtended(IBSync):
         оставшегося количества. Если мы отслеживаем исполнение,
         то нет смысла там сохранять ордер.
         """
+        if self.lock_for_sync:
+            return
+
         super().orderStatus(
             orderId,
             status,
@@ -344,9 +347,6 @@ class IBSyncExtended(IBSync):
             whyHeld,
             mktCapPrice,
         )
-
-        if self.lock_for_sync:
-            return
 
         self.prev_time["orderStatus"] = monotonic()
 
@@ -789,6 +789,9 @@ class Sync:
                 )
                 self.tg.message("Resync, execution without order.")
                 self.run_initial_sync()
+                # Запланировать повтор get_executions ASAP
+                self.prev_executions = datetime.min
+                return
 
         if trades_to_create:
             Trade.objects.bulk_create(trades_to_create)
@@ -912,6 +915,14 @@ class Sync:
         # На всякий случай запрашиваю next order ID
         self.ib.reqIds(0)
 
+        # Получить данные из IB
+        log.info("Get IB orders")
+        ib_orders = self.ib.get_orders()
+        log.info("Get IB positions")
+        ib_positions = self.ib.get_positions()
+        log.info("Get IB executions")
+        ib_executions = self.ib.get_executions()
+
         # Получить данные из базы
         account = Account.objects.get(uid=self.ib.account_id)
 
@@ -922,11 +933,6 @@ class Sync:
         contracts = Contract.objects.all()
         contracts_by_sid = {c.sid: c for c in contracts}
 
-        # Получить данные из IB
-        ib_orders = self.ib.get_orders()
-        ib_positions = self.ib.get_positions()
-        ib_executions = self.ib.get_executions()
-
         # Все контракты из данных IB
         all_contracts = [r[0] for r in ib_orders]
         all_contracts += [r[1] for r in ib_positions]
@@ -934,6 +940,7 @@ class Sync:
         uniq_contracts = {c.conId: c for c in all_contracts}
 
         # Создаются неизвестные контракты
+        log.info("Create new contracts")
         new_contracts = self.get_new_contracts(contracts_by_sid, uniq_contracts)
         Contract.objects.bulk_create(new_contracts)
 
@@ -943,6 +950,7 @@ class Sync:
 
         ############
         # Ордеры
+        log.info("Sync orders")
         self.sync_orders(account, ib_orders)
 
         ############
@@ -1103,9 +1111,7 @@ class Sync:
                 self.tg.message(txt)
                 log.error(txt)
                 log.exception(e)
-                res = ibc_run_command(self.ibc_config, "RECONNECTACCOUNT")
-                log.info(f"IBC reconnect account: {res}")
-                sleep(20)  # reconnect происходит какое-то время
+                sleep(5)  # reconnect происходит какое-то время
 
             finally:
                 self.ib.lock_for_sync = False
@@ -1131,6 +1137,7 @@ class Sync:
             try:
                 if self.ib:
                     self.ib.disconnect()
+                    sleep(1)
             except Exception as e:
                 log.error(f"TWS disconnect exception: {e}")
 
