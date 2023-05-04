@@ -32,8 +32,8 @@ class CBS_01(BaseStrategy):
 
     def get_amount(self, price):
         # Подсчет размера позиции
-        # return 1
-        return int(100_000 / price)
+        return 1
+        # return int(100_000 / price)
 
     def stop_order(self, amount, stop_price, limit_price):
         order = Order(
