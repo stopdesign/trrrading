@@ -3,28 +3,29 @@ from trader.exchange import Consolidator, Data
 from trader.indicator import DonchianChannels, MovingAverage
 from trader.strategy import BaseStrategy
 
+ALGO = {"strategy": "Adaptive"}
+
 
 class CBM_01(BaseStrategy):
     """
     Стратегия Channel Breakout.
     """
 
-    algo = {"strategy": "Adaptive"}
+    length: int
+    length_ma: int = 50
+    timeframe: str = "10m"
+    rth_data: bool = True
 
     def on_start(self):
-        # Параметры стратегии
-        length = self.params.length
-        length_ma = self.params.length_ma
-
         # Подписка на данные через callback-функции
-        self.data_1m = Data(self.sid, rth=True, on_tick=self.on_tick)
+        self.data_1m = Data(self.sid, rth=self.rth_data, on_tick=self.on_tick)
 
         # Консолидатор данных в более крупный таймфрейм
-        self.ind_tf = Consolidator(self.data_1m, "15m")
+        self.ind_tf = Consolidator(self.data_1m, self.timeframe)
 
         # Инициализация индикаторов
-        self.ma = MovingAverage(self.data_1m, length=length_ma)
-        self.dc = DonchianChannels(self.data_1m, length=length)
+        self.ma = MovingAverage(self.ind_tf, length=self.length_ma)
+        self.dc = DonchianChannels(self.data_1m, length=self.length)
 
     def get_amount(self, price):
         # Подсчет размера позиции
@@ -44,14 +45,14 @@ class CBM_01(BaseStrategy):
 
         current_amount = self.positions[self.sid].amount
 
-        order_amount = 0
+        amount = 0
 
         if current_amount <= 0 and trade.price > ub:
-            order_amount = +self.get_amount(ub) - current_amount
+            amount = +self.get_amount(ub) - current_amount
 
         if current_amount >= 0 and trade.price < lb:
-            order_amount = -self.get_amount(lb) - current_amount
+            amount = -self.get_amount(lb) - current_amount
 
-        if abs(order_amount) > 0:
-            order = Order(self.sid, "MKT", order_amount, ib_algo=self.algo)
+        if abs(amount) > 0:
+            order = Order(self.sid, "MKT", int(amount), ib_algo=ALGO)
             self.place_order(order)
