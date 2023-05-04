@@ -50,8 +50,11 @@ class Trader:
         log.info(txt)
 
         self.config = config
-        self.backtest = backtest
-        self.replay = replay
+
+        # Режим работы
+        self.backtest: bool = backtest
+        self.replay: bool = replay
+        self.live: bool = not (self.replay or self.backtest)
 
         run_config = config["backtest"] if backtest else config["broker"]
 
@@ -66,14 +69,21 @@ class Trader:
             # TODO: вынести sync_client сюда?
             self.exchange = Exchange(self.on_event, account_uid, redis_client)
 
-        # Инициализация стратегий и список индикаторов
+        # Инициализация стратегий
         self.strategies = []
         self.data_sources = []
         self.consolidators = []
         self.indicators = []
         for cfg in config["strategies"]:
+            cfg["backtest"] = self.backtest
+            cfg["replay"] = self.replay
+            cfg["live"] = self.live
             klass: type[BaseStrategy] = all_strategies[cfg["strategy"]]
-            strategy = klass(exchange=self.exchange, **cfg)
+            try:
+                strategy = klass(exchange=self.exchange, **cfg)
+            except Exception as e:
+                log.error(f"Strategy init: {e}")
+                raise SystemExit
             self.strategies.append(strategy)
             self.data_sources.extend(strategy.data_sources)
             self.consolidators.extend(strategy.consolidators)
@@ -107,13 +117,13 @@ class Trader:
         self.data_provider.warm_up()
 
         # Проверка прогретости индикаторов
-        for indicator in self.indicators:
-            if not indicator.ready:
-                log.error(f"Indicator is not ready: {indicator}")
-
-        # Отметить, что стратегии прогреты.
         for strategy in self.strategies:
-            strategy.warmed = True
+            warmed = True
+            for indicator in self.indicators:
+                if not indicator.ready:
+                    warmed = False
+                    log.error(f"Indicator is not ready: {indicator}")
+            strategy.set_warmed(warmed)
 
         self.portfolio_stats = PortfolioStats(self, self.exchange, 100000)
 
@@ -158,8 +168,8 @@ class Trader:
                 if source.sid == payload.sid:
                     source.trigger_events(event, payload)
 
-            # # 4. Запустить обработку ордеров
-            # self.exchange.process_orders()
+            # 4. Запустить обработку ордеров
+            self.exchange.process_orders()
 
         if event == "tick":
             for source in self.data_sources + self.consolidators:
@@ -355,6 +365,11 @@ class Trader:
         def dt_to_ts(dt):
             return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
+        # Для графика нужны бары интервалов со сделками
+        all_trade_ts = []
+        for trade in self.exchange.trades:
+            all_trade_ts.append(trade["time"])
+
         # Cохранение баров и индикаторов
         for strategy in self.strategies:
             ms = strategy.market_system
@@ -362,11 +377,15 @@ class Trader:
             path = os.path.join(base_dir, f"{ms}-ohlc.jsonl")
             txt = ""
             for bar in self.exchange.bars[sid]:
-                # if not bar.rth:
-                #     continue
                 if bar.date < self.dt_start:
                     continue
                 ts = dt_to_ts(bar.date)
+                # FIXME: что с этим делать?
+                # Взять настройки из стратегии? А как быть с FUT?
+                if not bar.rth:
+                    continue
+                if not bar.volume and ts not in all_trade_ts:
+                    continue
                 last_bar = asdict(bar)
                 last_bar["ts"] = ts
                 last_bar["ind"] = []

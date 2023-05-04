@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from trader.data_types import Bar, Order
 from trader.exchange import Consolidator, Data
-from trader.indicator import DonchianChannels, MovingAverage
+from trader.indicator import DonchianChannels
 from trader.strategy import BaseStrategy
 
 
@@ -11,28 +11,39 @@ class CBS_01(BaseStrategy):
     Стратегия Channel Breakout на Stop-ордерах.
     """
 
-    def on_start(self):
-        # Параметры стратегии
-        length = self.params.length
-        length_ma = self.params.length_ma
+    length: int
+    timeframe: str = "10m"
+    rth_data: bool = True
+    rth_order: bool = True
 
+    def on_start(self):
         # Подписка на данные через callback-функции
-        self.data_1m = Data(self.sid, rth=True, on_bar=self.on_bar)
+        self.data_1m = Data(self.sid, rth=self.rth_data, on_bar=self.on_bar)
 
         # Консолидатор данных в более крупный таймфрейм
-        self.ind_tf = Consolidator(self.data_1m, "15m")
+        self.ind_data = Consolidator(self.data_1m, self.timeframe)
 
         # Инициализация индикаторов
-        self.ma = MovingAverage(self.data_1m, length=length_ma)
-        self.dc = DonchianChannels(self.data_1m, length=length)
+        self.dc = DonchianChannels(
+            self.ind_data,
+            length=self.length,
+            skip_extra_hours=self.rth_data,
+        )
 
     def get_amount(self, price):
         # Подсчет размера позиции
-        return 1
-        # return int(100_000 / price)
+        # return 1
+        return int(100_000 / price)
 
-    def stop_order(self, amount, price):
-        order = Order(self.sid, "STP", amount, stop_price=price, rth=False)
+    def stop_order(self, amount, stop_price, limit_price):
+        order = Order(
+            self.sid,
+            type="STP LMT",
+            amount=amount,
+            stop_price=stop_price,
+            limit_price=limit_price,
+            rth=self.rth_order,
+        )
         self.place_order(order)
 
     def on_bar(self, bar: Bar):
@@ -54,17 +65,18 @@ class CBS_01(BaseStrategy):
 
         current_amount = self.positions[self.sid].amount
 
-        to_buy = +self.get_amount(ub) - current_amount
-        to_sell = -self.get_amount(lb) - current_amount
+        b = +self.get_amount(ub) - current_amount
+        s = -self.get_amount(lb) - current_amount
 
-        for order in orders.filter(status=["New", "PreSubmitted"], type=["STP"]):
-            if order.amount > 0:
-                self.update_order(order, stop_price=ub, amount=to_buy)
-            if order.amount < 0:
-                self.update_order(order, stop_price=lb, amount=to_sell)
+        # Обновляемые ордеры
+        for o in orders.filter(status=["New", "PreSubmitted"], type=["STP LMT"]):
+            if o.amount > 0:
+                self.update_order(o, stop_price=ub, limit_price=ub + 1, amount=b)
+            if o.amount < 0:
+                self.update_order(o, stop_price=lb, limit_price=lb - 1, amount=s)
 
         if not orders:
             if current_amount >= 0:
-                self.stop_order(to_sell, lb)
+                self.stop_order(s, lb, lb - 1)
             if current_amount <= 0:
-                self.stop_order(to_buy, ub)
+                self.stop_order(b, ub, ub + 1)
