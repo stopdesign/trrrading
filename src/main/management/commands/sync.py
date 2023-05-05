@@ -530,7 +530,6 @@ class IBSyncExtended(IBSync):
         self.nextValidOrderId += 1
 
         # Дерзкая конвертация ордера в модель
-
         db_order = Order.from_ib(ib_order, db_account, db_contract, StateNew())
 
         # Создать ордер в базе данных
@@ -1192,6 +1191,9 @@ class Sync:
             if not self.ib.nextValidOrderId > 0:
                 log.error("No TWS connection, no Next Order ID, reconnect now")
                 continue
+
+            # Так лучше работает
+            sleep(1)
 
             # В этом месте должно быть активное подключение
             self.request_tws_time()
