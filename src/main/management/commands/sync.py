@@ -651,9 +651,9 @@ class Sync:
 
         # Отметки, когда что произошло
         self.request_time = datetime.min
-        self.prev_executions = 0
+        self.prev_executions = 0.0
+        self.prev_test_order = 0.0
         self.prev_subscribe = monotonic()
-        self.prev_test_order = monotonic()
 
         self.gw_client_id = self.gateway_config.get("sync_client_id", 0)
 
@@ -790,7 +790,7 @@ class Sync:
                 self.tg.message("Resync, execution without order.")
                 self.run_initial_sync()
                 # Запланировать повтор get_executions ASAP
-                self.prev_executions = datetime.min
+                self.prev_executions = 0.0
                 return
 
         if trades_to_create:
