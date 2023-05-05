@@ -37,6 +37,7 @@ def get_calendar(name, open_time=None, close_time=None) -> MarketCalendar:
     name = name.replace("CME", "CMES")
     name = name.replace("CBOT", "CMES")
     name = name.replace("NYMEX", "CMES")
+    name = name.replace("COMEX", "CMEGlobex_EnergyAndMetals")
     return MarketCalendar.factory(name, open_time, close_time)  # type: ignore
 
 
@@ -126,15 +127,21 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
         dt_1 = exp_date - timedelta(days=180)
         dt_1 = max(dt_1, dt_start)
 
+        # Последние две недели обычно можно не грузить
+        exp_date = exp_date - timedelta(weeks=2)
+        dt_2 = min(exp_date, yesterday)
+
         # Пропустить, если полученный dt_1 больше now
-        if dt_1 > yesterday:
-            log.info(f"Skip {contract.localSymbol}")
+        if dt_1 >= dt_2:
+            log.debug(f"SKIP contract, exp_date: {exp_date}")
             continue
 
         # Получить первый день контракта
         ts = None
         for _ in range(10):
             try:
+                # NOTE: если делать много таких запросов подряд,
+                # NOTE: то перестанет работать get_historical_data
                 ts = ib.get_head_timestamp(contract)
                 break
             except Exception as e:
@@ -145,14 +152,10 @@ def get_market_data(ib: IBSync, symbol, data_type, dt_start, dt_end, force):
             return
 
         first_day = datetime.utcfromtimestamp(int(ts)).date()
-
-        # Последние две недели обычно можно не грузить
-        exp_date = exp_date - timedelta(weeks=2)
-
         dt_1 = max(dt_1, first_day)
-        dt_2 = min(exp_date, yesterday)
 
         if dt_1 >= dt_2:
+            log.debug(f"SKIP contract, first_day: {first_day}")
             continue
 
         for _ in range(10):
@@ -292,7 +295,7 @@ def main(**kwargs):
     python get_ib_market_data.py --start 2021-01-02 mes.cme
 
     mes.cme nq.cme mym.cbot
-    ng.nymex hg.nymex
+    ng.nymex hg.comex
     zl.cbot zs.cbot zo.cbot zr.cbot zc.cbot zw.cbot ke.cbot
 
     aapl.nasdaq
