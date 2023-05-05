@@ -494,9 +494,8 @@ class IBSyncExtended(IBSync):
 
         # Синхронная отправка ордера
         try:
-            contract, order_res, orderState = self.place_order(contract, wtf_order)
-            txt = f"WTF order: {order_res} | Status: {orderState.status}"
-            log.info(colored(txt, "white"))
+            contract, order_res, _ = self.place_order(contract, wtf_order)
+            log.debug(colored(f"WTF order: {order_res}", "white"))
         except Exception as e:
             txt = f"Test order error: {wtf_order} {e}"
             log.error(txt)
