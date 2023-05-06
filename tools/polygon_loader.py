@@ -173,9 +173,10 @@ def get_last_interval_dt(f_path):
 
 
 def process_symbol(symbol, dt_start, dt_end, reset, latency_tolerance):
-    ss = symbol.split(":")[1]
+    ex, symbol_path = symbol.split(":")
+    symbol_url = symbol if ex == "C" else symbol_path  # FOREX
 
-    f_path = os.path.abspath(f"{BASE_DIR}/{ss}.csv")
+    f_path = os.path.abspath(f"{BASE_DIR}/{symbol_path}.csv")
 
     dt_1 = dt_start
     dt_2 = dt_end or (datetime.utcnow() + timedelta(days=3))
@@ -207,7 +208,7 @@ def process_symbol(symbol, dt_start, dt_end, reset, latency_tolerance):
         return
 
     try:
-        data = load_polygon_one_symbol(ss, dt_1, dt_2)
+        data = load_polygon_one_symbol(symbol_url, dt_1, dt_2)
     except Exception as e:
         log.error(f"Loading data error for {symbol}: {e}")
         return
