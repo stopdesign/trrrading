@@ -108,6 +108,11 @@ class PolygonAdapter(BaseSource):
                     path = os.path.join(self.path, "ib")
                     path = f"{path}/{exchange}/{sid}-trades.csv"
                     data = self.load_from_file(path, dt_1, dt_2)
+                # Валюты из ib (midpoint)
+                elif "IDEALPRO_" in sid:
+                    path = os.path.join(self.path, "ib")
+                    path = f"{path}/{exchange}/{sid}-midpoint.csv"
+                    data = self.load_from_file(path, dt_1, dt_2)
                 # Акции из полигона
                 else:
                     path = os.path.join(self.path, "polygon")
@@ -150,7 +155,7 @@ class PolygonAdapter(BaseSource):
                     "h": line["h"],
                     "l": line["l"],
                     "c": line["c"],
-                    "v": line["v"],
+                    "v": line.get("v", -1),
                     "sid": sid,
                 }
                 all_data.append((line["t"], sid, payload))
