@@ -54,13 +54,13 @@ class Trade(models.Model):
         "Order", null=False, on_delete=models.CASCADE, related_name="trades"
     )
     amount = models.PositiveIntegerField(default=0)
-    price = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    price = models.DecimalField(default=0, max_digits=15, decimal_places=6)
 
     exec_id = models.CharField(max_length=50, unique=True, null=True)
     exchange = models.CharField(max_length=50)
 
     time = models.DateTimeField(null=True)
-    commission = models.DecimalField(null=True, max_digits=10, decimal_places=2)
+    commission = models.DecimalField(null=True, max_digits=15, decimal_places=6)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

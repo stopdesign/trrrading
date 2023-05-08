@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 
-QUANTIZE_EXP = Decimal("1.00")
+QUANTIZE_EXP = Decimal("1.00000")
 
 @dataclass(slots=True)
 class BidAsk:
