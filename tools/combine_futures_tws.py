@@ -1,6 +1,7 @@
 import os
 
 import pandas as pd
+from termcolor import colored
 
 """
 Преобразование формата IBKR в формат Polygon.
@@ -38,6 +39,8 @@ def process_sid(sid):
     # Define the folder where the data files are stored
     data_folder = os.path.join(BASE, exchange)
 
+    f_name = f"{data_folder}/{sid}_CONT-trades.csv"
+
     # Get a list of all the data files for this sid
     contracts = get_contracts(data_folder, sid)
 
@@ -73,16 +76,23 @@ def process_sid(sid):
     res = pd.concat(res, axis=0)
     del res["day"]
 
-    res.to_csv(f"{data_folder}/{sid}_CONT-trades.csv", index=False)
+    len_1 = len(res)
+    res = res.sort_values("t").drop_duplicates(subset="t", keep="last")
+    len_2 = len(res)
 
-    print(f"Done {sid}\n")
+    res.to_csv(f_name, index=False)
+
+    if len_1 != len_2:
+        txt = f"Duplicated records removed: {len_1-len_2} of {len_1}"
+        print(colored(txt, "red"))
+
+    print(f"Done {sid}: {f_name}\n")
 
 
 def main():
     for sid in [
         "CME_NQ", "CME_MES", "NYMEX_NG", "CBOT_MYM", "COMEX_HG",
-        "CBOT_ZL", "CBOT_ZS", "CBOT_ZO", "CBOT_ZR", "CBOT_ZC",
-        "CBOT_ZW", "CBOT_KE",
+        "CBOT_ZL", "CBOT_ZS", "CBOT_ZO", "CBOT_ZR", "CBOT_ZC", "CBOT_ZW", "CBOT_KE",
     ]:
         process_sid(sid)
 

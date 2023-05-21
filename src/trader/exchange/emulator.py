@@ -41,6 +41,7 @@ class Emulator(BaseExchange):
 
         # начальное состояние аккаунта при эмуляции
         self.account["net_value"] = 100_000
+        self.account["cash"] = 100_000
 
         # обнулить позиции по всем символам
         self.positions = EmulatorPositions(100_000)

@@ -60,6 +60,8 @@ class CustomIBOrder(Order):
 
         # ib_algo: тип MKT и LMT, tif=Day, RTH=True
 
+        self.tif = "DAY"
+
         if order_type == "MKT":
             self._marker_order(data)
         elif order_type == "LMT":
@@ -84,11 +86,11 @@ class CustomIBOrder(Order):
         if not ib_algo:
             return
 
-        strategy = str(ib_algo.get("strategy", "")).title()
+        strategy = str(ib_algo.get("strategy", ""))
         params = [TagValue(*p) for p in ib_algo.get("params", {}).items()]
 
-        if strategy not in ["Adaptive"]:
-            raise ValueError(f"Unknown ib_algo_strategy: {str(data)}")
+        if strategy not in ["Adaptive", "Twap", "ArrivalPx"]:
+            raise ValueError(f"Unknown ib_algo_strategy: {strategy}, {str(data)}")
 
         self.algoStrategy = strategy
         self.algoParams = params  # type: ignore

@@ -118,12 +118,10 @@ class Trader:
 
         # Проверка прогретости индикаторов
         for strategy in self.strategies:
-            warmed = True
             for indicator in self.indicators:
                 if not indicator.ready:
-                    warmed = False
                     log.error(f"Indicator is not ready: {indicator}")
-            strategy.set_warmed(warmed)
+            strategy.set_warmed(True)
 
         self.portfolio_stats = PortfolioStats(self, self.exchange, 100000)
 

@@ -317,7 +317,7 @@ const Orders = ({ account, symbol }) => {
     const visibleOrderIds = []
     for (const order of ordersRef.current) {
       const id = parseInt(order.id)
-      if (order.status.includes("Submitted")) {
+      if (order.status && order.status.includes("Submitted")) {
         visibleOrderIds.push(id)
       }
     }

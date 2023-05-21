@@ -3,8 +3,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Callable
 
+from mcal import CalendarGrid
+
 from .payload_parser import PayloadParser
-from .market_calendar import MarketCalendar
 from .sources.base_source import BaseSource
 
 log = logging.getLogger("data_provider")
@@ -47,7 +48,7 @@ class DataProvider:
         self.on_event = on_event
 
         # Инициализация календаря для всех нужных символов и дней
-        self.schedule = MarketCalendar(self.instruments, dt_prior, dt_end)
+        self.schedule = CalendarGrid(self.instruments, dt_prior, dt_end)
 
         # Источники данных
         self.history = history
@@ -131,8 +132,12 @@ class DataProvider:
 
         log.info(f"warm_up data length: {len(records)}")
 
+        open_cnt = 0
         for ts, instrument, payload in records:
+            open_cnt += int("closed" not in payload)
             self.on_market_event(payload)
+
+        log.info(f"warm_up open data length: {open_cnt}")
 
     def backtest(self):
         """ """
@@ -140,8 +145,13 @@ class DataProvider:
 
         log.info(f"backtest data length: {len(records)}")
 
+        open_cnt = 0
         for ts, instrument, payload in records:
+            open_cnt += int("closed" not in payload)
+            # log.info(payload)
             self.on_market_event(payload)
+
+        log.info(f"backtest open data length: {open_cnt}")
 
     def replay(self, dt_start, dt_end):
         """

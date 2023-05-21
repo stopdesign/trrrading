@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 from copy import copy
 from decimal import ROUND_DOWN, Decimal
+import math
 from typing import Callable
 
 from trader.data_types import Bar, BidAsk, Order, OrderList, Position
@@ -78,15 +79,14 @@ class BaseExchange:
         self.bars[bar.sid].append(copy(bar))
 
     def get_net_value(self) -> Decimal:
-        net = Decimal(self.account.get("net_value", "NaN"))
-        # net = Decimal(0)
-        # for strategy in self.strategies:
-        #     position = self.__positions[strategy.market_system]
-        #     if position.amount and not math.isnan(position.amount):
-        #         side = "sell" if position.amount > 0 else "buy"
-        #         price = self.exchange.get_price(strategy.sid, side)
-        #         net += position.amount * (price - position.avg_price)
-        #     net += position.profit
+        net = Decimal(self.account.get("cash", "NaN"))
+        pos = Decimal(0)
+        for sid, position in self.positions.items():
+            if position.amount and not math.isnan(position.amount):
+                side = "sell" if position.amount > 0 else "buy"
+                price = self.get_price(sid, side)
+                pos += position.amount * price
+        net += pos
         return net.quantize(Decimal("0.01"), ROUND_DOWN)
 
     def place_order(self, order: Order):

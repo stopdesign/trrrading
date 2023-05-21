@@ -100,6 +100,7 @@ class LocalMatcher:
 
             # обновить баланс
             self.exchange.account["net_value"] += trade_profit
+            self.exchange.account["cash"] -= price * order.amount
 
             profit_str = f"{trade_profit:+9.2f}"
             if trade_profit > 0:
