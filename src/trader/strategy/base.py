@@ -136,6 +136,9 @@ class BaseStrategy(BaseModel):
     def on_tick(self, data) -> None:
         pass
 
+    def on_signal(self, payload: dict) -> None:
+        pass
+
     class Config:
         # Убирает ошибку валидации кастомных классов
         arbitrary_types_allowed = True

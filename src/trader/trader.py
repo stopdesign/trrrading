@@ -4,6 +4,7 @@ import threading
 from copy import copy
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 import redis
 from termcolor import colored
@@ -27,6 +28,35 @@ REDIS_CONF = {
 
 def date_to_datetime(dt):
     return datetime(dt.year, dt.month, dt.day)
+
+
+class HttpRequestHandler(SimpleHTTPRequestHandler):
+    trader: "Trader"
+
+    def log_message(self, format, *args):
+        pass
+
+    def do_POST(self):
+        # Handle POST request
+        content_length = int(self.headers.get("Content-Length", 0))
+
+        dt = datetime.utcnow()
+        sid = ""
+        response_code = 200
+        try:
+            body = self.rfile.read(content_length)
+            payload = json.loads(body)
+        except Exception as e:
+            log.error("HTTP body processing error")
+            log.exception(e)
+            response_code = 400
+        else:
+            self.trader.on_event("signal", dt, sid, payload)
+
+        self.send_response(response_code)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"\n")
 
 
 class Trader:
@@ -128,6 +158,16 @@ class Trader:
         self.portfolio_stats.portfolio_info()
         # self.portfolio_stats.account_info()
 
+    def http_server(self, host: str, port: int):
+        """
+        Сервер для приема торговых сигналов.
+        """
+        HttpRequestHandler.trader = self
+        with HTTPServer((host, port), HttpRequestHandler) as httpd:
+            txt = f"Hook Server running on http://{host}:{port}"
+            log.info(colored(txt, "magenta"))
+            httpd.serve_forever()
+
     def on_event(self, event, dt, sid=None, payload=None):
         """
         В стриме биржи возникло новое событие.
@@ -182,6 +222,10 @@ class Trader:
         #     # TODO: пробрасывать только в стратегию, которая ордер создала
         #     for strategy in self.strategies:
         #         strategy.on_order_event(payload)
+
+        if event == "signal":
+            for strategy in self.strategies:
+                strategy.on_signal(payload)
 
         # LIVE: Брокер сообщает об изменении ордера, позиций или аккаунта
         # Событие приходит в отдельном потоке.
@@ -269,6 +313,20 @@ class Trader:
                     name="SyncThread",
                 )
                 t.start()
+
+                # Отдельный поток для сервера, принимающего сигналы
+                webhooks_conf = self.config.get("webhooks", {})
+                host = webhooks_conf.get("host", "")
+                port = webhooks_conf.get("port", "")
+                if host and port:
+                    t1 = threading.Thread(
+                        target=self.http_server,
+                        kwargs={"host": host, "port": port},
+                        daemon=True,
+                        name="HttpThread",
+                    )
+                    t1.start()
+
                 self.data_provider.listen()
         except KeyboardInterrupt:
             print()
