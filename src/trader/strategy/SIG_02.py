@@ -2,7 +2,7 @@ from trader.data_types import Order
 from trader.exchange import Data
 from trader.strategy import BaseStrategy
 
-ALGO = {"strategy": "Adaptive"}
+ALGO = {"strategy": "Adaptive", "params": {"adaptivePriority": "Patient"}}
 
 
 class SIG_02(BaseStrategy):
@@ -35,5 +35,5 @@ class SIG_02(BaseStrategy):
         amount = position - current_amount
 
         if abs(amount) > 0:
-            order = Order(self.sid, "MKT", int(amount))
+            order = Order(self.sid, "MKT", int(amount), ib_algo=ALGO)
             self.place_order(order)
