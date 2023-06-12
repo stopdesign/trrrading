@@ -15,6 +15,52 @@ async function fetchWithTimeout(resource, options = {}) {
 }
 
 
+const DataFarms = ({ market, historical }) => {
+
+  return html`
+    <h3>Data Farms</h3>
+
+    ${Object.entries(market).map(([k, v], i) => html`
+      <div key="market_farm_${i}">
+        <div>Market ${k}</div>
+        <div class="status-${v}">${v}</div>
+      </div>
+    `)}
+
+    ${Object.entries(historical).map(([k, v], i) => html`
+      <div key="market_farm_${i}">
+        <div>Historical ${k}</div>
+        <div class="status-${v}">${v}</div>
+      </div>
+    `)}
+
+  `
+}
+
+
+const Gateway = ({ status }) => {
+  const con = status["connections"] || {}
+  const ibc_login = String(status["ibc_login"]).toLowerCase()
+
+  return html`
+    <div>
+      <div>IBC auth</div>
+      <div class="status-${ibc_login}">${ibc_login}</div>
+    </div>
+    <div>
+      <div>API Server</div>
+      <div class="status-${con["IB API Server"]}">${con["IB API Server"]}</div>
+    </div>
+    <div>
+      <div>API Clients</div>
+      <div>${con["API Client"]}</div>
+    </div>
+
+    ${con && html`<${DataFarms} market=${con["Market Data Farm"]} historical=${con["Historical Data Farm"]} />`}
+  `
+}
+
+
 const Account = ({ account, account_uid }) => {
   const [values, setValues] = React.useState({})
 
@@ -39,25 +85,42 @@ const Account = ({ account, account_uid }) => {
   }, [account])
 
 
-  const connections = values["connections"] || []
+  const delay = Math.round(parseFloat(values["update_delay"]) / 60) || 0
 
-  const delay = Math.round(parseFloat(values["update_delay"]) / 60)
+  let pnl = ""
+  if (values.unrealized_pnl > 0) {
+    pnl += "+" + values.unrealized_pnl
+  } else if (values.unrealized_pnl < 0) {
+    pnl += "−" + (-values.unrealized_pnl)
+  } else {
+    pnl += "0"
+  }
 
   return html`
       <div className=account_panel>
-          <div className=account_uid>Account: ${account_uid}
-            <span className="delay ${delay >= 1 && 'long_delay'}">delay ${delay} min</span>
+
+          <h3>
+            Gateway
+            <span className="delay ${delay > 3 && 'long_delay'}">sync delay ${delay} min</span>
+          </h3>
+
+          ${values["gw_status"] && html`<${Gateway} status=${values["gw_status"]}/>`}
+
+
+          <h3>Account</h3>
+          <div>
+            <div>Net Liquidation Value</div>
+            <div className="value-net_value">${values["net_value"]}</div>
           </div>
-          <div className=connections>
-            ${connections.map(con => html`<div key=${con[0]}>
-                <b>${con[0]}</b> - <span className="status status-${con[1]}">${con[1]}</span>
-              </div>`)}
+          <div>
+            <div>Maintainance Margin</div>
+            <div className="value-margin_used">${values["margin_used"]}</div>
           </div>
-          <div className=account_values>
-            <div>Net Value:  ${values["net_value"]}</div>
-            <div>Margin Used:  ${values["margin_used"]}</div>
-            <div>Unrealized PnL:  ${values["unrealized_pnl"]}</div>
+          <div>
+            <div>Unrealized PnL</div>
+            <div className="value-pnl">${pnl}</div>
           </div>
+
       </div>
   `
 }

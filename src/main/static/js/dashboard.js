@@ -20,7 +20,7 @@ const Dashboard = ({ accounts }) => {
               <div className="health_panel">
                   <div className="accounts">
                     ${accounts.map((a) => html`
-                      <span onClick="${ () => setAccount(a) }">${a.uid}</span>
+                      <span onClick="${ () => setAccount(a) }" className="${ account == a ? 'active' : '' }">${a.uid}</span>
                     `)}
                     <a className=tradis_link href="http://10.0.10.1:8080/">Data Dashboard</a>
                   </div>

@@ -4,8 +4,9 @@ import os.path
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+import redis
 import orjson
-import requests
+
 from django.conf import settings
 from django.db.models import Q
 from django.http import HttpResponse
@@ -126,16 +127,14 @@ def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
 
-    try:
-        # FIXME: убрать хардкодинг адреса здесь и в orders.js
-        res = requests.get("http://10.0.10.1:8080/connections", timeout=1)
-        connections = res.json()
-        connections = list(connections.items())
-    except:
-        connections = []
+    db = 5 if "DU" in account.uid else 1
+    r = redis.Redis("10.0.10.1", db=db, decode_responses=True)
+    gw_status = r.get("gw_status") or ""
+    gw_status = gw_status.replace("Interactive Brokers", "IB")
+    gw_status = json.loads(gw_status)
 
     utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
-    update_delay = (utc_now - account.updated_at).total_seconds()
+    update_delay = int((utc_now - account.updated_at).total_seconds())
 
     res = {
         "uid": account.uid,
@@ -147,7 +146,7 @@ def account(request):
         "cash_value": account.cash_value,
         "ex_liq_sec": account.ex_liq_sec,
         "ex_liq_com": account.ex_liq_com,
-        "connections": connections,
+        "gw_status": gw_status,
         "update_delay": update_delay,
     }
     content = json.dumps(res, indent=None, default=str)

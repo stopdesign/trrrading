@@ -34,6 +34,7 @@ body {
 .logo_panel {
     padding: 0 20px 50px 20px;
     position: relative;
+    user-select: none;
 }
 
 .logo {
@@ -71,7 +72,7 @@ body {
 
 .left_sidebar {
     border-right: 5px solid #eee;
-    width: 400px;
+    width: 350px;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -91,25 +92,47 @@ body {
 }
 
 .health_panel {
-    border-bottom: 5px solid #eee;
-    padding: 0 20px 15px 20px;
+    /* border-bottom: 5px solid #eee; */
+    padding: 0 20px 0 20px;
+    user-select: none;
 }
 
 .health_panel .accounts span {
     margin-right: 15px;
-    border-bottom: 1px dashed;
     cursor: pointer;
+    padding-bottom: 2px;
+    color: #888;
+}
+.health_panel .accounts span.active {
+    color: #000;
+    border-bottom: 3px solid rgb(76, 148, 191);
 }
 
 .health_panel .tradis_link {
     float: right;
-    color: #58e;
+    color: rgb(52, 141, 231);
 }
 
 /* Account */
 .account_panel {
     border-bottom: 5px solid #eee;
-    padding: 5px 20px;
+    padding: 5px 20px 20px 20px;
+    height: 500px;
+    line-height: 1.8;
+}
+
+.account_panel > h3 {
+    margin: 20px 0 0 0;
+    font-weight: bold;
+    font-size: 14px;
+    border-bottom: 2px solid #eee;
+}
+.account_panel > div {
+    display: flex;
+    flex-direction: row;
+}
+.account_panel > div div:first-child {
+    flex-grow: 1;
 }
 
 .account_uid {
@@ -122,30 +145,49 @@ body {
     margin: 3px 0;
 }
 
-.account_panel .connections .status-connected {
+.account_panel .connections pre {
+    margin: 0;
+}
+
+.account_panel .status-logged_in,
+.account_panel .status-connected {
     color: green;
 }
 
-.account_panel .connections .status-connecting {
+.account_panel .status-logging_in,
+.account_panel .status-awaiting_credentials,
+.account_panel .status-connecting {
     color: #58e;
 }
 
-.account_panel .connections .status-inactive {
+.account_panel .value-pnl,
+.account_panel .value-margin_used,
+.account_panel .status-inactive {
     color: #999;
 }
 
-.account_panel .connections .status-disconnected {
+.account_panel .status-none,
+.account_panel .status-stopped,
+.account_panel .status-logged_out,
+.account_panel .status-disconnected {
     color: #d00;
 }
 
 .account_panel .delay {
     font-size: 0.8em;
+    font-weight: normal;
     color: #aaa;
     margin-left: 15px;
+    float: right;
+    vertical-align: baseline;
 }
 
 .account_panel .long_delay {
     color: #d00;
+}
+
+.account_panel .value-net_value {
+    font-weight: 600;
 }
 
 
