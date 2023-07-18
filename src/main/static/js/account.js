@@ -18,16 +18,16 @@ async function fetchWithTimeout(resource, options = {}) {
 const DataFarms = ({ market, historical }) => {
 
   return html`
-    <h3>Data Farms</h3>
+    ${(market || historical) && html`<h3>Data Farms</h3>`}
 
-    ${Object.entries(market).map(([k, v], i) => html`
+    ${market && Object.entries(market).map(([k, v], i) => html`
       <div key="market_farm_${i}">
         <div>Market ${k}</div>
         <div class="status-${v}">${v}</div>
       </div>
     `)}
 
-    ${Object.entries(historical).map(([k, v], i) => html`
+    ${historical && Object.entries(historical).map(([k, v], i) => html`
       <div key="market_farm_${i}">
         <div>Historical ${k}</div>
         <div class="status-${v}">${v}</div>

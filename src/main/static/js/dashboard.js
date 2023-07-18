@@ -2,6 +2,7 @@ import { html, useState } from "./deps.js"
 import Positions from "./positions.js"
 import Account from "./account.js"
 import Orders from "./orders.js"
+import Health from "./health.js"
 
 
 const Dashboard = ({ accounts }) => {
@@ -25,6 +26,7 @@ const Dashboard = ({ accounts }) => {
                     <a className=tradis_link href="http://10.0.10.1:8080/">Data Dashboard</a>
                   </div>
               </div>
+              <${Health} key="1"/>
               <${Account} account=${account.id} account_uid=${account.uid} key="2"/>
               <${Positions} account=${account.id} symbol=${symbol} setSymbol=${setSymbol} key="3"/>
           </div>
