@@ -127,8 +127,16 @@ def account(request):
     account_id = request.GET.get("account", 0)
     account = Account.objects.get(id=account_id)
 
+    # Модифицированный IBC складывает свой статус в редис.
+    # Здесь хардкодинг разделения на live и paper по базам 1 и 5.
+    # TODO: перенести в базу данных, в модель Account?
     db = 5 if "DU" in account.uid else 1
-    r = redis.Redis("10.0.10.1", db=db, decode_responses=True)
+    r = redis.Redis(
+        host=settings.GW_STATUS_REDIS_HOST,
+        port=settings.GW_STATUS_REDIS_PORT,
+        db=db,
+        decode_responses=True,
+    )
     gw_status = r.get("gw_status") or ""
     gw_status = gw_status.replace("Interactive Brokers", "IB")
     gw_status = json.loads(gw_status)
