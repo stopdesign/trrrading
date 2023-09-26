@@ -769,13 +769,13 @@ class Sync:
         trades_to_create = []
         updated_orders = []
 
-        for _, exec in executions:
+        for _, exec, commission in executions:
             if exec.execId in trades_by_exec_id:
                 continue
 
             if order := orders_by_id.get(exec.permId):
                 log.info(colored("New trade: " + f"{exec}"[-120:], "cyan"))
-                new_trade = Trade.from_ib(exec, account, order)
+                new_trade = Trade.from_ib(exec, commission, account, order)
                 trades_to_create.append(new_trade)
                 trades_by_exec_id[exec.execId] = new_trade
                 updated_orders.append(order)

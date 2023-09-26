@@ -69,8 +69,9 @@ class Trade(models.Model):
         return f"{self.order}, {self.amount}, {self.price}"
 
     @classmethod
-    def from_ib(cls, execution, account, order):
+    def from_ib(cls, execution, commission, account, order):
         # filled = order.filledQuantity if order.filledQuantity < UNSET_DOUBLE else 0
+        commission_value = commission.commission if commission else 0
         return cls(
             account=account,
             order=order,
@@ -79,7 +80,7 @@ class Trade(models.Model):
             exec_id=execution.execId,
             exchange=execution.exchange,
             time=parseIBDatetime(execution.time),
-            commission=0,  # приходит отдельно
+            commission=commission_value,
         )
 
     class Meta:

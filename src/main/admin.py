@@ -187,5 +187,10 @@ class TradeAdmin(admin.ModelAdmin):
         "commission",
         "created_at",
     )
+    list_filter = ("account",)
+    readonly_fields = (
+        "account",
+        "order",
+    )
     actions_on_top = False
     actions_on_bottom = True
