@@ -83,5 +83,15 @@ class Trade(models.Model):
             commission=commission_value,
         )
 
+    @property
+    def signed_amount(self):
+        """
+        TODO: save direction in Trade
+        """
+        if self.order.action == "BUY":
+            return self.amount
+        else:
+            return -self.amount
+
     class Meta:
         app_label = "main"

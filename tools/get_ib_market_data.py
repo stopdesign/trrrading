@@ -287,8 +287,12 @@ def main(**kwargs):
     """
     python get_ib_market_data.py --start 2021-01-02 mes.cme
 
-    mes.cme nq.cme mym.cbot ng.nymex hg.comex
-    zl.cbot zs.cbot zo.cbot zr.cbot zc.cbot zw.cbot ke.cbot
+    # отсечка экспирации - 180 дней
+    mes.cme nq.cme ng.nymex hg.comex
+    zl.cbot zs.cbot zc.cbot mym.cbot
+
+    # отсечка экспирации - 650 дней
+    zo.cbot zr.cbot zw.cbot ke.cbot
 
     aapl.nasdaq
     fcx.nyse
