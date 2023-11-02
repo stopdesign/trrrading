@@ -128,17 +128,9 @@ def account_orders(pk):
 
 def account_positions(pk):
     pos = get_positions(account_id=pk)
-
-    # FOR TEST
-    pos = list(pos)
-    for el in pos:
-        if el["unrealized_pnl"]:
-            rnd = round(el["unrealized_pnl"] * Decimal(random.uniform(-0.1, 0.1)), 2)
-            el["unrealized_pnl"] = rnd
-
     res = {
         "account_id": pk,
-        "assets": pos,
+        "assets": list(pos),
     }
     return res
 
