@@ -1,9 +1,15 @@
 from django.urls import path
+from main.sockets import ChatConsumer
 
 from main import views
 from main.views_pnl import pnl_report
 
 app_name = "main"
+
+
+ws_urlpatterns = [
+    path(r"ws/chat", ChatConsumer.as_asgi()),
+]
 
 urlpatterns = [
     # dashboard

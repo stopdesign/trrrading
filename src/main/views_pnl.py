@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -11,7 +12,10 @@ from django.http import HttpResponse
 from main.models import Account, Position, Trade
 from trader.data_types import Position as tPosition
 
-RANGE = 11
+log = logging.getLogger("views_pnl")
+
+
+RANGE = 15
 
 
 class PerformanceReport:
@@ -51,19 +55,15 @@ class PerformanceReport:
         for trade in trades:
             self.trades_by_sid[trade.order.contract.sid].append(trade)
 
-        # Контракты, которые есть в сделках и позициях
+        # Контракты, которые есть в сделках или позициях
         contracts = {t.order.contract for t in trades}
         contracts.update({p.contract for p in positions})
+        self.contracts = contracts
 
-        # TODO: рабобраться, где и как лучше фильтровать
-        self.contracts = []
-        for contract in contracts:
-            if contract.sec_type in ["CASH", "CRYPTO", "STK"]:
-                continue
-            self.contracts.append(contract)
-
-        # Positions now in DB
+        # Positions from contracts with trades
         self.positions_by_sid = {c.sid: 0 for c in self.contracts}
+
+        # Current positions from DB
         self.positions_by_sid.update({p.contract.sid: p.amount or 0 for p in positions})
 
         # Cache OHLC daily data from dt_0
@@ -95,8 +95,8 @@ class PerformanceReport:
                 return ohlc
         raise Exception(f"No price for {sid} at {dt}")
 
-    def pnl_report(self, contract) -> dict|None:
-        contract_weekly_profit = {}
+    def pnl_report(self, contract) -> list:
+        contract_weekly_profit = []
 
         # Calculate the start date by going back to the most recent Sunday
         prev_sun = self.now - timedelta(days=self.now.weekday() + 1)
@@ -112,61 +112,99 @@ class PerformanceReport:
 
         # Не было сделок и нет открытой позиции - пропустить
         if not len(trades) and not position_now:
-            return
+            return contract_weekly_profit
 
         # Размотать сделки обратно и посчитать позицию в начале
         cur_pos = position_now - sum([t.signed_amount for t in reversed(trades)])
 
         while w_cur <= prev_sun:
-            w_cur_end = min(w_cur + timedelta(weeks=1), self.now)
-
-            # TODO: вынести подсчет trades и comm в класс tPosition
-            w_trades = 0
-            w_comm = Decimal(0)
-
-            w_pos = tPosition(contract.sid)
-            if cur_pos:
-                ohlc = self.get_ohlc(contract.sid, w_cur)
-                price = self.adjust_price(contract, ohlc["c"])
-                w_pos.update(Decimal(cur_pos), price)
-
-            # Учесть сделку и выбросить из списка
-            while trades and trades[0].time < w_cur_end:
-                trade = trades.pop(0)
-                cur_pos += trade.signed_amount
-                price = self.adjust_price(contract, trade.price)
-                w_pos.update(Decimal(cur_pos), price)
-                w_trades += 1
-                w_comm += trade.commission
-
-            # Если в конце недели есть позиция - посчитать Market Value
-            if cur_pos:
-                ohlc = self.get_ohlc(contract.sid, w_cur_end)
-                price = self.adjust_price(contract, ohlc["c"])
-                w_pos.update(Decimal(0), price)
-
-            contract_weekly_profit[str(w_cur.date())] = {
-                "trades": w_trades,
-                "commission": float(round(w_comm, 2)),
-                "pnl": float(round(w_pos.profit - w_comm, 2)),
-            }
-
+            # print(f"\nw_cur {w_cur.date()}")
+            try:
+                res, cur_pos = self.contract_weekly_pnl(
+                    contract, trades, cur_pos, w_cur
+                )
+                contract_weekly_profit.append(res)
+            except Exception as e:
+                log.error(e)
+                contract_weekly_profit.append(
+                    {
+                        "week": str(w_cur.date()),
+                        "trades": 0,
+                        "commission": 0,
+                        "pnl": 0,
+                        "error": "no price",
+                    }
+                )
             w_cur += timedelta(weeks=1)
 
         assert not trades
 
         return contract_weekly_profit
 
+    def contract_weekly_pnl(self, contract, trades, cur_pos, w_cur):
+        # TODO: вынести подсчет trades и comm в класс tPosition
+
+        w_cur_end = min(w_cur + timedelta(weeks=1), self.now)
+
+        w_comm = Decimal(0)
+        w_trades = 0
+
+        t_pos = tPosition(contract.sid)
+        if cur_pos:
+            ohlc = self.get_ohlc(contract.sid, w_cur)
+            price = self.adjust_price(contract, ohlc["c"])
+            t_pos.update(Decimal(cur_pos), price)
+
+            # Учесть сделку и выбросить из списка
+        while trades and trades[0].time < w_cur_end and trades[0].time >= w_cur:
+            trade = trades.pop(0)
+            cur_pos += trade.signed_amount
+            price = self.adjust_price(contract, trade.price)
+            t_pos.update(Decimal(cur_pos), price)
+            w_trades += 1
+            w_comm += trade.commission
+
+        # Если в конце недели есть позиция - посчитать Market Value
+        if cur_pos:
+            ohlc = self.get_ohlc(contract.sid, w_cur_end)
+            price = self.adjust_price(contract, ohlc["c"])
+            t_pos.update(Decimal(0), price)
+
+        res = {
+            "week": str(w_cur.date()),
+            "trades": w_trades,
+            "commission": float(round(w_comm, 2)),
+            "pnl": float(round(t_pos.profit - w_comm, 2)),
+        }
+
+        return res, cur_pos
+
     def generate(self) -> dict:
         res = {}
         for contract in self.contracts:
-            if con_res := self.pnl_report(contract):
-                res[contract.sid] = con_res
+            amount = self.positions_by_sid[contract.sid]
+            avg_price = None
+            if contract.sec_type in ["CASH", "CRYPTO"]:
+                if amount != 0:
+                    res[contract.sid] = {
+                        "sid": contract.sid,
+                        "sec_type": contract.sec_type,
+                        "amount": amount,
+                        "avg_price": avg_price,
+                        "pnl": [],
+                    }
+            else:
+                res[contract.sid] = {
+                    "sid": contract.sid,
+                    "sec_type": contract.sec_type,
+                    "amount": amount,
+                    "avg_price": avg_price,
+                }
+                res[contract.sid]["pnl"] = self.pnl_report(contract)
         return res
 
 
 def pnl_report(request):
-
     redis_client = redis.Redis(
         host=settings.TRADIS_HOST,
         port=settings.TRADIS_PORT,

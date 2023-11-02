@@ -29,3 +29,7 @@ whitenoise==5.2.0
 shortuuid==1.0.1
 
 redis~=4.3
+
+channels-redis==4.1.0
+channels[daphne]==4.0.0
+daphne==4.0.0

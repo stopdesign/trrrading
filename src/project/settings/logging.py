@@ -92,6 +92,12 @@ conf = {
             "handlers": ["console"],
             "propagate": False,
         },
+        # suppress noise
+        "daphne.ws_protocol": {
+            "level": "WARNING",
+            "handlers": ["console"],
+            "propagate": False,
+        },
     },
 }
 LOGGING_CONFIG = None

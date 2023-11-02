@@ -4,9 +4,8 @@ import os.path
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-import redis
 import orjson
-
+import redis
 from django.conf import settings
 from django.db.models import Q
 from django.http import HttpResponse
@@ -161,8 +160,7 @@ def account(request):
     return HttpResponse(content, content_type="application/json")
 
 
-def positions(request):
-    account_id = request.GET.get("account", 0)
+def get_positions(account_id):
     res = []
 
     utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -186,33 +184,28 @@ def positions(request):
         name = (sid.split("_", 1)[1]).replace("_", " ")
         res.append(
             {
-                "symbol": sid,
-                "name": name,
+                "symbol": sid,  # TODO: remove
+                "sid": sid,
+                "sec_type": position.contract.sec_type,
+                "name": name,  # TODO: remove
                 "amount": position.amount,
                 "avg_price": price,
                 "unrealized_pnl": position.unrealized_pnl,
                 "updated": position.updated_at,
             }
         )
-    content = json.dumps(res, indent=None, default=str)
+
+    return res
+
+
+def positions(request):
+    account_id = request.GET.get("account", 0)
+    content = json.dumps(get_positions(account_id), indent=None, default=str)
     return HttpResponse(content, content_type="application/json")
 
 
-def orders(request):
-    """
-    Сортировка ордеров, чтобы попали свежие ордеры,
-    свежие сделки и не разбились группы ордеров.
-    - выбрать последние N ордеров
-    - выбрать ордеры последних N сделок
-    - сложить, взять последние N
-    - выбрать все ID групп
-    - выбрать ордеры, связанные с этими группами
-    """
-    account_id = request.GET.get("account", 0)
-    symbol = request.GET.get("symbol")
+def get_orders(account_id, symbol=None, limit=100):
     res = []
-
-    limit = 100
 
     contract = None
     if symbol:
@@ -221,7 +214,7 @@ def orders(request):
         except Contract.DoesNotExist:
             pass
 
-    all_orders = Order.objects.filter(account_id=account_id)
+    all_orders = Order.objects.filter(account_id=account_id).prefetch_related("account")
     if symbol:
         all_orders = all_orders.filter(contract=contract)
 
@@ -298,6 +291,7 @@ def orders(request):
         res.append(
             {
                 "id": order.pk,
+                "account_id": order.account.id,
                 "order_id": order.order_id,
                 "local_id": order.local_id,
                 "sid": sid,
@@ -320,5 +314,23 @@ def orders(request):
                 "executions": trades_by_order[order.pk],
             }
         )
+    return res
+
+
+def orders(request):
+    """
+    Сортировка ордеров, чтобы попали свежие ордеры,
+    свежие сделки и не разбились группы ордеров.
+    - выбрать последние N ордеров
+    - выбрать ордеры последних N сделок
+    - сложить, взять последние N
+    - выбрать все ID групп
+    - выбрать ордеры, связанные с этими группами
+    """
+    account_id = request.GET.get("account", 0)
+    symbol = request.GET.get("symbol")
+
+    res = get_orders(account_id, symbol)
+
     content = json.dumps(res, indent=None, default=str)
     return HttpResponse(content, content_type="application/json")

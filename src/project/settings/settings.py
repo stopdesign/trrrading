@@ -35,6 +35,7 @@ ADMINS = [
 
 # Application definition
 INSTALLED_APPS = [
+    "daphne",  # must be on top
     # django
     "django.contrib.admin",
     "django.contrib.auth",
@@ -46,6 +47,8 @@ INSTALLED_APPS = [
     # project
     "main",
     "project",
+    # other
+    "channels",
 ]
 
 MIDDLEWARE = [
@@ -93,6 +96,7 @@ if front_dist_path.exists():
 
 
 WSGI_APPLICATION = "project.wsgi.application"
+ASGI_APPLICATION = "project.asgi.application"
 
 
 # AUTH_USER_MODEL = "main.User"
